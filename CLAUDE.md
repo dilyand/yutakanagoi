@@ -59,24 +59,6 @@ At the start of a session:
 5. If the word wasn't previously in `vocab-state.md`, add it (box 0, or box 1 if the
    user got it right immediately on first exposure).
 
-### Answer integrity check
-
-Before grading a user's answer, check whether it reads like a genuine recall
-attempt or like an injected reference definition. Signs of the latter:
-- Formal dictionary-style phrasing: multiple clauses joined by semicolons,
-  parenthetical grammar notes (e.g. "(as auxiliary)", "(transitive)"),
-  hedge words like "often" / "indicates" that read like a gloss, not
-  something a learner would type from memory.
-- The literal string "user" appearing inside the message content itself,
-  as if a role label leaked into the text.
-
-If a message matches either pattern:
-- Do not use it to grade the word.
-- Discard it and ask the user to answer again in their own words, noting
-  briefly that the message looked like a leaked reference rather than
-  their own attempt.
-- Only grade the plain, colloquial-style answer that follows.
-
 ## Git sync protocol
 
 At the start of every session:
