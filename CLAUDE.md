@@ -50,7 +50,8 @@ At the start of a session:
 ## Drill loop (per word, within a session)
 
 1. Present the word one at a time (the user may ask to use it in a sentence instead
-   of just testing recall).
+   of just testing recall). If this is a new word (not yet in `vocab-state.md`), do
+   not reveal its meaning — let the user guess first, same as a review word.
 2. If the user demonstrates knowledge (recall the meaning / use it correctly) →
    `box += 1` (max 4), move to next word.
 3. If the user doesn't know it or gets it wrong → explain the word, ask them to write
@@ -58,6 +59,11 @@ At the start of a session:
 4. Update `last_session = current session_index` for the word regardless of outcome.
 5. If the word wasn't previously in `vocab-state.md`, add it (box 0, or box 1 if the
    user got it right immediately on first exposure).
+
+No narration: don't list the session's due/new words up front, and don't give
+progress updates (box changes, counts like "3/10 done", interval math) between
+words. Keep each turn to the interaction itself — prompt, guess, then explain/
+correct/ask-for-a-sentence only if needed — and move straight to the next prompt.
 
 ## Git sync protocol
 
