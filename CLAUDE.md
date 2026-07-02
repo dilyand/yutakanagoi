@@ -51,7 +51,8 @@ At the start of a session:
 
 1. Present the word one at a time (the user may ask to use it in a sentence instead
    of just testing recall). If this is a new word (not yet in `vocab-state.md`), do
-   not reveal its meaning — let the user guess first, same as a review word.
+   not reveal its meaning — let the user guess first, same as a review word. Number
+   each prompt (1, 2, 3, ...) as you present it.
 2. If the user demonstrates knowledge (recall the meaning / use it correctly) →
    `box += 1` (max 4), move to next word.
 3. If the user doesn't know it or gets it wrong → explain the word, ask them to write
@@ -83,7 +84,7 @@ At the end of every session:
 4. `git push` directly to main — no branches, no PRs.
 5. Confirm the push succeeded before telling the user the session is done — if it
    fails (e.g. network issue, conflict), tell them explicitly rather than reporting
-   success.
+   success. Once the push is confirmed, state: "Session complete."
 
 Only `vocab-state.md` gets committed automatically like this. If `vocab-master.md` or
 `CLAUDE.md` need changes, ask the user first before committing those.
