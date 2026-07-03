@@ -12,6 +12,8 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
+		"test": "vitest run",
+		"test:watch": "vitest",
 		"migrate:vocab-master": "tsx --env-file=.env scripts/migrate-vocab-master.ts",
 		"migrate:vocab-state": "tsx --env-file=.env scripts/migrate-vocab-state.ts"
 	},
@@ -35,6 +37,7 @@
 		"typescript": "^6.0.3",
 		"typescript-eslint": "^8.60.1",
 		"vite": "^8.0.16",
-		"vite-plugin-pwa": "^1.3.0"
+		"vite-plugin-pwa": "^1.3.0",
+		"vitest": "^4.1.9"
 	}
 }
