@@ -7,6 +7,8 @@ bun.lockb
 
 # Miscellaneous
 /static/
+/supabase/.temp/
+/supabase/.branches/
 
 # Legacy markdown-driven drill tool files — not part of the app codebase
 /CLAUDE.md
