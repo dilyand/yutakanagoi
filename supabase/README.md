@@ -22,11 +22,27 @@ npx supabase link --project-ref <project-ref>
 npx supabase db push
 ```
 
+## One-time data migration (vocab-master.md / vocab-state.md → Supabase)
+
+Copy `.env.example` to `.env` and fill in `SUPABASE_URL` /
+`SUPABASE_SERVICE_ROLE_KEY` (from `npx supabase start` for local dev, or the
+real project's API settings once one exists), then:
+
+```sh
+npm run migrate:vocab-master   # seeds vocab_master from vocab-master.md
+npm run migrate:vocab-state    # seeds sessions + word_state from vocab-state.md
+```
+
+Run `migrate:vocab-master` first — `migrate:vocab-state` checks that every
+word it needs already exists in `vocab_master` and fails fast with a clear
+error otherwise. Both scripts support `--dry-run` (prints what would be
+written without touching the database) and are safe to re-run (upserts).
+
 ## Schema
 
 - `vocab_master` — the full target vocabulary list (word, frequency_rank).
-  Seeded once from `vocab-master.md` by a migration script (added in a later
-  issue); rarely changes after that.
+  Seeded once from `vocab-master.md` (see migration scripts above); rarely
+  changes after that.
 - `word_state` — one row per word that's been drilled at least once (box
   0-4, last_session). Direct analog of `vocab-state.md`'s table.
 - `sessions` — one row per drill session, with `session_index` as the

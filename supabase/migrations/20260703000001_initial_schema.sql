@@ -47,3 +47,22 @@ create table session_attempts (
 
 create index session_attempts_session_index_idx on session_attempts (session_index);
 create index session_attempts_word_idx on session_attempts (word);
+
+-- Access model: the app never talks to Supabase directly from the browser — all reads/writes
+-- (including the anon/authenticated-facing app itself) go through server-side functions using
+-- the service_role key (see the access-control design in the PWA migration plan). So:
+--   - service_role needs full CRUD (it's used by the app's server-side data layer and by the
+--     one-time migration scripts), and Postgres requires an explicit GRANT for this since
+--     Supabase's newer projects don't auto-expose new tables to API roles.
+--   - RLS is enabled with no policies on every table, so anon/authenticated have zero access
+--     even if the anon key ever leaked or was accidentally used client-side. service_role
+--     bypasses RLS by design, so this doesn't affect it.
+grant usage on schema public to service_role;
+grant select, insert, update, delete on vocab_master, word_state, sessions, session_attempts
+  to service_role;
+grant usage, select on all sequences in schema public to service_role;
+
+alter table vocab_master enable row level security;
+alter table word_state enable row level security;
+alter table sessions enable row level security;
+alter table session_attempts enable row level security;
