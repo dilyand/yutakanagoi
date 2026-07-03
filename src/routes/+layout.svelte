@@ -1,6 +1,7 @@
 <script lang="ts">
 	import favicon from '$lib/assets/favicon.svg';
 	import { browser } from '$app/environment';
+	import PassphraseGate from '$lib/components/PassphraseGate.svelte';
 
 	let { children } = $props();
 
@@ -15,4 +16,6 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-{@render children()}
+<PassphraseGate>
+	{@render children()}
+</PassphraseGate>
