@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { parseVocabState } from './lib/parse-vocab-files.ts';
 import { createAdminClient } from './lib/supabase-admin.ts';
+import { fetchAllRows } from '../src/lib/supabase-pagination.ts';
 
 const dryRun = process.argv.includes('--dry-run');
 
@@ -26,14 +27,10 @@ const supabase = createAdminClient();
 
 // vocab_master must already be seeded (run migrate-vocab-master.ts first) — word_state.word
 // has a foreign key into it. Check up front for a clearer error than a bulk FK failure.
-const { data: knownWords, error: vocabMasterError } = await supabase
-	.from('vocab_master')
-	.select('word');
-if (vocabMasterError) {
-	console.error('Failed to read vocab_master:', vocabMasterError.message);
-	process.exit(1);
-}
-const knownWordSet = new Set((knownWords ?? []).map((row) => row.word));
+// Paginates past PostgREST's default max_rows (1000) — vocab_master has 2000 rows, so a
+// plain .select() would silently truncate and produce false "missing word" positives.
+const knownWords = await fetchAllRows<{ word: string }>(supabase, 'vocab_master', 'word');
+const knownWordSet = new Set(knownWords.map((row) => row.word));
 const missing = words.filter((w) => !knownWordSet.has(w.word)).map((w) => w.word);
 if (missing.length > 0) {
 	console.error(
