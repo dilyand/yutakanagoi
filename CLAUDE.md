@@ -1,3 +1,11 @@
+## Project Configuration
+
+- **Language**: TypeScript
+- **Package Manager**: npm
+- **Add-ons**: prettier, eslint, sveltekit-adapter
+
+---
+
 # Yutakanagoi — Japanese vocabulary drill tool
 
 This is not an app. It's a set of plain-text files that Claude Code reads and writes
