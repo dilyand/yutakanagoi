@@ -40,34 +40,78 @@ If you need to point the CLI at a different project temporarily (e.g. to
 re-seed a staging project), `link` to it, run your commands, then `link`
 back to the production ref — it's just a local pointer, safe to switch.
 
-## One-time data migration (vocab-master.md / vocab-state.md → Supabase)
+## One-time data migration, historical (japanese-2000-most-frequent-words.md / vocab-state.md → Supabase)
 
-Copy `.env.example` to `.env` and fill in `SUPABASE_URL` /
-`SUPABASE_SERVICE_ROLE_KEY` (from `npx supabase start` for local dev, or a
-project's API settings for anything else), then:
+The 0.1.0 cutover seeded a single global vocabulary/progress from the
+markdown files. Kept here for history — this is what
+`scripts/migrate-legacy-user-list.ts` (below) reads from, not something to
+re-run:
 
 ```sh
-npm run migrate:vocab-master   # seeds vocab_master from vocab-master.md
-npm run migrate:vocab-state    # seeds sessions + word_state from vocab-state.md
+npm run migrate:vocab-master   # seeded the (now-dropped) global vocab_master table
+npm run migrate:vocab-state    # seeded the (now list_id-scoped) sessions + word_state tables
 ```
 
-Run `migrate:vocab-master` first — `migrate:vocab-state` checks that every
-word it needs already exists in `vocab_master` and fails fast with a clear
-error otherwise. Both scripts support `--dry-run` (prints what would be
-written without touching the database) and are safe to re-run (upserts).
+## Multi-user / multi-list migration (0.2.0)
+
+0.2.0 adds `users`/`word_lists`/`list_words` and scopes `word_state` /
+`sessions` / `session_attempts` by `list_id` instead of a single global
+vocabulary. Because this needs to run against a database that may already
+have real 0.1.0 progress in it, it's split into two migrations with a data
+backfill script in between — **apply them in this exact order**:
+
+1. **`supabase/migrations/20260704000001_users_lists_additive.sql`** — purely
+   additive: creates `users`/`word_lists`/`list_words`, and adds nullable
+   `list_id` columns (plus a surrogate `id` on `sessions`) to the existing
+   tables. Safe to apply immediately; the app still runs against the old
+   0.1.0 shape until the next steps happen.
+2. **`scripts/add-user.ts`** (as needed) and
+   **`scripts/migrate-legacy-user-list.ts`** — copy `.env.example` to `.env`
+   and fill in `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`, then:
+
+   ```sh
+   npm run add-user -- <username>                                    # create additional users
+   npm run migrate:legacy-user-list -- <primary-user> <second-user>  # --dry-run supported
+   ```
+
+   `migrate:legacy-user-list` creates (or reuses) the two given users, gives
+   each their own `japanese-2000-most-frequent-words.md` list seeded from the
+   existing `vocab_master` table, and backfills `list_id` (and
+   `session_attempts.session_id`) on every existing `word_state`/`sessions`/
+   `session_attempts` row onto the **primary** user's list — the **second**
+   user gets a fresh copy of the list with zero progress. Usernames are only
+   ever passed as CLI arguments and stored in the `users` table — never
+   hardcoded in the script or written to a committed file. Safe to re-run.
+
+3. **`supabase/migrations/20260704000002_finalize_list_scoping.sql`** —
+   apply only after step 2 has completed: enforces `list_id` not-null,
+   swaps `sessions`' primary key from `session_index` to the surrogate `id`,
+   replaces the old bare-`word` foreign keys with composite
+   `(list_id, word)` ones, and drops the now-unused `vocab_master` table.
+   Applying this before the backfill script has run will fail its not-null
+   constraints.
+
+Local dev (`npx supabase db reset`) applies all migrations to an empty
+database, so this ordering only matters for a database that already has
+0.1.0 data — i.e. the staging and production projects during the 0.2.0
+cutover.
 
 ## Schema
 
-- `vocab_master` — the full target vocabulary list (word, frequency_rank).
-  Seeded once from `vocab-master.md` (see migration scripts above); rarely
-  changes after that.
-- `word_state` — one row per word that's been drilled at least once (box
-  0-4, last_session). Direct analog of `vocab-state.md`'s table.
-- `sessions` — one row per drill session, with `session_index` as the
-  primary key (replaces the markdown file's loose `session_index: <n>`
-  header with a queryable/auditable log).
-- `session_attempts` — one row per word drilled per session (word, correct,
-  box before/after, the user's answer). Richer history than the markdown
-  design intentionally kept ("no per-attempt history") — kept here since
-  storage is trivial at this scale and it enables reviewing past mistakes
-  later.
+- `users` — one row per person using the app (`username`, unique). Created
+  out-of-band via `scripts/add-user.ts`, never through the app itself.
+- `word_lists` — one row per uploaded/migrated word list (`user_id`, `name`).
+  Private per user; `name` is always the uploaded filename, unique per user.
+- `list_words` — one row per word in a list (`list_id`, `word`,
+  `frequency_rank`). Replaces the 0.1.0-era global `vocab_master`.
+- `word_state` — one row per word that's been drilled at least once within a
+  list (`list_id`, `word`, `box` 0-4, `last_session`). Progress is scoped to
+  `(list_id, word)`, not shared across lists or users.
+- `sessions` — one row per drill session (`list_id`, `session_index`,
+  `started_at`, `completed_at`, `words_drilled`). `session_index` is a
+  per-list counter (not global) — the due-word interval algorithm measures
+  "sessions since last seen" for one list's own history, so mixing counters
+  across lists would give wrong due-dates. See `src/lib/drill-algorithm.ts`
+  and `CLAUDE.md`.
+- `session_attempts` — one row per word drilled per session (`session_id`,
+  `list_id`, `word`, `correct`, box before/after, the user's answer).

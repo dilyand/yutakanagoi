@@ -10,6 +10,7 @@ import {
 } from '$lib/server/drill-repository';
 
 const RequestSchema = z.object({
+	listId: z.number().int(),
 	sessionIndex: z.number().int(),
 	wordStates: z.array(
 		z.object({
@@ -20,7 +21,6 @@ const RequestSchema = z.object({
 	),
 	attempts: z.array(
 		z.object({
-			sessionIndex: z.number().int(),
 			word: z.string(),
 			wasNewWord: z.boolean(),
 			correct: z.boolean(),
@@ -41,12 +41,12 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!parsedBody.success) {
 		error(400, 'Invalid request body');
 	}
-	const { sessionIndex, wordStates, attempts } = parsedBody.data;
+	const { listId, sessionIndex, wordStates, attempts } = parsedBody.data;
 
 	const supabase = createServiceClient();
-	await upsertWordStates(supabase, wordStates);
-	await insertSessionAttempts(supabase, attempts);
-	await completeSession(supabase, sessionIndex, wordStates.length);
+	await upsertWordStates(supabase, listId, wordStates);
+	await insertSessionAttempts(supabase, listId, sessionIndex, attempts);
+	await completeSession(supabase, listId, sessionIndex, wordStates.length);
 
 	return json({ ok: true });
 };

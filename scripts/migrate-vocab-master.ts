@@ -1,13 +1,19 @@
+// Historical: this seeded the 0.1.0-era global `vocab_master` table, which
+// 0.2.0's migrate-legacy-user-list.ts reads from directly (then drops) —
+// kept here for reference, not part of the 0.2.0 migration path.
 import { readFileSync } from 'node:fs';
 import { parseVocabMaster } from './lib/parse-vocab-files.ts';
 import { createAdminClient } from './lib/supabase-admin.ts';
 
 const dryRun = process.argv.includes('--dry-run');
 
-const markdown = readFileSync(new URL('../vocab-master.md', import.meta.url), 'utf-8');
+const markdown = readFileSync(
+	new URL('../japanese-2000-most-frequent-words.md', import.meta.url),
+	'utf-8'
+);
 const entries = parseVocabMaster(markdown);
 
-console.log(`Parsed ${entries.length} words from vocab-master.md`);
+console.log(`Parsed ${entries.length} words from japanese-2000-most-frequent-words.md`);
 
 if (dryRun) {
 	console.log('--dry-run: not writing to Supabase. First 5 and last 5 entries:');

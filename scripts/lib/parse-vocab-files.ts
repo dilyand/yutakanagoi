@@ -3,7 +3,7 @@ export interface VocabMasterEntry {
 	frequencyRank: number;
 }
 
-/** Parses vocab-master.md's `- word` bullet list, in file order = frequency rank. */
+/** Parses japanese-2000-most-frequent-words.md's `- word` bullet list, in file order = frequency rank. */
 export function parseVocabMaster(markdown: string): VocabMasterEntry[] {
 	const entries: VocabMasterEntry[] = [];
 	let rank = 0;

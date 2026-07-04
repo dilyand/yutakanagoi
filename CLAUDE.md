@@ -13,24 +13,38 @@ not the plain-text-file workflow described in the rest of this file. That
 section is kept below as the specification for the drill algorithm's exact
 intended behavior, not as an active process.
 
+As of 0.2.0 the app is multi-user and multi-list: each user has their own
+private word lists, and progress is scoped per list (not global). Users are
+rows in a `users` table (created out-of-band via `scripts/add-user.ts`, never
+via the UI); their word lists are rows in `word_lists`, with each list's
+words in `list_words`. The `word_state` / `sessions` / `session_attempts`
+tables from 0.1.0 are unchanged in shape except each gained a `list_id`
+column — progress is never shared across lists or users, but there is still
+only one shared `APP_SHARED_SECRET` passphrase gating the whole app (no
+per-user passwords). See `supabase/README.md` for the full schema.
+
 Useful context for working in this repo:
 
 - The due-word-selection and box-transition logic described below is
   implemented in `src/lib/drill-algorithm.ts` (pure functions, unit-tested in
-  `drill-algorithm.test.ts`). If you're changing drill behavior, that's the
-  file to edit — the rules below are the reference for what it should do.
-- `vocab-master.md` and `vocab-state.md` are frozen as of the cutover to the
-  app. They are **not** read or written by the running app and do not
-  reflect current progress — live data is in Supabase (`vocab_master`,
-  `word_state`, `sessions`, `session_attempts` tables; schema in
-  `supabase/migrations/`, notes in `supabase/README.md`). Don't edit these
-  two files expecting it to affect the app, and don't treat them as current.
+  `drill-algorithm.test.ts`). It's list-agnostic by design — it takes
+  vocab/word-state arrays as plain parameters, so it needed zero changes for
+  multi-list support. If you're changing drill behavior, that's the file to
+  edit — the rules below are the reference for what it should do.
+- `japanese-2000-most-frequent-words.md` (formerly `vocab-master.md`) and
+  `vocab-state.md` are frozen as of the 0.1.0 cutover. They are **not** read
+  or written by the running app and do not reflect current progress — live
+  data is in Supabase (`users`, `word_lists`, `list_words`, `word_state`,
+  `sessions`, `session_attempts` tables; schema in `supabase/migrations/`,
+  notes in `supabase/README.md`). Don't edit these two files expecting it to
+  affect the app, and don't treat them as current.
 - Grading, word explanations, and sentence evaluation happen via the Claude
   API through a server-side proxy (`src/lib/server/claude-evaluate.ts`,
   called from `/api/evaluate`) — not by an agent reading these files in a
   chat session.
 - The drill UI is `src/routes/+page.svelte`; the passphrase gate protecting
-  it is `src/lib/components/PassphraseGate.svelte`.
+  it is `src/lib/components/PassphraseGate.svelte`; user/list selection
+  happens via `UserSelector.svelte`/`ListSelector.svelte` before it.
 - If asked to "run a drill session" in this repo, that means using the
   deployed app (or `npm run dev` locally), not following the git sync
   protocol below.
@@ -46,8 +60,9 @@ something to execute directly.
 
 ## Files
 
-- `vocab-master.md` — the full target vocabulary list. Rarely changes. Source of truth
-  for what words exist.
+- `japanese-2000-most-frequent-words.md` (formerly `vocab-master.md`) — the
+  full target vocabulary list. Rarely changes. Source of truth for what
+  words exist.
 - `vocab-state.md` — tracks only words that have been drilled at least once. Schema:
 
   ```
@@ -65,7 +80,8 @@ something to execute directly.
   - `session_index`: one counter for the whole project, incremented once per session
     (not per word).
   - Words not yet in this file are implicitly "not yet introduced" — derive that by
-    diffing against `vocab-master.md`. Don't track untouched words here.
+    diffing against `japanese-2000-most-frequent-words.md`. Don't track untouched
+    words here.
 
 Keep state minimal — no timestamps, no per-attempt history, no logged example
 sentences. Just word, box, last_session, plus the session_index counter.
@@ -126,5 +142,6 @@ At the end of every session:
    fails (e.g. network issue, conflict), tell them explicitly rather than reporting
    success. Once the push is confirmed, state: "Session complete."
 
-Only `vocab-state.md` gets committed automatically like this. If `vocab-master.md` or
-`CLAUDE.md` need changes, ask the user first before committing those.
+Only `vocab-state.md` gets committed automatically like this. If
+`japanese-2000-most-frequent-words.md` or `CLAUDE.md` need changes, ask the
+user first before committing those.

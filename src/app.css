@@ -10,8 +10,14 @@ html {
 
 body {
 	margin: 0;
-	font-family: Georgia, 'Hiragino Mincho ProN', serif;
-	font-size: 18px;
+	/* A sans-serif (gothic) stack reads better than a mincho/serif face at the
+	   small sizes and low-DPI-relative-to-desktop conditions mobile screens
+	   impose, for both the Japanese prompts and the English UI text. */
+	font-family:
+		-apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Yu Gothic', Roboto, sans-serif;
+	/* User-adjustable via FontSizeControl.svelte, which sets this custom
+	   property; 18px is the same default as before that control existed. */
+	font-size: var(--app-font-size, 18px);
 	background: #f4f4f5;
 	color: #1f2937;
 }
@@ -41,6 +47,11 @@ input[type='password'] {
 	max-width: 20rem;
 }
 
+.subtitle {
+	color: #6b7280;
+	font-size: 0.9rem;
+}
+
 .cancel {
 	margin-top: 2rem;
 }
@@ -52,4 +63,36 @@ input[type='password'] {
 	border: none;
 	padding: 0;
 	text-decoration: underline;
+}
+
+.font-size-control {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.5rem;
+	margin-bottom: 1rem;
+}
+
+.font-size-control button {
+	font-size: 0.8rem;
+	color: #6b7280;
+	background: none;
+	border: 1px solid #d1d5db;
+	border-radius: 0.25rem;
+	padding: 0.25rem 0.5rem;
+}
+
+.font-size-control button:disabled {
+	opacity: 0.4;
+}
+
+.upload {
+	display: block;
+	margin-top: 1.5rem;
+}
+
+.version {
+	color: #9ca3af;
+	font-size: 0.6em;
+	font-weight: normal;
+	vertical-align: middle;
 }
