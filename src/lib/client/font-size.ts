@@ -1,7 +1,8 @@
 // Discrete steps rather than free-form scaling — simple to reason about and
 // to render as a fixed set of +/- clicks. 16px floor matches the existing
-// iOS zoom-on-input-focus threshold (see app.css).
-export const FONT_SIZES_PX = [16, 18, 20, 22, 24] as const;
+// iOS zoom-on-input-focus threshold (see app.css); ceiling is high enough
+// for real low-vision use, not just a cosmetic bump.
+export const FONT_SIZES_PX = [16, 18, 20, 22, 24, 28, 32, 36, 40, 44, 48] as const;
 export const DEFAULT_FONT_SIZE_PX = 18;
 
 const FONT_SIZE_STORAGE_KEY = 'yutakanagoi:font-size-px';

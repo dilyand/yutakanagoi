@@ -183,7 +183,7 @@
 
 <main>
 	<FontSizeControl />
-	<h1>Yutakanagoi</h1>
+	<h1>Yutakanagoi <span class="version">v{__APP_VERSION__}</span></h1>
 
 	{#if selectedUserId === null}
 		<UserSelector

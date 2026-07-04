@@ -84,3 +84,15 @@ input[type='password'] {
 .font-size-control button:disabled {
 	opacity: 0.4;
 }
+
+.upload {
+	display: block;
+	margin-top: 1.5rem;
+}
+
+.version {
+	color: #9ca3af;
+	font-size: 0.6em;
+	font-weight: normal;
+	vertical-align: middle;
+}
