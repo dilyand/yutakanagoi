@@ -4,6 +4,7 @@
 	import { authorizedPost } from '$lib/client/api-client';
 	import UserSelector from '$lib/components/UserSelector.svelte';
 	import ListSelector from '$lib/components/ListSelector.svelte';
+	import FontSizeControl from '$lib/components/FontSizeControl.svelte';
 
 	type Phase =
 		| 'idle'
@@ -181,6 +182,7 @@
 </script>
 
 <main>
+	<FontSizeControl />
 	<h1>Yutakanagoi</h1>
 
 	{#if selectedUserId === null}
