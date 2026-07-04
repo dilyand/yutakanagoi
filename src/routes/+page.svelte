@@ -38,8 +38,8 @@
 	let wordMeaning = $state('');
 	let sentenceFeedback = $state('');
 
-	const wordStateUpdates: WordState[] = [];
-	const attempts: SessionAttempt[] = [];
+	let wordStateUpdates: WordState[] = [];
+	let attempts: SessionAttempt[] = [];
 
 	let currentItem = $derived<DrillItem | undefined>(drillItems[currentIndex]);
 	let promptNumber = $derived(currentIndex + 1);
@@ -55,6 +55,8 @@
 	async function start() {
 		phase = 'starting';
 		errorMessage = '';
+		wordStateUpdates = [];
+		attempts = [];
 		try {
 			const data = await authorizedPost<{ sessionIndex: number; drillItems: DrillItem[] }>(
 				'/api/session/start',
@@ -162,6 +164,7 @@
 		</button>
 	{:else if phase === 'done'}
 		<p>Session complete.</p>
+		<button onclick={start}>Start another session</button>
 	{:else if currentItem}
 		<p class="prompt-number">{promptNumber}.</p>
 		<p class="word">{currentItem.word}</p>

@@ -1,0 +1,32 @@
+html {
+	box-sizing: border-box;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: inherit;
+}
+
+body {
+	margin: 0;
+	font-family: Georgia, 'Hiragino Mincho ProN', serif;
+	background: #f4f4f5;
+	color: #1f2937;
+}
+
+main {
+	max-width: 32rem;
+	margin: 0 auto;
+	padding: 1rem;
+}
+
+p {
+	overflow-wrap: break-word;
+}
+
+input[type='text'],
+input[type='password'] {
+	width: 100%;
+	max-width: 20rem;
+}
