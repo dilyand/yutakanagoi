@@ -172,6 +172,12 @@
 		wasCancelled = true;
 		await finishSession();
 	}
+
+	function chooseNewList() {
+		selectedListId = null;
+		selectedListName = '';
+		phase = 'idle';
+	}
 </script>
 
 <main>
@@ -197,9 +203,11 @@
 		<button onclick={start} disabled={phase === 'starting'}>
 			{phase === 'starting' ? 'Starting…' : 'Start session'}
 		</button>
+		<p class="cancel"><button onclick={chooseNewList}>Choose a different list</button></p>
 	{:else if phase === 'done'}
 		<p>{wasCancelled ? 'Session cancelled — progress saved.' : 'Session complete.'}</p>
 		<button onclick={start}>Start another session</button>
+		<button onclick={chooseNewList}>Choose a different list</button>
 	{:else if currentItem}
 		<p class="prompt-number">{promptNumber}.</p>
 		<p class="word">{currentItem.word}</p>
