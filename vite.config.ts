@@ -27,10 +27,24 @@ export default defineConfig({
 					{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
 					{ src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
 					{
-						src: '/icons/icon-512.png',
+						src: '/icons/icon-512-maskable.png',
 						sizes: '512x512',
 						type: 'image/png',
 						purpose: 'maskable'
+					}
+				]
+			},
+			workbox: {
+				// Navigation always goes to the network (drill state must be fresh,
+				// never served stale) — only fall back to the precached offline
+				// page when the network request itself fails.
+				runtimeCaching: [
+					{
+						urlPattern: ({ request }) => request.mode === 'navigate',
+						handler: 'NetworkOnly',
+						options: {
+							precacheFallback: { fallbackURL: '/offline.html' }
+						}
 					}
 				]
 			}
