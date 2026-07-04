@@ -1,7 +1,7 @@
 {
 	"name": "yutakanagoi",
 	"private": true,
-	"version": "0.2.1",
+	"version": "0.2.2",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -14,8 +14,6 @@
 		"format": "prettier --write .",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"migrate:vocab-master": "tsx --env-file=.env scripts/migrate-vocab-master.ts",
-		"migrate:vocab-state": "tsx --env-file=.env scripts/migrate-vocab-state.ts",
 		"add-user": "tsx --env-file=.env scripts/add-user.ts",
 		"migrate:legacy-user-list": "tsx --env-file=.env scripts/migrate-legacy-user-list.ts"
 	},
