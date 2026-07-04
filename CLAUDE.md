@@ -1,8 +1,48 @@
-# Yutakanagoi — Japanese vocabulary drill tool
+## Project Configuration
 
-This is not an app. It's a set of plain-text files that Claude Code reads and writes
-directly to run spaced-repetition vocabulary drill sessions, synced through GitHub
-so state survives across devices and sessions.
+- **Language**: TypeScript
+- **Package Manager**: npm
+- **Add-ons**: prettier, eslint, sveltekit-adapter
+
+---
+
+## Current status: this is a live app, not a markdown-driven workflow
+
+Yutakanagoi is a SvelteKit PWA, deployed on Vercel, with state in Supabase —
+not the plain-text-file workflow described in the rest of this file. That
+section is kept below as the specification for the drill algorithm's exact
+intended behavior, not as an active process.
+
+Useful context for working in this repo:
+
+- The due-word-selection and box-transition logic described below is
+  implemented in `src/lib/drill-algorithm.ts` (pure functions, unit-tested in
+  `drill-algorithm.test.ts`). If you're changing drill behavior, that's the
+  file to edit — the rules below are the reference for what it should do.
+- `vocab-master.md` and `vocab-state.md` are frozen as of the cutover to the
+  app. They are **not** read or written by the running app and do not
+  reflect current progress — live data is in Supabase (`vocab_master`,
+  `word_state`, `sessions`, `session_attempts` tables; schema in
+  `supabase/migrations/`, notes in `supabase/README.md`). Don't edit these
+  two files expecting it to affect the app, and don't treat them as current.
+- Grading, word explanations, and sentence evaluation happen via the Claude
+  API through a server-side proxy (`src/lib/server/claude-evaluate.ts`,
+  called from `/api/evaluate`) — not by an agent reading these files in a
+  chat session.
+- The drill UI is `src/routes/+page.svelte`; the passphrase gate protecting
+  it is `src/lib/components/PassphraseGate.svelte`.
+- If asked to "run a drill session" in this repo, that means using the
+  deployed app (or `npm run dev` locally), not following the git sync
+  protocol below.
+
+---
+
+# Yutakanagoi — Japanese vocabulary drill tool (original spec)
+
+This section describes the plain-text-file workflow the app above replaced.
+It's kept as the precise specification the app's algorithm and drill loop
+were built from — useful if you need to check intended behavior, not as
+something to execute directly.
 
 ## Files
 
