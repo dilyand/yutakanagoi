@@ -40,6 +40,7 @@
 
 	let wordStateUpdates: WordState[] = [];
 	let attempts: SessionAttempt[] = [];
+	let wasCancelled = $state(false);
 
 	let currentItem = $derived<DrillItem | undefined>(drillItems[currentIndex]);
 	let promptNumber = $derived(currentIndex + 1);
@@ -55,6 +56,7 @@
 	async function start() {
 		phase = 'starting';
 		errorMessage = '';
+		wasCancelled = false;
 		wordStateUpdates = [];
 		attempts = [];
 		try {
@@ -154,6 +156,14 @@
 			phase = 'sentence-feedback';
 		}
 	}
+
+	// Safe at any point between words: every attempt so far is already recorded
+	// in wordStateUpdates/attempts, so this just persists whatever's been done
+	// and stops before drilling the remaining words — nothing is lost.
+	async function cancelSession() {
+		wasCancelled = true;
+		await finishSession();
+	}
 </script>
 
 <main>
@@ -163,7 +173,7 @@
 			{phase === 'starting' ? 'Starting…' : 'Start session'}
 		</button>
 	{:else if phase === 'done'}
-		<p>Session complete.</p>
+		<p>{wasCancelled ? 'Session cancelled — progress saved.' : 'Session complete.'}</p>
 		<button onclick={start}>Start another session</button>
 	{:else if currentItem}
 		<p class="prompt-number">{promptNumber}.</p>
@@ -199,6 +209,10 @@
 		{:else if phase === 'sentence-feedback'}
 			<p>{sentenceFeedback}</p>
 			<button onclick={next}>Next</button>
+		{/if}
+
+		{#if phase === 'guessing' || phase === 'correct' || phase === 'incorrect' || phase === 'sentence-feedback'}
+			<p class="cancel"><button onclick={cancelSession}>Cancel session</button></p>
 		{/if}
 	{/if}
 

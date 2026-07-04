@@ -11,6 +11,7 @@ html {
 body {
 	margin: 0;
 	font-family: Georgia, 'Hiragino Mincho ProN', serif;
+	font-size: 18px;
 	background: #f4f4f5;
 	color: #1f2937;
 }
@@ -25,8 +26,30 @@ p {
 	overflow-wrap: break-word;
 }
 
+input,
+button {
+	font-family: inherit;
+	/* Inputs below 16px trigger iOS Safari's auto-zoom-on-focus, which also
+	   scrolls parts of the page out of view. Inheriting the body size (18px)
+	   keeps inputs comfortably above that threshold. */
+	font-size: inherit;
+}
+
 input[type='text'],
 input[type='password'] {
 	width: 100%;
 	max-width: 20rem;
+}
+
+.cancel {
+	margin-top: 2rem;
+}
+
+.cancel button {
+	font-size: 0.8rem;
+	color: #6b7280;
+	background: none;
+	border: none;
+	padding: 0;
+	text-decoration: underline;
 }
