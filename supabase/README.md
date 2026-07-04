@@ -43,14 +43,11 @@ back to the production ref — it's just a local pointer, safe to switch.
 ## One-time data migration, historical (japanese-2000-most-frequent-words.md / vocab-state.md → Supabase)
 
 The 0.1.0 cutover seeded a single global vocabulary/progress from the
-markdown files. Kept here for history — this is what
-`scripts/migrate-legacy-user-list.ts` (below) reads from, not something to
-re-run:
-
-```sh
-npm run migrate:vocab-master   # seeded the (now-dropped) global vocab_master table
-npm run migrate:vocab-state    # seeded the (now list_id-scoped) sessions + word_state tables
-```
+markdown files, via `scripts/migrate-vocab-master.ts` and
+`scripts/migrate-vocab-state.ts`. Both scripts targeted the (now-dropped)
+global `vocab_master` table, so they've been removed — this is what
+`scripts/migrate-legacy-user-list.ts` (below) reads from at the 0.2.0
+cutover, not something that needs re-running.
 
 ## Multi-user / multi-list migration (0.2.0)
 
