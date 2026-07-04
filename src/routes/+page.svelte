@@ -2,6 +2,8 @@
 	import { applyOutcome, type DrillItem, type WordState } from '$lib/drill-algorithm';
 	import { gradeAnswer, explainWord, evaluateSentence } from '$lib/client/evaluate-client';
 	import { authorizedPost } from '$lib/client/api-client';
+	import UserSelector from '$lib/components/UserSelector.svelte';
+	import ListSelector from '$lib/components/ListSelector.svelte';
 
 	type Phase =
 		| 'idle'
@@ -16,7 +18,6 @@
 		| 'done';
 
 	interface SessionAttempt {
-		sessionIndex: number;
 		word: string;
 		wasNewWord: boolean;
 		correct: boolean;
@@ -24,6 +25,11 @@
 		boxAfter: number;
 		userAnswer?: string;
 	}
+
+	let selectedUserId = $state<number | null>(null);
+	let selectedUsername = $state('');
+	let selectedListId = $state<number | null>(null);
+	let selectedListName = $state('');
 
 	let phase = $state<Phase>('idle');
 	let errorMessage = $state('');
@@ -54,6 +60,7 @@
 	}
 
 	async function start() {
+		if (selectedListId === null) return;
 		phase = 'starting';
 		errorMessage = '';
 		wasCancelled = false;
@@ -62,7 +69,7 @@
 		try {
 			const data = await authorizedPost<{ sessionIndex: number; drillItems: DrillItem[] }>(
 				'/api/session/start',
-				{}
+				{ listId: selectedListId }
 			);
 			sessionIndex = data.sessionIndex;
 			drillItems = data.drillItems;
@@ -84,7 +91,6 @@
 		});
 		wordStateUpdates.push({ word: item.word, box: outcome.box, lastSession: outcome.lastSession });
 		attempts.push({
-			sessionIndex,
 			word: item.word,
 			wasNewWord: item.isNew,
 			correct,
@@ -142,10 +148,12 @@
 	}
 
 	async function finishSession() {
+		if (selectedListId === null) return;
 		phase = 'completing';
 		errorMessage = '';
 		try {
 			await authorizedPost('/api/session/complete', {
+				listId: selectedListId,
 				sessionIndex,
 				wordStates: wordStateUpdates,
 				attempts
@@ -167,8 +175,25 @@
 </script>
 
 <main>
-	{#if phase === 'idle' || phase === 'starting'}
-		<h1>Yutakanagoi</h1>
+	<h1>Yutakanagoi</h1>
+
+	{#if selectedUserId === null}
+		<UserSelector
+			onSelect={(id, username) => {
+				selectedUserId = id;
+				selectedUsername = username;
+			}}
+		/>
+	{:else if selectedListId === null}
+		<ListSelector
+			userId={selectedUserId}
+			onSelect={(id, name) => {
+				selectedListId = id;
+				selectedListName = name;
+			}}
+		/>
+	{:else if phase === 'idle' || phase === 'starting'}
+		<p class="subtitle">{selectedUsername} · {selectedListName}</p>
 		<button onclick={start} disabled={phase === 'starting'}>
 			{phase === 'starting' ? 'Starting…' : 'Start session'}
 		</button>

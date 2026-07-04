@@ -41,6 +41,11 @@ input[type='password'] {
 	max-width: 20rem;
 }
 
+.subtitle {
+	color: #6b7280;
+	font-size: 0.9rem;
+}
+
 .cancel {
 	margin-top: 2rem;
 }
