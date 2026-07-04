@@ -1,9 +1,10 @@
 # Yutakanagoi
 
-A PWA for running Japanese vocabulary spaced-repetition drills, replacing the
-markdown-driven Claude Code workflow. See [CLAUDE.md](./CLAUDE.md) for the
-drill algorithm this app implements, and the linked plan/issues for the full
-migration.
+A PWA for running Japanese vocabulary spaced-repetition drills: SvelteKit +
+Supabase + the Claude API. See [CLAUDE.md](./CLAUDE.md) for the drill
+algorithm this app implements and current-state notes for anyone (human or
+agent) working in this repo, and [supabase/README.md](./supabase/README.md)
+for the data layer.
 
 ## Developing
 

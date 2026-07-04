@@ -11,8 +11,8 @@ const RequestSchema = z.discriminatedUnion('mode', [
 ]);
 
 // The only server-side gate on Claude API spend: a shared secret checked before
-// any Anthropic call is made. Full passphrase UI comes in a later issue — this
-// just enforces the header. See the access-control design in the PWA migration plan.
+// any Anthropic call is made. The passphrase UI (PassphraseGate.svelte) is what
+// obtains this secret from the user and attaches it as the Authorization header.
 export const POST: RequestHandler = async ({ request }) => {
 	requireAppSecret(request);
 
