@@ -118,7 +118,12 @@ At the start of a session:
    - box 3: due every 8 sessions
    - box 4: due every 16 sessions (flat interval — doesn't keep growing)
    A word is due if `(session_index - last_session) >= interval(box)`.
-3. Sort due words lowest-box-first (weakest gets priority), take up to 10.
+3. Take up to 10 due words round-robin across boxes 0-4: repeatedly cycle through
+   the boxes in order, taking the single most-overdue due word (oldest
+   `last_session` first) from each non-empty box in turn, until 10 words are chosen
+   or all due words are exhausted. Box 0 is still drawn from first every cycle, so
+   weaker words remain the priority — but a large box-0 backlog can no longer
+   monopolize every slot and starve box 1-4 reviews indefinitely.
 4. If fewer than 10 due words exist, fill remaining slots with new words from
    `vocab-master.md` that aren't yet in `vocab-state.md`.
 5. Don't force box 4 words back in early just to fill a slot.
@@ -130,12 +135,20 @@ At the start of a session:
    not reveal its meaning — let the user guess first, same as a review word. Number
    each prompt (1, 2, 3, ...) as you present it.
 2. If the user demonstrates knowledge (recall the meaning / use it correctly) →
-   `box += 1` (max 4), move to next word.
+   `box += 1` (max 4), move to next word. Exception: a brand-new word (not yet in
+   `vocab-state.md`) that's answered correctly on this very first exposure jumps
+   straight to box 4 instead of box 1 — a frequency-ranked word list contains many
+   words an intermediate learner already knows, and stepping through boxes 1-3 for
+   words that are clearly already mastered just adds backlog.
 3. If the user doesn't know it or gets it wrong → explain the word, ask them to write
-   a sentence using it, evaluate the sentence, then set `box = 0`, move on.
+   a sentence using it, evaluate the sentence, then:
+   - if this is the word's first exposure, set `box = 0`
+   - otherwise, decrement `box` by 1 (floor 0) rather than resetting to 0 — a single
+     slip shouldn't erase all prior progress
+   move on.
 4. Update `last_session = current session_index` for the word regardless of outcome.
-5. If the word wasn't previously in `vocab-state.md`, add it (box 0, or box 1 if the
-   user got it right immediately on first exposure).
+5. If the word wasn't previously in `vocab-state.md`, add it (box 0 if incorrect, or
+   box 4 if correct on this first exposure).
 
 No narration: don't list the session's due/new words up front, and don't give
 progress updates (box changes, counts like "3/10 done", interval math) between
