@@ -31,6 +31,22 @@ describe('selectDrillWords: sort order', () => {
 		const result = selectDrillWords(vocab(), wordStates, 100);
 		expect(result.map((d) => d.word)).toEqual(['box1', 'box2', 'box3']);
 	});
+
+	it('breaks same-box ties by most-overdue (oldest last_session) first', () => {
+		const wordStates = [state('newer', 0, 5), state('older', 0, 2)];
+		const result = selectDrillWords(vocab(), wordStates, 100);
+		expect(result.map((d) => d.word)).toEqual(['older', 'newer']);
+	});
+});
+
+describe('selectDrillWords: round-robin prevents box-0 starvation', () => {
+	it('guarantees higher-box due words a slot even when the box-0 backlog exceeds the limit', () => {
+		const box0Words = Array.from({ length: 12 }, (_, i) => state(`box0-${i}`, 0, 0));
+		const box2Words = [state('box2-a', 2, 0), state('box2-b', 2, 0)];
+		const result = selectDrillWords(vocab(), [...box0Words, ...box2Words], 100, 10);
+		expect(result).toHaveLength(10);
+		expect(result.map((d) => d.word)).toEqual(expect.arrayContaining(['box2-a', 'box2-b']));
+	});
 });
 
 describe('selectDrillWords: cap at limit', () => {
@@ -94,8 +110,15 @@ describe('applyOutcome: box transitions for tracked words', () => {
 		});
 	});
 
-	it('resets box to 0 on an incorrect answer', () => {
+	it('steps the box down by 1 on an incorrect answer, rather than resetting to 0', () => {
 		expect(applyOutcome({ box: 3, correct: false, sessionIndex: 7 })).toEqual({
+			box: 2,
+			lastSession: 7
+		});
+	});
+
+	it('floors the box at 0 on an incorrect answer', () => {
+		expect(applyOutcome({ box: 0, correct: false, sessionIndex: 7 })).toEqual({
 			box: 0,
 			lastSession: 7
 		});
@@ -108,9 +131,9 @@ describe('applyOutcome: box transitions for tracked words', () => {
 });
 
 describe('applyOutcome: new word first exposure', () => {
-	it('starts a new word at box 1 if correct on first exposure', () => {
+	it('jumps a new word straight to the max box if correct on first exposure', () => {
 		expect(applyOutcome({ box: undefined, correct: true, sessionIndex: 5 })).toEqual({
-			box: 1,
+			box: 4,
 			lastSession: 5
 		});
 	});

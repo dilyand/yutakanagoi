@@ -11,11 +11,13 @@ export interface VocabEntry {
 
 export interface WordState {
 	word: string;
-	box: number; // 0-4
+	box: number; // 0-MAX_BOX
 	lastSession: number;
 }
 
 export type DrillItem = { word: string; isNew: false; box: number } | { word: string; isNew: true };
+
+const MAX_BOX = 4;
 
 const BOX_INTERVALS: Record<number, number> = {
 	0: 1,
@@ -30,6 +32,35 @@ function isDue(wordState: WordState, sessionIndex: number): boolean {
 }
 
 /**
+ * Picks up to `limit` due words round-robin across boxes 0->MAX_BOX (most
+ * overdue first within a box), so a large box-0 backlog can't monopolize
+ * every slot and starve higher-box reviews indefinitely. Box 0 is still
+ * drawn from first every cycle, so weaker words remain the priority.
+ */
+function pickDueWordsRoundRobin(dueWords: WordState[], limit: number): WordState[] {
+	const buckets: WordState[][] = [];
+	for (let box = 0; box <= MAX_BOX; box++) {
+		buckets.push(
+			dueWords.filter((ws) => ws.box === box).sort((a, b) => a.lastSession - b.lastSession)
+		);
+	}
+
+	const picked: WordState[] = [];
+	let remaining = dueWords.length;
+	while (picked.length < limit && remaining > 0) {
+		for (const bucket of buckets) {
+			if (picked.length >= limit) break;
+			const next = bucket.shift();
+			if (next) {
+				picked.push(next);
+				remaining--;
+			}
+		}
+	}
+	return picked;
+}
+
+/**
  * Selects this session's drill words: due review words (weakest box first,
  * capped at `limit`), then new words from vocabMaster to fill any remaining
  * slots. Box 4 words are never pulled in early just to fill a slot — they
@@ -41,11 +72,10 @@ export function selectDrillWords(
 	sessionIndex: number,
 	limit = 10
 ): DrillItem[] {
-	const dueWords = wordStates
-		.filter((ws) => isDue(ws, sessionIndex))
-		.sort((a, b) => a.box - b.box)
-		.slice(0, limit)
-		.map((ws): DrillItem => ({ word: ws.word, isNew: false, box: ws.box }));
+	const dueWords = pickDueWordsRoundRobin(
+		wordStates.filter((ws) => isDue(ws, sessionIndex)),
+		limit
+	).map((ws): DrillItem => ({ word: ws.word, isNew: false, box: ws.box }));
 
 	if (dueWords.length >= limit) {
 		return dueWords;
@@ -79,10 +109,10 @@ export interface DrillResult {
  */
 export function applyOutcome({ box, correct, sessionIndex }: DrillOutcome): DrillResult {
 	if (box === undefined) {
-		return { box: correct ? 1 : 0, lastSession: sessionIndex };
+		return { box: correct ? MAX_BOX : 0, lastSession: sessionIndex };
 	}
 	if (correct) {
-		return { box: Math.min(box + 1, 4), lastSession: sessionIndex };
+		return { box: Math.min(box + 1, MAX_BOX), lastSession: sessionIndex };
 	}
-	return { box: 0, lastSession: sessionIndex };
+	return { box: Math.max(box - 1, 0), lastSession: sessionIndex };
 }
