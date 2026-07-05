@@ -48,6 +48,18 @@ Useful context for working in this repo:
 - If asked to "run a drill session" in this repo, that means using the
   deployed app (or `npm run dev` locally), not following the git sync
   protocol below.
+- **Deployment workflow**: Vercel is connected via its GitHub integration
+  (no `vercel.json`, no GitHub Actions in this repo — deploys are entirely
+  managed on Vercel's side). Confirmed by inspecting past PR checks: opening
+  or updating a PR gets its own **Preview** deployment (Vercel bot comments
+  the preview URL and posts a "Vercel" check on the PR); merging to `main`
+  triggers a separate **Production** deployment (a distinct deployment ID
+  from the PR's preview). So the workflow is: open a PR → test against its
+  Preview URL → merge → Production redeploys automatically from `main`.
+  `main` has no branch protection configured (no required reviews/checks as
+  of 0.3.0) — merging is a manual judgment call, not gated by CI, so don't
+  treat an open PR as "safe to merge" just because checks are green; actually
+  look at the preview before merging.
 
 ---
 
