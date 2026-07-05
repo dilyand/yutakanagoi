@@ -5,6 +5,7 @@
 	import UserSelector from '$lib/components/UserSelector.svelte';
 	import ListSelector from '$lib/components/ListSelector.svelte';
 	import FontSizeControl from '$lib/components/FontSizeControl.svelte';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
 	type Phase =
 		| 'idle'
@@ -186,7 +187,10 @@
 
 <main>
 	<div class="top-anchor">
-		<FontSizeControl />
+		<div class="controls-row">
+			<ThemeToggle />
+			<FontSizeControl />
+		</div>
 		{#if showWordBlock && currentItem}
 			<div class="word-block">
 				<p class="prompt-number">{promptNumber}.</p>
