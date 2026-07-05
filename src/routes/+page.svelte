@@ -276,9 +276,7 @@
 						<button class="button-primary" onclick={next}>Next</button>
 					{/if}
 
-					{#if phase === 'guessing' || phase === 'correct' || phase === 'incorrect' || phase === 'sentence-feedback'}
-						<p class="cancel"><button onclick={cancelSession}>Cancel session</button></p>
-					{/if}
+					<p class="cancel"><button onclick={cancelSession}>Cancel session</button></p>
 				</div>
 			</div>
 		{/if}

@@ -1,21 +1,33 @@
 :root {
+	/* Indigo stays the sole accent (it's the app icon's color); every other
+	   hue is chosen to sit next to it deliberately rather than being generic
+	   gray + primary-color: neutrals lean the same cool/violet direction as
+	   the accent (Tailwind's "slate" family, not a hueless gray), and the
+	   semantic colors (emerald/rose) are jewel-tones from the same family of
+	   scales as indigo, rather than bootstrap-y flat green/red. */
 	--color-accent: #4f46e5;
 	--color-accent-hover: #4338ca;
 	--color-accent-contrast: #ffffff;
 
-	--color-bg: #f4f4f5;
+	--color-bg: #f8fafc;
 	--color-surface: #ffffff;
-	--color-border: #d1d5db;
+	--color-border: #e2e8f0;
 
-	--color-text: #1f2937;
-	--color-text-secondary: #4b5563;
+	--color-text: #1e293b;
+	--color-text-secondary: #475569;
 
-	--color-success: #15803d;
-	--color-success-bg: #dcfce7;
-	--color-danger: #b91c1c;
-	--color-danger-bg: #fee2e2;
+	--color-success: #047857;
+	--color-success-bg: #ecfdf5;
+	--color-danger: #be123c;
+	--color-danger-bg: #fff1f2;
 
 	--color-focus-ring: #4f46e5;
+
+	/* The word card is the one surface that gets a tinted background
+	   (per 60-30-10: neutrals dominate, the accent hue shows up deliberately
+	   on the single most important element) rather than plain white/surface. */
+	--color-word-card-bg: #eef2ff;
+	--color-word-card-border: #c7d2fe;
 
 	--space-1: 0.25rem;
 	--space-2: 0.5rem;
@@ -45,19 +57,22 @@
 		--color-accent-hover: #a5b4fc;
 		--color-accent-contrast: #1e1b4b;
 
-		--color-bg: #18181b;
-		--color-surface: #27272a;
-		--color-border: #3f3f46;
+		--color-bg: #0f172a;
+		--color-surface: #1e293b;
+		--color-border: #334155;
 
-		--color-text: #f4f4f5;
-		--color-text-secondary: #d4d4d8;
+		--color-text: #f8fafc;
+		--color-text-secondary: #cbd5e1;
 
-		--color-success: #4ade80;
-		--color-success-bg: #14532d;
-		--color-danger: #f87171;
-		--color-danger-bg: #7f1d1d;
+		--color-success: #34d399;
+		--color-success-bg: #022c22;
+		--color-danger: #fb7185;
+		--color-danger-bg: #4c0519;
 
 		--color-focus-ring: #a5b4fc;
+
+		--color-word-card-bg: #312e81;
+		--color-word-card-border: #4338ca;
 
 		color-scheme: dark;
 	}
@@ -160,7 +175,6 @@ button:disabled {
 input[type='text'],
 input[type='password'] {
 	width: 100%;
-	max-width: 20rem;
 	padding: var(--space-2) var(--space-3);
 }
 
@@ -202,8 +216,8 @@ input[type='password'] {
 
 .word-block {
 	position: relative;
-	background: var(--color-surface);
-	border: 1px solid var(--color-border);
+	background: var(--color-word-card-bg);
+	border: 1px solid var(--color-word-card-border);
 	border-radius: var(--radius-lg);
 	box-shadow: var(--shadow-card);
 	padding: var(--space-8) var(--space-5) var(--space-6);
@@ -219,7 +233,7 @@ input[type='password'] {
 	font-size: var(--font-size-tiny);
 	font-weight: 600;
 	color: var(--color-text-secondary);
-	background: var(--color-bg);
+	background: var(--color-surface);
 	border: 1px solid var(--color-border);
 	border-radius: 999px;
 	padding: 0.15rem 0.65rem;
