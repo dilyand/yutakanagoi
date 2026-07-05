@@ -5,10 +5,13 @@ import { requireAppSecret } from '$lib/server/require-app-secret';
 import { createServiceClient } from '$lib/server/supabase';
 import { createWordList, ListNameConflictError } from '$lib/server/user-list-repository';
 
+// The reference 2000-word list tops out at 18 chars/word, so 50/3000 leaves
+// generous headroom while still bounding what ends up in every drill prompt
+// for this list (see claude-evaluate.ts).
 const RequestSchema = z.object({
 	userId: z.number().int(),
 	name: z.string().min(1),
-	words: z.array(z.string())
+	words: z.array(z.string().max(50)).max(3000)
 });
 
 // List name = the uploaded filename, per the app's convention. Re-uploading a
