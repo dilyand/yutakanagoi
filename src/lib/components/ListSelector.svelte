@@ -73,32 +73,34 @@
 </script>
 
 {#if status === 'loading'}
-	<p>Loading lists…</p>
+	<p><span class="spinner" aria-hidden="true"></span>Loading lists…</p>
 {:else if status === 'error'}
 	<p class="error">{errorMessage}</p>
 {:else}
-	{#if lists.length === 0}
-		<p>You don't have any word lists yet — upload one to get started.</p>
-	{:else}
-		<label>
-			Word list:
-			<select onchange={handleChange}>
-				<option value="" disabled selected>Choose a list</option>
-				{#each lists as list (list.id)}
-					<option value={list.id}>{list.name}</option>
-				{/each}
-			</select>
-		</label>
-	{/if}
+	<div class="card">
+		{#if lists.length === 0}
+			<p>You don't have any word lists yet — upload one to get started.</p>
+		{:else}
+			<label class="field">
+				<span>Word list:</span>
+				<select onchange={handleChange}>
+					<option value="" disabled selected>Choose a list</option>
+					{#each lists as list (list.id)}
+						<option value={list.id}>{list.name}</option>
+					{/each}
+				</select>
+			</label>
+		{/if}
 
-	<label class="upload">
-		Upload a new list
-		<input type="file" accept=".txt,.md" onchange={handleFileUpload} disabled={uploading} />
-	</label>
-	{#if uploading}
-		<p>Uploading…</p>
-	{/if}
-	{#if uploadError}
-		<p class="error">{uploadError}</p>
-	{/if}
+		<label class="field">
+			<span>Upload a new list</span>
+			<input type="file" accept=".txt,.md" onchange={handleFileUpload} disabled={uploading} />
+		</label>
+		{#if uploading}
+			<p><span class="spinner" aria-hidden="true"></span>Uploading…</p>
+		{/if}
+		{#if uploadError}
+			<p class="error">{uploadError}</p>
+		{/if}
+	</div>
 {/if}

@@ -1,3 +1,68 @@
+:root {
+	--color-accent: #4f46e5;
+	--color-accent-hover: #4338ca;
+	--color-accent-contrast: #ffffff;
+
+	--color-bg: #f4f4f5;
+	--color-surface: #ffffff;
+	--color-border: #d1d5db;
+
+	--color-text: #1f2937;
+	--color-text-secondary: #4b5563;
+
+	--color-success: #15803d;
+	--color-success-bg: #dcfce7;
+	--color-danger: #b91c1c;
+	--color-danger-bg: #fee2e2;
+
+	--color-focus-ring: #4f46e5;
+
+	--space-1: 0.25rem;
+	--space-2: 0.5rem;
+	--space-3: 0.75rem;
+	--space-4: 1rem;
+	--space-5: 1.5rem;
+	--space-6: 2rem;
+	--space-8: 3rem;
+
+	/* Relative units so these keep composing with --app-font-size, not fixed px */
+	--font-size-word: 2.5em;
+	--font-size-word-weight: 700;
+	--font-size-small: 0.9rem;
+	--font-size-tiny: 0.8rem;
+
+	--radius-md: 0.5rem;
+	--radius-lg: 0.75rem;
+	--shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+	--tap-target-min: 44px;
+
+	color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--color-accent: #818cf8;
+		--color-accent-hover: #a5b4fc;
+		--color-accent-contrast: #1e1b4b;
+
+		--color-bg: #18181b;
+		--color-surface: #27272a;
+		--color-border: #3f3f46;
+
+		--color-text: #f4f4f5;
+		--color-text-secondary: #d4d4d8;
+
+		--color-success: #4ade80;
+		--color-success-bg: #14532d;
+		--color-danger: #f87171;
+		--color-danger-bg: #7f1d1d;
+
+		--color-focus-ring: #a5b4fc;
+
+		color-scheme: dark;
+	}
+}
+
 html {
 	box-sizing: border-box;
 }
@@ -8,8 +73,17 @@ html {
 	box-sizing: inherit;
 }
 
+html,
+body {
+	height: 100%;
+}
+
 body {
 	margin: 0;
+	display: flex;
+	flex-direction: column;
+	min-height: 100vh;
+	min-height: 100dvh;
 	/* A sans-serif (gothic) stack reads better than a mincho/serif face at the
 	   small sizes and low-DPI-relative-to-desktop conditions mobile screens
 	   impose, for both the Japanese prompts and the English UI text. */
@@ -18,80 +92,226 @@ body {
 	/* User-adjustable via FontSizeControl.svelte, which sets this custom
 	   property; 18px is the same default as before that control existed. */
 	font-size: var(--app-font-size, 18px);
-	background: #f4f4f5;
-	color: #1f2937;
+	background: var(--color-bg);
+	color: var(--color-text);
 }
 
 main {
 	max-width: 32rem;
+	width: 100%;
 	margin: 0 auto;
-	padding: 1rem;
+	padding: var(--space-4);
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: var(--space-4);
 }
 
 p {
 	overflow-wrap: break-word;
 }
 
-input,
-button {
+:focus-visible {
+	outline: 3px solid var(--color-focus-ring);
+	outline-offset: 2px;
+}
+
+button,
+input[type='text'],
+input[type='password'],
+input[type='file'],
+select {
 	font-family: inherit;
 	/* Inputs below 16px trigger iOS Safari's auto-zoom-on-focus, which also
 	   scrolls parts of the page out of view. Inheriting the body size (18px)
 	   keeps inputs comfortably above that threshold. */
 	font-size: inherit;
+	min-height: var(--tap-target-min);
+	border-radius: var(--radius-md);
+	border: 1px solid var(--color-border);
+	background: var(--color-surface);
+	color: var(--color-text);
+}
+
+button {
+	padding: var(--space-3) var(--space-5);
+	cursor: pointer;
+}
+
+button:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
 }
 
 input[type='text'],
 input[type='password'] {
 	width: 100%;
 	max-width: 20rem;
+	padding: var(--space-2) var(--space-3);
+}
+
+.button-primary {
+	background: var(--color-accent);
+	border-color: var(--color-accent);
+	color: var(--color-accent-contrast);
+	font-weight: 600;
+}
+
+.button-primary:hover:not(:disabled) {
+	background: var(--color-accent-hover);
+	border-color: var(--color-accent-hover);
+}
+
+.card {
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-card);
+	padding: var(--space-5);
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-4);
+}
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+.field label,
+.field > span:first-child {
+	font-size: var(--font-size-small);
+	color: var(--color-text-secondary);
+	font-weight: 600;
+}
+
+.answer-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-3);
+	align-items: stretch;
+}
+
+.answer-row input[type='text'] {
+	flex: 1 1 auto;
+}
+
+@media (max-width: 400px) {
+	.answer-row {
+		flex-direction: column;
+	}
+
+	.answer-row button {
+		width: 100%;
+	}
+}
+
+.word-block {
+	display: flex;
+	flex-direction: column;
+}
+
+.prompt-number {
+	font-size: var(--font-size-small);
+	color: var(--color-text-secondary);
+	margin: 0 0 var(--space-1);
+}
+
+.word {
+	font-size: var(--font-size-word);
+	font-weight: var(--font-size-word-weight);
+	color: var(--color-text);
+	line-height: 1.2;
+	margin: var(--space-2) 0 var(--space-5);
+	word-break: break-word;
+}
+
+.feedback-card {
+	padding: var(--space-4);
+	border-radius: var(--radius-lg);
+	border: 1px solid var(--color-border);
+	margin: 0;
+}
+
+.feedback-card--correct {
+	background: var(--color-success-bg);
+	border-color: var(--color-success);
+	color: var(--color-text);
+}
+
+.feedback-card--incorrect {
+	background: var(--color-danger-bg);
+	border-color: var(--color-danger);
+	color: var(--color-text);
+}
+
+.feedback-card__icon {
+	font-weight: 700;
+	margin-right: var(--space-2);
+}
+
+.spinner {
+	display: inline-block;
+	width: 1em;
+	height: 1em;
+	border: 2px solid currentColor;
+	border-right-color: transparent;
+	border-radius: 50%;
+	animation: spin 0.6s linear infinite;
+	margin-right: var(--space-2);
+	vertical-align: -0.15em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.spinner {
+		animation: none;
+	}
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
 }
 
 .subtitle {
-	color: #6b7280;
-	font-size: 0.9rem;
+	color: var(--color-text-secondary);
+	font-size: var(--font-size-small);
+}
+
+.error {
+	color: var(--color-danger);
+	font-weight: 600;
 }
 
 .cancel {
-	margin-top: 2rem;
+	margin-top: var(--space-6);
 }
 
 .cancel button {
-	font-size: 0.8rem;
-	color: #6b7280;
 	background: none;
-	border: none;
-	padding: 0;
+	border-color: transparent;
+	color: var(--color-text-secondary);
 	text-decoration: underline;
+	font-weight: 400;
 }
 
 .font-size-control {
 	display: flex;
 	justify-content: flex-end;
-	gap: 0.5rem;
-	margin-bottom: 1rem;
+	gap: var(--space-2);
+	margin-bottom: var(--space-4);
 }
 
 .font-size-control button {
-	font-size: 0.8rem;
-	color: #6b7280;
-	background: none;
-	border: 1px solid #d1d5db;
-	border-radius: 0.25rem;
-	padding: 0.25rem 0.5rem;
-}
-
-.font-size-control button:disabled {
-	opacity: 0.4;
-}
-
-.upload {
-	display: block;
-	margin-top: 1.5rem;
+	min-width: var(--tap-target-min);
+	font-weight: 600;
 }
 
 .version {
-	color: #9ca3af;
+	color: var(--color-text-secondary);
 	font-size: 0.6em;
 	font-weight: normal;
 	vertical-align: middle;

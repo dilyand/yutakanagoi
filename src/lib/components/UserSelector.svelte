@@ -53,17 +53,19 @@
 </script>
 
 {#if status === 'loading'}
-	<p>Loading users…</p>
+	<p><span class="spinner" aria-hidden="true"></span>Loading users…</p>
 {:else if status === 'error'}
 	<p class="error">{errorMessage}</p>
 {:else}
-	<label>
-		User:
-		<select onchange={handleChange}>
-			<option value="" disabled selected>Choose a user</option>
-			{#each users as user (user.id)}
-				<option value={user.id}>{user.username}</option>
-			{/each}
-		</select>
-	</label>
+	<div class="card">
+		<label class="field">
+			<span>User:</span>
+			<select onchange={handleChange}>
+				<option value="" disabled selected>Choose a user</option>
+				{#each users as user (user.id)}
+					<option value={user.id}>{user.username}</option>
+				{/each}
+			</select>
+		</label>
+	</div>
 {/if}

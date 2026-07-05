@@ -202,48 +202,65 @@
 		/>
 	{:else if phase === 'idle' || phase === 'starting'}
 		<p class="subtitle">{selectedUsername} · {selectedListName}</p>
-		<button onclick={start} disabled={phase === 'starting'}>
+		<button class="button-primary" onclick={start} disabled={phase === 'starting'}>
+			{#if phase === 'starting'}<span class="spinner" aria-hidden="true"></span>{/if}
 			{phase === 'starting' ? 'Starting…' : 'Start session'}
 		</button>
 		<p class="cancel"><button onclick={chooseNewList}>Choose a different list</button></p>
 	{:else if phase === 'done'}
 		<p>{wasCancelled ? 'Session cancelled — progress saved.' : 'Session complete.'}</p>
-		<button onclick={start}>Start another session</button>
+		<button class="button-primary" onclick={start}>Start another session</button>
 		<button onclick={chooseNewList}>Choose a different list</button>
 	{:else if currentItem}
-		<p class="prompt-number">{promptNumber}.</p>
-		<p class="word">{currentItem.word}</p>
+		<div class="word-block">
+			<p class="prompt-number">{promptNumber}.</p>
+			<p class="word">{currentItem.word}</p>
+		</div>
 
 		{#if phase === 'guessing' || phase === 'grading'}
-			<input
-				type="text"
-				bind:value={answerInput}
-				disabled={phase === 'grading'}
-				onkeydown={(e) => e.key === 'Enter' && phase === 'guessing' && submitAnswer()}
-			/>
-			<button onclick={submitAnswer} disabled={phase === 'grading'}>
-				{phase === 'grading' ? 'Grading…' : 'Submit'}
-			</button>
-		{:else if phase === 'correct'}
-			<p>{gradeExplanation}</p>
-			<button onclick={next}>Next</button>
-		{:else if phase === 'incorrect' || phase === 'sentence-grading'}
-			<p>{wordMeaning}</p>
-			<label>
-				Write a sentence using this word:
+			<div class="answer-row">
 				<input
 					type="text"
-					bind:value={sentenceInput}
-					disabled={phase === 'sentence-grading'}
-					onkeydown={(e) => e.key === 'Enter' && phase === 'incorrect' && submitSentence()}
+					bind:value={answerInput}
+					disabled={phase === 'grading'}
+					onkeydown={(e) => e.key === 'Enter' && phase === 'guessing' && submitAnswer()}
 				/>
-			</label>
-			<button onclick={submitSentence} disabled={phase === 'sentence-grading'}>
-				{phase === 'sentence-grading' ? 'Grading…' : 'Submit'}
-			</button>
+				<button class="button-primary" onclick={submitAnswer} disabled={phase === 'grading'}>
+					{#if phase === 'grading'}<span class="spinner" aria-hidden="true"></span>{/if}
+					{phase === 'grading' ? 'Grading…' : 'Submit'}
+				</button>
+			</div>
+		{:else if phase === 'correct'}
+			<div class="feedback-card feedback-card--correct">
+				<span class="feedback-card__icon" aria-hidden="true">✓</span>{gradeExplanation}
+			</div>
+			<button class="button-primary" onclick={next}>Next</button>
+		{:else if phase === 'incorrect' || phase === 'sentence-grading'}
+			<div class="feedback-card feedback-card--incorrect">
+				<span class="feedback-card__icon" aria-hidden="true">✕</span>{wordMeaning}
+			</div>
+			<div class="field">
+				<span>Write a sentence using this word:</span>
+				<div class="answer-row">
+					<input
+						type="text"
+						bind:value={sentenceInput}
+						disabled={phase === 'sentence-grading'}
+						onkeydown={(e) => e.key === 'Enter' && phase === 'incorrect' && submitSentence()}
+					/>
+					<button
+						class="button-primary"
+						onclick={submitSentence}
+						disabled={phase === 'sentence-grading'}
+					>
+						{#if phase === 'sentence-grading'}<span class="spinner" aria-hidden="true"></span>{/if}
+						{phase === 'sentence-grading' ? 'Grading…' : 'Submit'}
+					</button>
+				</div>
+			</div>
 		{:else if phase === 'sentence-feedback'}
-			<p>{sentenceFeedback}</p>
-			<button onclick={next}>Next</button>
+			<div class="feedback-card">{sentenceFeedback}</div>
+			<button class="button-primary" onclick={next}>Next</button>
 		{/if}
 
 		{#if phase === 'guessing' || phase === 'correct' || phase === 'incorrect' || phase === 'sentence-feedback'}
@@ -252,7 +269,7 @@
 	{/if}
 
 	{#if phase === 'completing'}
-		<p>Saving…</p>
+		<p><span class="spinner" aria-hidden="true"></span>Saving…</p>
 	{/if}
 
 	{#if errorMessage}

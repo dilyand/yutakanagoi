@@ -64,20 +64,23 @@
 	{@render children()}
 {:else if gateStatus === 'locked'}
 	<main>
-		<label>
-			Passphrase:
-			<input
-				type="password"
-				bind:value={passphraseInput}
-				disabled={verifying}
-				onkeydown={(e) => e.key === 'Enter' && submitPassphrase()}
-			/>
-		</label>
-		<button onclick={submitPassphrase} disabled={verifying}>
-			{verifying ? 'Checking…' : 'Unlock'}
-		</button>
-		{#if errorMessage}
-			<p class="error">{errorMessage}</p>
-		{/if}
+		<div class="card">
+			<label class="field">
+				<span>Passphrase:</span>
+				<input
+					type="password"
+					bind:value={passphraseInput}
+					disabled={verifying}
+					onkeydown={(e) => e.key === 'Enter' && submitPassphrase()}
+				/>
+			</label>
+			<button class="button-primary" onclick={submitPassphrase} disabled={verifying}>
+				{#if verifying}<span class="spinner" aria-hidden="true"></span>{/if}
+				{verifying ? 'Checking…' : 'Unlock'}
+			</button>
+			{#if errorMessage}
+				<p class="error">{errorMessage}</p>
+			{/if}
+		</div>
 	</main>
 {/if}
