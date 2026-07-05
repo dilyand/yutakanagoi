@@ -7,6 +7,14 @@
 	import FontSizeControl from '$lib/components/FontSizeControl.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
+	// The year of the project's first commit — never changes. See CLAUDE.md:
+	// the footer's copyright range is self-maintaining (this constant plus the
+	// current year computed below), not something to hand-update per release.
+	const FOUNDING_YEAR = 2026;
+	const currentYear = new Date().getFullYear();
+	const copyrightYears =
+		currentYear > FOUNDING_YEAR ? `${FOUNDING_YEAR}–${currentYear}` : `${FOUNDING_YEAR}`;
+
 	type Phase =
 		| 'idle'
 		| 'starting'
@@ -294,5 +302,7 @@
 		{/if}
 	</div>
 
-	<footer class="app-footer">Yutakanagoi <span class="version">v{__APP_VERSION__}</span></footer>
+	<footer class="app-footer">
+		Yutakanagoi <span class="version">v{__APP_VERSION__}</span> · © {copyrightYears} Dilyan Damyanov
+	</footer>
 </main>

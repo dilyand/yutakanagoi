@@ -60,6 +60,14 @@ Useful context for working in this repo:
   of 0.3.0) — merging is a manual judgment call, not gated by CI, so don't
   treat an open PR as "safe to merge" just because checks are green; actually
   look at the preview before merging.
+- The footer (`src/routes/+page.svelte`, rendered last inside `<main>`) is
+  self-maintaining — don't hand-edit it per release. The version comes from
+  `__APP_VERSION__` (package.json, already bumped every release per existing
+  convention). The copyright range is `FOUNDING_YEAR` (2026, the year of the
+  first commit — a fixed historical fact, never change it) combined with
+  `new Date().getFullYear()` computed at render time, so it silently becomes
+  "2026–2027" etc. on its own once a new year starts. Nothing here needs a
+  manual touch at release time.
 
 ---
 
