@@ -183,7 +183,6 @@
 
 <main>
 	<FontSizeControl />
-	<h1>Yutakanagoi <span class="version">v{__APP_VERSION__}</span></h1>
 
 	{#if selectedUserId === null}
 		<UserSelector
@@ -275,4 +274,6 @@
 	{#if errorMessage}
 		<p class="error">{errorMessage}</p>
 	{/if}
+
+	<footer class="app-footer">Yutakanagoi <span class="version">v{__APP_VERSION__}</span></footer>
 </main>
