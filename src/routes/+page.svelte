@@ -223,37 +223,46 @@
 			<button class="button-primary" onclick={start}>Start another session</button>
 			<button onclick={chooseNewList}>Choose a different list</button>
 		{:else if currentItem}
-			{#if phase === 'guessing' || phase === 'grading'}
-				<div class="answer-row">
-					<input
-						type="text"
-						bind:value={answerInput}
-						disabled={phase === 'grading'}
-						onkeydown={(e) => e.key === 'Enter' && phase === 'guessing' && submitAnswer()}
-					/>
-					<button class="button-primary" onclick={submitAnswer} disabled={phase === 'grading'}>
-						{#if phase === 'grading'}<span class="spinner" aria-hidden="true"></span>{/if}
-						{phase === 'grading' ? 'Grading…' : 'Submit'}
-					</button>
-				</div>
-			{:else if phase === 'correct'}
-				<div class="feedback-card feedback-card--correct">
-					<span class="feedback-card__icon" aria-hidden="true">✓</span>{gradeExplanation}
-				</div>
-				<button class="button-primary" onclick={next}>Next</button>
-			{:else if phase === 'incorrect' || phase === 'sentence-grading'}
-				<div class="feedback-card feedback-card--incorrect">
-					<span class="feedback-card__icon" aria-hidden="true">✕</span>{wordMeaning}
-				</div>
-				<div class="field">
-					<span>Write a sentence using this word:</span>
-					<div class="answer-row">
+			<div class="interaction">
+				<div class="interaction__middle">
+					{#if phase === 'guessing' || phase === 'grading'}
 						<input
 							type="text"
-							bind:value={sentenceInput}
-							disabled={phase === 'sentence-grading'}
-							onkeydown={(e) => e.key === 'Enter' && phase === 'incorrect' && submitSentence()}
+							bind:value={answerInput}
+							disabled={phase === 'grading'}
+							onkeydown={(e) => e.key === 'Enter' && phase === 'guessing' && submitAnswer()}
 						/>
+					{:else if phase === 'correct'}
+						<div class="feedback-card feedback-card--correct">
+							<span class="feedback-card__icon" aria-hidden="true">✓</span>{gradeExplanation}
+						</div>
+					{:else if phase === 'incorrect' || phase === 'sentence-grading'}
+						<div class="feedback-card feedback-card--incorrect">
+							<span class="feedback-card__icon" aria-hidden="true">✕</span>{wordMeaning}
+						</div>
+						<div class="field">
+							<span>Write a sentence using this word:</span>
+							<input
+								type="text"
+								bind:value={sentenceInput}
+								disabled={phase === 'sentence-grading'}
+								onkeydown={(e) => e.key === 'Enter' && phase === 'incorrect' && submitSentence()}
+							/>
+						</div>
+					{:else if phase === 'sentence-feedback'}
+						<div class="feedback-card">{sentenceFeedback}</div>
+					{/if}
+				</div>
+
+				<div class="interaction__actions">
+					{#if phase === 'guessing' || phase === 'grading'}
+						<button class="button-primary" onclick={submitAnswer} disabled={phase === 'grading'}>
+							{#if phase === 'grading'}<span class="spinner" aria-hidden="true"></span>{/if}
+							{phase === 'grading' ? 'Grading…' : 'Submit'}
+						</button>
+					{:else if phase === 'correct'}
+						<button class="button-primary" onclick={next}>Next</button>
+					{:else if phase === 'incorrect' || phase === 'sentence-grading'}
 						<button
 							class="button-primary"
 							onclick={submitSentence}
@@ -263,16 +272,15 @@
 								></span>{/if}
 							{phase === 'sentence-grading' ? 'Grading…' : 'Submit'}
 						</button>
-					</div>
-				</div>
-			{:else if phase === 'sentence-feedback'}
-				<div class="feedback-card">{sentenceFeedback}</div>
-				<button class="button-primary" onclick={next}>Next</button>
-			{/if}
+					{:else if phase === 'sentence-feedback'}
+						<button class="button-primary" onclick={next}>Next</button>
+					{/if}
 
-			{#if phase === 'guessing' || phase === 'correct' || phase === 'incorrect' || phase === 'sentence-feedback'}
-				<p class="cancel"><button onclick={cancelSession}>Cancel session</button></p>
-			{/if}
+					{#if phase === 'guessing' || phase === 'correct' || phase === 'incorrect' || phase === 'sentence-feedback'}
+						<p class="cancel"><button onclick={cancelSession}>Cancel session</button></p>
+					{/if}
+				</div>
+			</div>
 		{/if}
 
 		{#if phase === 'completing'}

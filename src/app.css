@@ -200,43 +200,29 @@ input[type='password'] {
 	font-weight: 600;
 }
 
-.answer-row {
-	display: flex;
-	flex-wrap: wrap;
-	gap: var(--space-3);
-	align-items: stretch;
-}
-
-.answer-row input[type='text'] {
-	flex: 1 1 auto;
-}
-
-@media (max-width: 400px) {
-	.answer-row {
-		flex-direction: column;
-	}
-
-	.answer-row button {
-		width: 100%;
-	}
-}
-
 .word-block {
+	position: relative;
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-card);
+	padding: var(--space-8) var(--space-5) var(--space-6);
 	display: flex;
 	flex-direction: column;
+	align-items: center;
 }
 
 .prompt-number {
-	display: inline-block;
-	align-self: flex-start;
+	position: absolute;
+	top: var(--space-3);
+	left: var(--space-3);
 	font-size: var(--font-size-tiny);
 	font-weight: 600;
 	color: var(--color-text-secondary);
-	background: var(--color-surface);
+	background: var(--color-bg);
 	border: 1px solid var(--color-border);
 	border-radius: 999px;
 	padding: 0.15rem 0.65rem;
-	margin: 0 0 var(--space-3);
 }
 
 .word {
@@ -244,8 +230,32 @@ input[type='password'] {
 	font-weight: var(--font-size-word-weight);
 	color: var(--color-text);
 	line-height: 1.2;
-	margin: var(--space-2) 0 var(--space-5);
+	margin: 0;
+	text-align: center;
 	word-break: break-word;
+}
+
+.interaction {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+
+.interaction__middle {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: var(--space-4);
+	min-height: 0;
+}
+
+.interaction__actions {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
+	padding-top: var(--space-4);
 }
 
 .feedback-card {
@@ -304,10 +314,6 @@ input[type='password'] {
 .error {
 	color: var(--color-danger);
 	font-weight: 600;
-}
-
-.cancel {
-	margin-top: var(--space-6);
 }
 
 .cancel button {
