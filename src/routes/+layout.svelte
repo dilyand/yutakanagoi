@@ -1,14 +1,15 @@
 <script lang="ts">
 	import '../app.css';
-	import favicon from '$lib/assets/favicon.svg';
 	import { browser } from '$app/environment';
 	import PassphraseGate from '$lib/components/PassphraseGate.svelte';
 	import { applyStoredFontSize } from '$lib/client/font-size';
+	import { applyStoredTheme } from '$lib/client/theme';
 
 	let { children } = $props();
 
 	if (browser) {
 		applyStoredFontSize();
+		applyStoredTheme();
 
 		import('virtual:pwa-register/svelte').then(({ useRegisterSW }) => {
 			useRegisterSW({ immediate: true });
@@ -17,7 +18,7 @@
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
+	<link rel="icon" type="image/png" href="/icons/icon-192.png" />
 </svelte:head>
 
 <PassphraseGate>

@@ -1,3 +1,120 @@
+:root {
+	/* Indigo stays the sole accent (it's the app icon's color); every other
+	   hue is chosen to sit next to it deliberately rather than being generic
+	   gray + primary-color: neutrals lean the same cool/violet direction as
+	   the accent (Tailwind's "slate" family, not a hueless gray), and the
+	   semantic colors (emerald/rose) are jewel-tones from the same family of
+	   scales as indigo, rather than bootstrap-y flat green/red. */
+	--color-accent: #4f46e5;
+	--color-accent-hover: #4338ca;
+	--color-accent-contrast: #ffffff;
+
+	--color-bg: #f1f5f9;
+	--color-surface: #ffffff;
+	--color-border: #e2e8f0;
+	/* Decorative borders (cards) stay subtle since shadow carries their edge;
+	   interactive controls need a border that actually reads against a white
+	   surface (e2e8f0-on-white is ~1.2:1 -- effectively invisible) so they
+	   don't disappear into the page. */
+	--color-border-strong: #64748b;
+
+	--color-text: #1e293b;
+	--color-text-secondary: #475569;
+
+	--color-success: #047857;
+	--color-success-bg: #ecfdf5;
+	--color-danger: #be123c;
+	--color-danger-bg: #fff1f2;
+
+	--color-focus-ring: #4f46e5;
+
+	/* The word card is the one surface that gets a tinted background
+	   (per 60-30-10: neutrals dominate, the accent hue shows up deliberately
+	   on the single most important element) rather than plain white/surface. */
+	--color-word-card-bg: #eef2ff;
+	--color-word-card-border: #c7d2fe;
+
+	--space-1: 0.25rem;
+	--space-2: 0.5rem;
+	--space-3: 0.75rem;
+	--space-4: 1rem;
+	--space-5: 1.5rem;
+	--space-6: 2rem;
+	--space-8: 3rem;
+
+	/* Relative units so these keep composing with --app-font-size, not fixed px */
+	--font-size-word: 2.5em;
+	--font-size-word-weight: 700;
+	--font-size-small: 0.9rem;
+	--font-size-tiny: 0.8rem;
+
+	--radius-md: 0.5rem;
+	--radius-lg: 0.75rem;
+	--shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+	--tap-target-min: 44px;
+
+	color-scheme: light;
+}
+
+/* Both blocks below carry the same dark values: the media query drives dark
+   mode by default when the OS prefers it, and the attribute rule lets the
+   ThemeToggle button (src/lib/components/ThemeToggle.svelte) force dark
+   regardless of OS preference. `:not([data-theme='light'])` on the media
+   query lets an explicit light override win even when the OS prefers dark. */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--color-accent: #818cf8;
+		--color-accent-hover: #a5b4fc;
+		--color-accent-contrast: #1e1b4b;
+
+		--color-bg: #0f172a;
+		--color-surface: #1e293b;
+		--color-border: #334155;
+		--color-border-strong: #94a3b8;
+
+		--color-text: #f8fafc;
+		--color-text-secondary: #cbd5e1;
+
+		--color-success: #34d399;
+		--color-success-bg: #022c22;
+		--color-danger: #fb7185;
+		--color-danger-bg: #4c0519;
+
+		--color-focus-ring: #a5b4fc;
+
+		--color-word-card-bg: #312e81;
+		--color-word-card-border: #4338ca;
+
+		color-scheme: dark;
+	}
+}
+
+:root[data-theme='dark'] {
+	--color-accent: #818cf8;
+	--color-accent-hover: #a5b4fc;
+	--color-accent-contrast: #1e1b4b;
+
+	--color-bg: #0f172a;
+	--color-surface: #1e293b;
+	--color-border: #334155;
+	--color-border-strong: #94a3b8;
+
+	--color-text: #f8fafc;
+	--color-text-secondary: #cbd5e1;
+
+	--color-success: #34d399;
+	--color-success-bg: #022c22;
+	--color-danger: #fb7185;
+	--color-danger-bg: #4c0519;
+
+	--color-focus-ring: #a5b4fc;
+
+	--color-word-card-bg: #312e81;
+	--color-word-card-border: #4338ca;
+
+	color-scheme: dark;
+}
+
 html {
 	box-sizing: border-box;
 }
@@ -8,8 +125,17 @@ html {
 	box-sizing: inherit;
 }
 
+html,
+body {
+	height: 100%;
+}
+
 body {
 	margin: 0;
+	display: flex;
+	flex-direction: column;
+	min-height: 100vh;
+	min-height: 100dvh;
 	/* A sans-serif (gothic) stack reads better than a mincho/serif face at the
 	   small sizes and low-DPI-relative-to-desktop conditions mobile screens
 	   impose, for both the Japanese prompts and the English UI text. */
@@ -18,81 +144,274 @@ body {
 	/* User-adjustable via FontSizeControl.svelte, which sets this custom
 	   property; 18px is the same default as before that control existed. */
 	font-size: var(--app-font-size, 18px);
-	background: #f4f4f5;
-	color: #1f2937;
+	background: var(--color-bg);
+	color: var(--color-text);
 }
 
 main {
 	max-width: 32rem;
+	width: 100%;
 	margin: 0 auto;
-	padding: 1rem;
+	padding: var(--space-4);
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-4);
+}
+
+.top-anchor {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-4);
+}
+
+.content-area {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: var(--space-4);
 }
 
 p {
 	overflow-wrap: break-word;
 }
 
-input,
-button {
+:focus-visible {
+	outline: 3px solid var(--color-focus-ring);
+	outline-offset: 2px;
+}
+
+button,
+input[type='text'],
+input[type='password'],
+input[type='file'],
+select {
 	font-family: inherit;
 	/* Inputs below 16px trigger iOS Safari's auto-zoom-on-focus, which also
 	   scrolls parts of the page out of view. Inheriting the body size (18px)
 	   keeps inputs comfortably above that threshold. */
 	font-size: inherit;
+	min-height: var(--tap-target-min);
+	border-radius: var(--radius-md);
+	border: 1px solid var(--color-border-strong);
+	background: var(--color-surface);
+	color: var(--color-text);
+}
+
+button {
+	padding: var(--space-3) var(--space-5);
+	cursor: pointer;
+}
+
+button:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
 }
 
 input[type='text'],
 input[type='password'] {
 	width: 100%;
-	max-width: 20rem;
+	padding: var(--space-2) var(--space-3);
+}
+
+.button-primary {
+	background: var(--color-accent);
+	border-color: var(--color-accent);
+	color: var(--color-accent-contrast);
+	font-weight: 600;
+}
+
+.button-primary:hover:not(:disabled) {
+	background: var(--color-accent-hover);
+	border-color: var(--color-accent-hover);
+}
+
+.card {
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-card);
+	padding: var(--space-5);
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-4);
+}
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+.field label,
+.field > span:first-child {
+	font-size: var(--font-size-small);
+	color: var(--color-text-secondary);
+	font-weight: 600;
+}
+
+.word-block {
+	position: relative;
+	background: var(--color-word-card-bg);
+	border: 1px solid var(--color-word-card-border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-card);
+	padding: var(--space-8) var(--space-5) var(--space-6);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+}
+
+.prompt-number {
+	position: absolute;
+	top: var(--space-3);
+	left: var(--space-3);
+	font-size: var(--font-size-tiny);
+	font-weight: 600;
+	color: var(--color-text-secondary);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: 999px;
+	padding: 0.15rem 0.65rem;
+}
+
+.word {
+	font-size: var(--font-size-word);
+	font-weight: var(--font-size-word-weight);
+	color: var(--color-text);
+	line-height: 1.2;
+	margin: 0;
+	text-align: center;
+	word-break: break-word;
+}
+
+.interaction {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+
+.interaction__middle {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: var(--space-4);
+	min-height: 0;
+}
+
+.interaction__actions {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
+	padding-top: var(--space-4);
+}
+
+.feedback-card {
+	padding: var(--space-4);
+	border-radius: var(--radius-lg);
+	border: 1px solid var(--color-border);
+	margin: 0;
+}
+
+.feedback-card--correct {
+	background: var(--color-success-bg);
+	border-color: var(--color-success);
+	color: var(--color-text);
+}
+
+.feedback-card--incorrect {
+	background: var(--color-danger-bg);
+	border-color: var(--color-danger);
+	color: var(--color-text);
+}
+
+.feedback-card__icon {
+	font-weight: 700;
+	margin-right: var(--space-2);
+}
+
+.spinner {
+	display: inline-block;
+	width: 1em;
+	height: 1em;
+	border: 2px solid currentColor;
+	border-right-color: transparent;
+	border-radius: 50%;
+	animation: spin 0.6s linear infinite;
+	margin-right: var(--space-2);
+	vertical-align: -0.15em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.spinner {
+		animation: none;
+	}
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
 }
 
 .subtitle {
-	color: #6b7280;
-	font-size: 0.9rem;
+	color: var(--color-text-secondary);
+	font-size: var(--font-size-small);
 }
 
-.cancel {
-	margin-top: 2rem;
+.error {
+	color: var(--color-danger);
+	font-weight: 600;
 }
 
 .cancel button {
-	font-size: 0.8rem;
-	color: #6b7280;
 	background: none;
-	border: none;
-	padding: 0;
+	border-color: transparent;
+	color: var(--color-text-secondary);
 	text-decoration: underline;
+	font-weight: 400;
+}
+
+.controls-row {
+	display: flex;
+	justify-content: flex-end;
+	align-items: center;
+	gap: var(--space-2);
+	margin-bottom: var(--space-4);
 }
 
 .font-size-control {
 	display: flex;
-	justify-content: flex-end;
-	gap: 0.5rem;
-	margin-bottom: 1rem;
+	gap: var(--space-2);
 }
 
 .font-size-control button {
-	font-size: 0.8rem;
-	color: #6b7280;
-	background: none;
-	border: 1px solid #d1d5db;
-	border-radius: 0.25rem;
-	padding: 0.25rem 0.5rem;
+	min-width: var(--tap-target-min);
+	font-weight: 600;
 }
 
-.font-size-control button:disabled {
-	opacity: 0.4;
+.theme-toggle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--tap-target-min);
+	padding: var(--space-2);
 }
 
-.upload {
-	display: block;
-	margin-top: 1.5rem;
+.app-footer {
+	margin-top: auto;
+	padding-top: var(--space-4);
+	text-align: center;
+	font-size: var(--font-size-tiny);
+	color: var(--color-text-secondary);
 }
 
 .version {
-	color: #9ca3af;
-	font-size: 0.6em;
+	color: var(--color-text-secondary);
+	font-size: 0.85em;
 	font-weight: normal;
 	vertical-align: middle;
 }
