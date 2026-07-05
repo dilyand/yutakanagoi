@@ -104,6 +104,19 @@ main {
 	flex: 1 1 auto;
 	display: flex;
 	flex-direction: column;
+	gap: var(--space-4);
+}
+
+.top-anchor {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-4);
+}
+
+.content-area {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
 	justify-content: center;
 	gap: var(--space-4);
 }

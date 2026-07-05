@@ -51,6 +51,9 @@
 
 	let currentItem = $derived<DrillItem | undefined>(drillItems[currentIndex]);
 	let promptNumber = $derived(currentIndex + 1);
+	let showWordBlock = $derived(
+		currentItem !== undefined && phase !== 'idle' && phase !== 'starting' && phase !== 'done'
+	);
 
 	function resetPerWordState() {
 		answerInput = '';
@@ -182,98 +185,104 @@
 </script>
 
 <main>
-	<FontSizeControl />
+	<div class="top-anchor">
+		<FontSizeControl />
+		{#if showWordBlock && currentItem}
+			<div class="word-block">
+				<p class="prompt-number">{promptNumber}.</p>
+				<p class="word">{currentItem.word}</p>
+			</div>
+		{/if}
+	</div>
 
-	{#if selectedUserId === null}
-		<UserSelector
-			onSelect={(id, username) => {
-				selectedUserId = id;
-				selectedUsername = username;
-			}}
-		/>
-	{:else if selectedListId === null}
-		<ListSelector
-			userId={selectedUserId}
-			onSelect={(id, name) => {
-				selectedListId = id;
-				selectedListName = name;
-			}}
-		/>
-	{:else if phase === 'idle' || phase === 'starting'}
-		<p class="subtitle">{selectedUsername} · {selectedListName}</p>
-		<button class="button-primary" onclick={start} disabled={phase === 'starting'}>
-			{#if phase === 'starting'}<span class="spinner" aria-hidden="true"></span>{/if}
-			{phase === 'starting' ? 'Starting…' : 'Start session'}
-		</button>
-		<p class="cancel"><button onclick={chooseNewList}>Choose a different list</button></p>
-	{:else if phase === 'done'}
-		<p>{wasCancelled ? 'Session cancelled — progress saved.' : 'Session complete.'}</p>
-		<button class="button-primary" onclick={start}>Start another session</button>
-		<button onclick={chooseNewList}>Choose a different list</button>
-	{:else if currentItem}
-		<div class="word-block">
-			<p class="prompt-number">{promptNumber}.</p>
-			<p class="word">{currentItem.word}</p>
-		</div>
-
-		{#if phase === 'guessing' || phase === 'grading'}
-			<div class="answer-row">
-				<input
-					type="text"
-					bind:value={answerInput}
-					disabled={phase === 'grading'}
-					onkeydown={(e) => e.key === 'Enter' && phase === 'guessing' && submitAnswer()}
-				/>
-				<button class="button-primary" onclick={submitAnswer} disabled={phase === 'grading'}>
-					{#if phase === 'grading'}<span class="spinner" aria-hidden="true"></span>{/if}
-					{phase === 'grading' ? 'Grading…' : 'Submit'}
-				</button>
-			</div>
-		{:else if phase === 'correct'}
-			<div class="feedback-card feedback-card--correct">
-				<span class="feedback-card__icon" aria-hidden="true">✓</span>{gradeExplanation}
-			</div>
-			<button class="button-primary" onclick={next}>Next</button>
-		{:else if phase === 'incorrect' || phase === 'sentence-grading'}
-			<div class="feedback-card feedback-card--incorrect">
-				<span class="feedback-card__icon" aria-hidden="true">✕</span>{wordMeaning}
-			</div>
-			<div class="field">
-				<span>Write a sentence using this word:</span>
+	<div class="content-area">
+		{#if selectedUserId === null}
+			<UserSelector
+				onSelect={(id, username) => {
+					selectedUserId = id;
+					selectedUsername = username;
+				}}
+			/>
+		{:else if selectedListId === null}
+			<ListSelector
+				userId={selectedUserId}
+				onSelect={(id, name) => {
+					selectedListId = id;
+					selectedListName = name;
+				}}
+			/>
+		{:else if phase === 'idle' || phase === 'starting'}
+			<p class="subtitle">{selectedUsername} · {selectedListName}</p>
+			<button class="button-primary" onclick={start} disabled={phase === 'starting'}>
+				{#if phase === 'starting'}<span class="spinner" aria-hidden="true"></span>{/if}
+				{phase === 'starting' ? 'Starting…' : 'Start session'}
+			</button>
+			<p class="cancel"><button onclick={chooseNewList}>Choose a different list</button></p>
+		{:else if phase === 'done'}
+			<p>{wasCancelled ? 'Session cancelled — progress saved.' : 'Session complete.'}</p>
+			<button class="button-primary" onclick={start}>Start another session</button>
+			<button onclick={chooseNewList}>Choose a different list</button>
+		{:else if currentItem}
+			{#if phase === 'guessing' || phase === 'grading'}
 				<div class="answer-row">
 					<input
 						type="text"
-						bind:value={sentenceInput}
-						disabled={phase === 'sentence-grading'}
-						onkeydown={(e) => e.key === 'Enter' && phase === 'incorrect' && submitSentence()}
+						bind:value={answerInput}
+						disabled={phase === 'grading'}
+						onkeydown={(e) => e.key === 'Enter' && phase === 'guessing' && submitAnswer()}
 					/>
-					<button
-						class="button-primary"
-						onclick={submitSentence}
-						disabled={phase === 'sentence-grading'}
-					>
-						{#if phase === 'sentence-grading'}<span class="spinner" aria-hidden="true"></span>{/if}
-						{phase === 'sentence-grading' ? 'Grading…' : 'Submit'}
+					<button class="button-primary" onclick={submitAnswer} disabled={phase === 'grading'}>
+						{#if phase === 'grading'}<span class="spinner" aria-hidden="true"></span>{/if}
+						{phase === 'grading' ? 'Grading…' : 'Submit'}
 					</button>
 				</div>
-			</div>
-		{:else if phase === 'sentence-feedback'}
-			<div class="feedback-card">{sentenceFeedback}</div>
-			<button class="button-primary" onclick={next}>Next</button>
+			{:else if phase === 'correct'}
+				<div class="feedback-card feedback-card--correct">
+					<span class="feedback-card__icon" aria-hidden="true">✓</span>{gradeExplanation}
+				</div>
+				<button class="button-primary" onclick={next}>Next</button>
+			{:else if phase === 'incorrect' || phase === 'sentence-grading'}
+				<div class="feedback-card feedback-card--incorrect">
+					<span class="feedback-card__icon" aria-hidden="true">✕</span>{wordMeaning}
+				</div>
+				<div class="field">
+					<span>Write a sentence using this word:</span>
+					<div class="answer-row">
+						<input
+							type="text"
+							bind:value={sentenceInput}
+							disabled={phase === 'sentence-grading'}
+							onkeydown={(e) => e.key === 'Enter' && phase === 'incorrect' && submitSentence()}
+						/>
+						<button
+							class="button-primary"
+							onclick={submitSentence}
+							disabled={phase === 'sentence-grading'}
+						>
+							{#if phase === 'sentence-grading'}<span class="spinner" aria-hidden="true"
+								></span>{/if}
+							{phase === 'sentence-grading' ? 'Grading…' : 'Submit'}
+						</button>
+					</div>
+				</div>
+			{:else if phase === 'sentence-feedback'}
+				<div class="feedback-card">{sentenceFeedback}</div>
+				<button class="button-primary" onclick={next}>Next</button>
+			{/if}
+
+			{#if phase === 'guessing' || phase === 'correct' || phase === 'incorrect' || phase === 'sentence-feedback'}
+				<p class="cancel"><button onclick={cancelSession}>Cancel session</button></p>
+			{/if}
 		{/if}
 
-		{#if phase === 'guessing' || phase === 'correct' || phase === 'incorrect' || phase === 'sentence-feedback'}
-			<p class="cancel"><button onclick={cancelSession}>Cancel session</button></p>
+		{#if phase === 'completing'}
+			<p><span class="spinner" aria-hidden="true"></span>Saving…</p>
 		{/if}
-	{/if}
 
-	{#if phase === 'completing'}
-		<p><span class="spinner" aria-hidden="true"></span>Saving…</p>
-	{/if}
-
-	{#if errorMessage}
-		<p class="error">{errorMessage}</p>
-	{/if}
+		{#if errorMessage}
+			<p class="error">{errorMessage}</p>
+		{/if}
+	</div>
 
 	<footer class="app-footer">Yutakanagoi <span class="version">v{__APP_VERSION__}</span></footer>
 </main>
