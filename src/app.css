@@ -375,6 +375,20 @@ input[type='password'] {
 	font-weight: 400;
 }
 
+.lock-button {
+	position: fixed;
+	top: var(--space-2);
+	left: var(--space-2);
+	z-index: 10;
+	background: none;
+	border-color: transparent;
+	color: var(--color-text-secondary);
+	text-decoration: underline;
+	font-weight: 400;
+	font-size: var(--font-size-small);
+	padding: var(--space-2);
+}
+
 .controls-row {
 	display: flex;
 	justify-content: flex-end;
