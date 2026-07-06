@@ -17,7 +17,7 @@ As of 0.2.0 the app is multi-user and multi-list: each user has their own
 private word lists, and progress is scoped per list (not global). Users are
 rows in a `users` table (created out-of-band via `scripts/add-user.ts`, never
 via the UI); their word lists are rows in `word_lists`, with each list's
-words in `list_words`. The `word_state` / `sessions` / `session_attempts`
+words in `list_words`. The `word_state` / `vocab_sessions` / `vocab_session_attempts`
 tables from 0.1.0 are unchanged in shape except each gained a `list_id`
 column — progress is never shared across lists or users, but there is still
 only one shared `APP_SHARED_SECRET` passphrase gating the whole app (no
@@ -35,7 +35,7 @@ Useful context for working in this repo:
   `vocab-state.md` are frozen as of the 0.1.0 cutover. They are **not** read
   or written by the running app and do not reflect current progress — live
   data is in Supabase (`users`, `word_lists`, `list_words`, `word_state`,
-  `sessions`, `session_attempts` tables; schema in `supabase/migrations/`,
+  `vocab_sessions`, `vocab_session_attempts` tables; schema in `supabase/migrations/`,
   notes in `supabase/README.md`). Don't edit these two files expecting it to
   affect the app, and don't treat them as current.
 - Grading, word explanations, and sentence evaluation happen via the Claude
@@ -142,6 +142,15 @@ Useful context for working in this repo:
   differently-behaved persistence pattern on top of the existing
   `UserSelector` (remembers) / `ListSelector` (doesn't) split would make
   that inconsistency worse, not better. Revisit once activity #2 exists.
+- **1.2.0**: prep work ahead of activity #2 (conjugation drills). Renamed
+  `sessions`/`session_attempts` to `vocab_sessions`/`vocab_session_attempts`
+  — unlike `word_state`/`word_lists`/`list_words`, those two names carried
+  no vocab-specific token, so once conjugation drills add their own
+  `conjugation_sessions`/`conjugation_session_attempts` tables, the bare
+  `sessions` name would misleadingly read as shared/generic. Pure rename —
+  no column, data, or constraint/RLS semantics changed, only names (plus
+  the underlying constraints/indexes/identity sequences, which Postgres
+  doesn't auto-rename along with the table).
 
 ---
 

@@ -104,14 +104,18 @@ cutover.
 - `word_state` — one row per word that's been drilled at least once within a
   list (`list_id`, `word`, `box` 0-4, `last_session`). Progress is scoped to
   `(list_id, word)`, not shared across lists or users.
-- `sessions` — one row per drill session (`list_id`, `session_index`,
+- `vocab_sessions` — one row per drill session (`list_id`, `session_index`,
   `started_at`, `completed_at`, `words_drilled`). `session_index` is a
   per-list counter (not global) — the due-word interval algorithm measures
   "sessions since last seen" for one list's own history, so mixing counters
   across lists would give wrong due-dates. See `src/lib/drill-algorithm.ts`
-  and `CLAUDE.md`.
-- `session_attempts` — one row per word drilled per session (`session_id`,
-  `list_id`, `word`, `correct`, box before/after, the user's answer).
+  and `CLAUDE.md`. Named `sessions` before 1.2.0 — renamed since the bare
+  name carried no vocab-specific token, unlike `word_state`/`word_lists`/
+  `list_words`.
+- `vocab_session_attempts` — one row per word drilled per session
+  (`session_id`, `list_id`, `word`, `correct`, box before/after, the user's
+  answer). Named `session_attempts` before 1.2.0, renamed alongside
+  `vocab_sessions` for the same reason.
 - `error_events` — added in 0.6.0. One row per unexpected server-side error
   (route, message, stack, jsonb context), written best-effort by
   `src/lib/server/logger.ts` from `src/hooks.server.ts`'s `handleError` hook
