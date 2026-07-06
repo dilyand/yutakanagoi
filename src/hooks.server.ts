@@ -9,19 +9,13 @@ export const handleError: HandleServerError = ({ error: err, event }) => {
 	return { message: 'Something went wrong. Please try again.' };
 };
 
-// No inline <script>s exist in this app, so script-src holds at 'self' with
-// no unsafe-inline/nonces. worker-src/manifest-src cover the PWA service
-// worker + manifest.
-const CSP =
-	"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data:; connect-src 'self'; worker-src 'self'; " +
-	"manifest-src 'self'; base-uri 'self'; frame-ancestors 'none'";
-
+// CSP itself is configured in vite.config.ts's kit.csp (not here) — SvelteKit
+// needs to own that header so it can inject a per-request nonce into its own
+// inline hydration bootstrap script.
 export const handle: Handle = async ({ event, resolve }) => {
 	const response = await resolve(event);
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set('X-Frame-Options', 'DENY');
-	response.headers.set('Content-Security-Policy', CSP);
 	return response;
 };

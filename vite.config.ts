@@ -17,7 +17,24 @@ export default defineConfig({
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter({ runtime: 'nodejs22.x' })
+			adapter: adapter({ runtime: 'nodejs22.x' }),
+			// CSP lives here, not as a hand-rolled header in hooks.server.ts: SvelteKit
+			// inlines a small hydration bootstrap <script> into every page, and its
+			// content (script chunk filenames) changes every build, so a static
+			// script-src can never match it. Kit computes a per-request nonce and
+			// injects it into both the header and that inline script automatically.
+			csp: {
+				directives: {
+					'default-src': ['self'],
+					'style-src': ['self', 'unsafe-inline'],
+					'img-src': ['self', 'data:'],
+					'connect-src': ['self'],
+					'worker-src': ['self'],
+					'manifest-src': ['self'],
+					'base-uri': ['self'],
+					'frame-ancestors': ['none']
+				}
+			}
 		}),
 		SvelteKitPWA({
 			registerType: 'autoUpdate',
