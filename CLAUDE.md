@@ -68,6 +68,25 @@ Useful context for working in this repo:
   `new Date().getFullYear()` computed at render time, so it silently becomes
   "2026–2027" etc. on its own once a new year starts. Nothing here needs a
   manual touch at release time.
+- **Stability/security hardening (0.6.0)**: `requireAppSecret`
+  (`src/lib/server/require-app-secret.ts`) compares the passphrase in
+  constant time (`src/lib/server/secrets-match.ts`) rather than with `===`.
+  `/api/verify-secret`, `/api/evaluate`, and `/api/lists/upload` are rate
+  limited per-IP (`src/lib/server/rate-limit.ts`) — this is an in-memory,
+  per-instance fixed window, so it resets on cold start and isn't shared
+  across concurrent serverless instances/regions; treat it as raising the
+  bar against casual abuse, not a hard guarantee. Every route that accepts
+  both a `listId` and `userId` now calls `verifyListOwnership`
+  (`src/lib/server/user-list-repository.ts`) first — this is still the
+  single-shared-secret trust model (no per-user auth), it just stops a
+  typo'd/guessed `listId` from reading or writing a different user's data.
+  Supabase calls are wrapped in `withRetry` (`src/lib/server/retry.ts`) to
+  ride out transient network blips. Unexpected server errors are logged via
+  `src/hooks.server.ts`'s `handleError` hook to both `console.error`
+  (structured JSON) and an `error_events` Supabase table (see
+  `supabase/README.md`) — read recent ones with `npm run logs:errors`
+  instead of the Vercel dashboard, since Vercel's own log retention is
+  short and this repo has no linked Vercel CLI session.
 
 ---
 

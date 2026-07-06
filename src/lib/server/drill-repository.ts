@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { VocabEntry, WordState } from '$lib/drill-algorithm';
 import { fetchAllRows } from '$lib/supabase-pagination';
+import { withRetry } from '$lib/server/retry';
 
 export interface DrillContext {
 	vocabMaster: VocabEntry[];
@@ -52,13 +53,15 @@ export async function fetchDrillContext(
 }
 
 async function getLatestSessionIndex(supabase: SupabaseClient, listId: number): Promise<number> {
-	const { data, error } = await supabase
-		.from('sessions')
-		.select('session_index')
-		.eq('list_id', listId)
-		.order('session_index', { ascending: false })
-		.limit(1)
-		.maybeSingle();
+	const { data, error } = await withRetry(() =>
+		supabase
+			.from('sessions')
+			.select('session_index')
+			.eq('list_id', listId)
+			.order('session_index', { ascending: false })
+			.limit(1)
+			.maybeSingle()
+	);
 	if (error) throw error;
 	return data?.session_index ?? 0;
 }
@@ -66,9 +69,9 @@ async function getLatestSessionIndex(supabase: SupabaseClient, listId: number): 
 /** Increments this list's session counter and inserts the new sessions row. */
 export async function startSession(supabase: SupabaseClient, listId: number): Promise<number> {
 	const nextSessionIndex = (await getLatestSessionIndex(supabase, listId)) + 1;
-	const { error } = await supabase
-		.from('sessions')
-		.insert({ list_id: listId, session_index: nextSessionIndex });
+	const { error } = await withRetry(() =>
+		supabase.from('sessions').insert({ list_id: listId, session_index: nextSessionIndex })
+	);
 	if (error) throw error;
 	return nextSessionIndex;
 }
@@ -80,11 +83,13 @@ export async function completeSession(
 	sessionIndex: number,
 	wordsDrilled: number
 ): Promise<void> {
-	const { error } = await supabase
-		.from('sessions')
-		.update({ completed_at: new Date().toISOString(), words_drilled: wordsDrilled })
-		.eq('list_id', listId)
-		.eq('session_index', sessionIndex);
+	const { error } = await withRetry(() =>
+		supabase
+			.from('sessions')
+			.update({ completed_at: new Date().toISOString(), words_drilled: wordsDrilled })
+			.eq('list_id', listId)
+			.eq('session_index', sessionIndex)
+	);
 	if (error) throw error;
 }
 
@@ -95,14 +100,16 @@ export async function upsertWordStates(
 	rows: WordState[]
 ): Promise<void> {
 	if (rows.length === 0) return;
-	const { error } = await supabase.from('word_state').upsert(
-		rows.map((row) => ({
-			list_id: listId,
-			word: row.word,
-			box: row.box,
-			last_session: row.lastSession
-		})),
-		{ onConflict: 'list_id,word' }
+	const { error } = await withRetry(() =>
+		supabase.from('word_state').upsert(
+			rows.map((row) => ({
+				list_id: listId,
+				word: row.word,
+				box: row.box,
+				last_session: row.lastSession
+			})),
+			{ onConflict: 'list_id,word' }
+		)
 	);
 	if (error) throw error;
 }
@@ -125,25 +132,29 @@ export async function insertSessionAttempts(
 ): Promise<void> {
 	if (attempts.length === 0) return;
 
-	const { data: sessionRow, error: sessionError } = await supabase
-		.from('sessions')
-		.select('id')
-		.eq('list_id', listId)
-		.eq('session_index', sessionIndex)
-		.single();
+	const { data: sessionRow, error: sessionError } = await withRetry(() =>
+		supabase
+			.from('sessions')
+			.select('id')
+			.eq('list_id', listId)
+			.eq('session_index', sessionIndex)
+			.single()
+	);
 	if (sessionError) throw sessionError;
 
-	const { error } = await supabase.from('session_attempts').insert(
-		attempts.map((a) => ({
-			session_id: sessionRow.id,
-			list_id: listId,
-			word: a.word,
-			was_new_word: a.wasNewWord,
-			correct: a.correct,
-			box_before: a.boxBefore,
-			box_after: a.boxAfter,
-			user_answer: a.userAnswer ?? null
-		}))
+	const { error } = await withRetry(() =>
+		supabase.from('session_attempts').insert(
+			attempts.map((a) => ({
+				session_id: sessionRow.id,
+				list_id: listId,
+				word: a.word,
+				was_new_word: a.wasNewWord,
+				correct: a.correct,
+				box_before: a.boxBefore,
+				box_after: a.boxAfter,
+				user_answer: a.userAnswer ?? null
+			}))
+		)
 	);
 	if (error) throw error;
 }
