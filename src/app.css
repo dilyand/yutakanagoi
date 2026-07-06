@@ -173,6 +173,20 @@ main {
 	gap: var(--space-4);
 }
 
+/* Wraps an activity component whose own root is multiple top-level elements
+   (e.g. VocabDrillActivity's word-block + interaction panel) so they keep
+   acting as direct flex/gap siblings — matching .content-area's own layout
+   rules — even though a transition:fade wrapper div now sits between them
+   and .content-area. Screens that render a single .card root (UserSelector,
+   ActivityPicker) don't need this; their transition wrapper stays plain and
+   relies on .content-area's own centering. */
+.activity-screen {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	gap: var(--space-4);
+}
+
 p {
 	overflow-wrap: break-word;
 }
