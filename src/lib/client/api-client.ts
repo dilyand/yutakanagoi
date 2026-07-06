@@ -20,6 +20,25 @@ async function fetchWithRetry(path: string, init: RequestInit): Promise<Response
 	}
 }
 
+// Users only ever see the friendly message below — the raw response (which
+// can contain a Postgres/stack-ish string) is only ever console.error'd, for
+// debugging, mirroring the friendly-message-plus-logged-detail pattern
+// hooks.server.ts's handleError already uses server-side.
+async function throwFriendlyError(path: string, response: Response): Promise<never> {
+	const detail = await response.text();
+	console.error(`${path} failed: ${response.status} ${detail}`);
+
+	const message =
+		response.status === 401
+			? 'Session expired — please unlock again.'
+			: response.status === 403
+				? "You don't have access to this list."
+				: response.status === 429
+					? 'Too many requests — please wait a moment and try again.'
+					: 'Something went wrong. Please try again.';
+	throw new Error(message);
+}
+
 export async function authorizedGet<T>(path: string): Promise<T> {
 	const secret = getStoredAppSecret();
 	const response = await fetchWithRetry(path, {
@@ -28,7 +47,7 @@ export async function authorizedGet<T>(path: string): Promise<T> {
 		}
 	});
 	if (!response.ok) {
-		throw new Error(`${path} failed: ${response.status} ${await response.text()}`);
+		await throwFriendlyError(path, response);
 	}
 	return response.json();
 }
@@ -44,7 +63,7 @@ export async function authorizedPost<T>(path: string, body: unknown): Promise<T>
 		body: JSON.stringify(body)
 	});
 	if (!response.ok) {
-		throw new Error(`${path} failed: ${response.status} ${await response.text()}`);
+		await throwFriendlyError(path, response);
 	}
 	return response.json();
 }

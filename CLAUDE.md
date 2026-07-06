@@ -48,18 +48,20 @@ Useful context for working in this repo:
 - If asked to "run a drill session" in this repo, that means using the
   deployed app (or `npm run dev` locally), not following the git sync
   protocol below.
-- **Deployment workflow**: Vercel is connected via its GitHub integration
-  (no `vercel.json`, no GitHub Actions in this repo — deploys are entirely
-  managed on Vercel's side). Confirmed by inspecting past PR checks: opening
-  or updating a PR gets its own **Preview** deployment (Vercel bot comments
-  the preview URL and posts a "Vercel" check on the PR); merging to `main`
-  triggers a separate **Production** deployment (a distinct deployment ID
-  from the PR's preview). So the workflow is: open a PR → test against its
-  Preview URL → merge → Production redeploys automatically from `main`.
-  `main` has no branch protection configured (no required reviews/checks as
-  of 0.3.0) — merging is a manual judgment call, not gated by CI, so don't
-  treat an open PR as "safe to merge" just because checks are green; actually
-  look at the preview before merging.
+- **Deployment workflow**: Vercel is connected via its GitHub integration (no
+  `vercel.json` — deploys are entirely managed on Vercel's side). Confirmed by
+  inspecting past PR checks: opening or updating a PR gets its own
+  **Preview** deployment (Vercel bot comments the preview URL and posts a
+  "Vercel" check on the PR); merging to `main` triggers a separate
+  **Production** deployment (a distinct deployment ID from the PR's preview).
+  So the workflow is: open a PR → test against its Preview URL → merge →
+  Production redeploys automatically from `main`. As of 1.0.0 there's also a
+  `.github/workflows/ci.yml` that runs `lint`/`check`/`test` on every PR and
+  on push to `main` — but `main` still has no branch protection configured
+  (no required reviews/checks), so a green CI check doesn't gate the merge
+  either; merging is still a manual judgment call, so don't treat an open PR
+  as "safe to merge" just because checks are green — actually look at the
+  preview before merging.
 - The footer (`src/routes/+page.svelte`, rendered last inside `<main>`) is
   self-maintaining — don't hand-edit it per release. The version comes from
   `__APP_VERSION__` (package.json, already bumped every release per existing
@@ -87,6 +89,24 @@ Useful context for working in this repo:
   `supabase/README.md`) — read recent ones with `npm run logs:errors`
   instead of the Vercel dashboard, since Vercel's own log retention is
   short and this repo has no linked Vercel CLI session.
+- **1.0.0**: closed the remaining gaps from the pre-1.0 review.
+  `/api/session/start` and `/api/session/complete` are now rate limited
+  per-IP too (same `checkRateLimit` pattern as the other mutating routes) —
+  both write to Supabase and `session/start` bumps `session_index`, which
+  the due-word interval math depends on, so an unbounded retry loop there
+  was a real stability gap, not just a cost one. Added
+  `.github/workflows/ci.yml` (lint/check/test on every PR and on push to
+  `main` — see the deployment-workflow note above for why this doesn't gate
+  merges). Added test coverage for the auth/ownership boundary itself
+  (`require-app-secret.test.ts`, `user-list-repository.test.ts`, and route
+  wiring tests for the two session routes) — this required adding the
+  `sveltekit()` Vite plugin to `vitest.config.ts` so `$env`/`$lib` resolve in
+  tests; reuse that setup for any future test that touches server modules
+  importing them. `hooks.server.ts` also sets `Strict-Transport-Security`
+  and `Permissions-Policy` now, and `PassphraseGate.svelte` has a small
+  "Lock" button (clears the stored secret and re-locks) — no separate
+  cleanup needed elsewhere since re-locking unmounts the whole app tree,
+  which resets `+page.svelte`'s in-memory state naturally on next unlock.
 
 ---
 

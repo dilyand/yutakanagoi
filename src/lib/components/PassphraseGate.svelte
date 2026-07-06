@@ -41,6 +41,12 @@
 		checkStoredSecret();
 	}
 
+	function lock() {
+		clearStoredAppSecret();
+		passphraseInput = '';
+		gateStatus = 'locked';
+	}
+
 	async function submitPassphrase() {
 		verifying = true;
 		errorMessage = '';
@@ -61,6 +67,7 @@
 </script>
 
 {#if gateStatus === 'unlocked'}
+	<button class="lock-button" onclick={lock}>Lock</button>
 	{@render children()}
 {:else if gateStatus === 'locked'}
 	<main>
