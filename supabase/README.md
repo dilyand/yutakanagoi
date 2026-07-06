@@ -112,3 +112,10 @@ cutover.
   and `CLAUDE.md`.
 - `session_attempts` — one row per word drilled per session (`session_id`,
   `list_id`, `word`, `correct`, box before/after, the user's answer).
+- `error_events` — added in 0.6.0. One row per unexpected server-side error
+  (route, message, stack, jsonb context), written best-effort by
+  `src/lib/server/logger.ts` from `src/hooks.server.ts`'s `handleError` hook
+  (and directly from `claude-evaluate.ts` for Claude API failures). Exists
+  because Vercel's own function-log retention is short and this repo has no
+  linked Vercel CLI session — read recent rows with `npm run logs:errors`
+  (`scripts/read-error-log.ts`) instead of the Vercel dashboard.

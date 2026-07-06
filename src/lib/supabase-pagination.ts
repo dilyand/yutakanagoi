@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { withRetry } from '$lib/server/retry';
 
 const PAGE_SIZE = 1000;
 
@@ -22,7 +23,7 @@ export async function fetchAllRows<T>(
 		for (const [column, value] of Object.entries(eqFilters)) {
 			query = query.eq(column, value);
 		}
-		const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
+		const { data, error } = await withRetry(() => query.range(from, from + PAGE_SIZE - 1));
 		if (error) throw error;
 
 		const page = (data ?? []) as T[];

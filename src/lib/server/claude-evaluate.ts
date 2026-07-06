@@ -3,6 +3,7 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
 import { error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import { logError } from '$lib/server/logger';
 
 // grade_answer and evaluate_sentence both require a lenient judgment call
 // (accept a correct-but-loosely-phrased answer); a Sonnet/Haiku comparison
@@ -183,6 +184,10 @@ export async function evaluate(request: EvaluateRequest) {
 		}
 	} catch (e) {
 		if (e instanceof Anthropic.APIError) {
+			// error() below raises an "expected" 502 that skips hooks.server.ts's
+			// handleError logging (see its comment) — log explicitly here instead,
+			// so repeated Claude API outages are still visible.
+			await logError('evaluate', e, { mode: request.mode });
 			error(502, 'The grading service is temporarily unavailable — please try again.');
 		}
 		throw e;

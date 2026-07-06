@@ -1,10 +1,12 @@
 import { error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import { secretsMatch } from '$lib/server/secrets-match';
 
 /** Throws a SvelteKit error() (401/500) unless the request's Authorization
  * header matches APP_SHARED_SECRET. Every server route that touches Supabase
  * or Claude calls this first — see the access-control design in the PWA
- * migration plan. */
+ * migration plan. Comparison is constant-time (see secretsMatch above) since
+ * this is the app's only access gate. */
 export function requireAppSecret(request: Request): void {
 	const expectedSecret = env.APP_SHARED_SECRET;
 	if (!expectedSecret) {
@@ -13,7 +15,7 @@ export function requireAppSecret(request: Request): void {
 
 	const authHeader = request.headers.get('authorization');
 	const providedSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-	if (providedSecret !== expectedSecret) {
+	if (!providedSecret || !secretsMatch(providedSecret, expectedSecret)) {
 		error(401, 'Unauthorized');
 	}
 }

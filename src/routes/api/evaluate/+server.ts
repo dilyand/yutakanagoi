@@ -3,6 +3,13 @@ import type { RequestHandler } from './$types';
 import { z } from 'zod';
 import { evaluate } from '$lib/server/claude-evaluate';
 import { requireAppSecret } from '$lib/server/require-app-secret';
+import { checkRateLimit } from '$lib/server/rate-limit';
+
+// Every call here costs a Claude API request — 30/5 min per IP comfortably
+// covers a real drill session (max 10 words, a few calls each) while
+// bounding scripted cost-abuse.
+const LIMIT = 30;
+const WINDOW_MS = 5 * 60 * 1000;
 
 // Bounds are defense in depth against unbounded prompt content driving up
 // Claude API cost/latency — word already gets a tighter cap at list-upload
@@ -20,8 +27,11 @@ const RequestSchema = z.discriminatedUnion('mode', [
 // The only server-side gate on Claude API spend: a shared secret checked before
 // any Anthropic call is made. The passphrase UI (PassphraseGate.svelte) is what
 // obtains this secret from the user and attaches it as the Authorization header.
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	requireAppSecret(request);
+	if (!checkRateLimit(`evaluate:${getClientAddress()}`, LIMIT, WINDOW_MS)) {
+		error(429, 'Too many requests — please wait and try again.');
+	}
 
 	const parsedBody = RequestSchema.safeParse(await request.json());
 	if (!parsedBody.success) {

@@ -73,7 +73,7 @@
 	}
 
 	async function start() {
-		if (selectedListId === null) return;
+		if (selectedListId === null || selectedUserId === null) return;
 		phase = 'starting';
 		errorMessage = '';
 		wasCancelled = false;
@@ -82,7 +82,7 @@
 		try {
 			const data = await authorizedPost<{ sessionIndex: number; drillItems: DrillItem[] }>(
 				'/api/session/start',
-				{ listId: selectedListId }
+				{ listId: selectedListId, userId: selectedUserId }
 			);
 			sessionIndex = data.sessionIndex;
 			drillItems = data.drillItems;
@@ -161,12 +161,13 @@
 	}
 
 	async function finishSession() {
-		if (selectedListId === null) return;
+		if (selectedListId === null || selectedUserId === null) return;
 		phase = 'completing';
 		errorMessage = '';
 		try {
 			await authorizedPost('/api/session/complete', {
 				listId: selectedListId,
+				userId: selectedUserId,
 				sessionIndex,
 				wordStates: wordStateUpdates,
 				attempts
