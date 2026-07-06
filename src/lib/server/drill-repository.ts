@@ -55,7 +55,7 @@ export async function fetchDrillContext(
 async function getLatestSessionIndex(supabase: SupabaseClient, listId: number): Promise<number> {
 	const { data, error } = await withRetry(() =>
 		supabase
-			.from('sessions')
+			.from('vocab_sessions')
 			.select('session_index')
 			.eq('list_id', listId)
 			.order('session_index', { ascending: false })
@@ -66,11 +66,11 @@ async function getLatestSessionIndex(supabase: SupabaseClient, listId: number): 
 	return data?.session_index ?? 0;
 }
 
-/** Increments this list's session counter and inserts the new sessions row. */
+/** Increments this list's session counter and inserts the new vocab_sessions row. */
 export async function startSession(supabase: SupabaseClient, listId: number): Promise<number> {
 	const nextSessionIndex = (await getLatestSessionIndex(supabase, listId)) + 1;
 	const { error } = await withRetry(() =>
-		supabase.from('sessions').insert({ list_id: listId, session_index: nextSessionIndex })
+		supabase.from('vocab_sessions').insert({ list_id: listId, session_index: nextSessionIndex })
 	);
 	if (error) throw error;
 	return nextSessionIndex;
@@ -85,7 +85,7 @@ export async function completeSession(
 ): Promise<void> {
 	const { error } = await withRetry(() =>
 		supabase
-			.from('sessions')
+			.from('vocab_sessions')
 			.update({ completed_at: new Date().toISOString(), words_drilled: wordsDrilled })
 			.eq('list_id', listId)
 			.eq('session_index', sessionIndex)
@@ -134,7 +134,7 @@ export async function insertSessionAttempts(
 
 	const { data: sessionRow, error: sessionError } = await withRetry(() =>
 		supabase
-			.from('sessions')
+			.from('vocab_sessions')
 			.select('id')
 			.eq('list_id', listId)
 			.eq('session_index', sessionIndex)
@@ -143,7 +143,7 @@ export async function insertSessionAttempts(
 	if (sessionError) throw sessionError;
 
 	const { error } = await withRetry(() =>
-		supabase.from('session_attempts').insert(
+		supabase.from('vocab_session_attempts').insert(
 			attempts.map((a) => ({
 				session_id: sessionRow.id,
 				list_id: listId,
