@@ -107,6 +107,41 @@ Useful context for working in this repo:
   "Lock" button (clears the stored secret and re-locks) — no separate
   cleanup needed elsewhere since re-locking unmounts the whole app tree,
   which resets `+page.svelte`'s in-memory state naturally on next unlock.
+- **1.1.0**: prepared the stage for more than one activity (2.0.0's goal is
+  a second, not-yet-designed activity alongside vocab drills). Added
+  `src/lib/activities.ts` — a plain-data `ACTIVITIES` registry
+  (`{ id, label, description }`) with a `getActivity(id)` lookup, no
+  component references stored in it — and `src/lib/components/
+  ActivityPicker.svelte`, which renders one button per registry entry and
+  reports the chosen id via the same `onSelect` callback shape already used
+  by `UserSelector`/`ListSelector`. `src/routes/+page.svelte` is now a thin
+  shell holding just `selectedUserId`/`selectedUsername` and the new
+  `selectedActivityId`, switching between `UserSelector` → `ActivityPicker`
+  → the chosen activity's component via an `{:else if}` chain (fade
+  transitions between the three, see `src/lib/client/motion.ts` for the
+  `prefers-reduced-motion` guard). All the vocab-drill state and logic that
+  used to live directly in `+page.svelte` (the `phase` state machine,
+  `start`/`submitAnswer`/`submitSentence`/`finishSession`/`cancelSession`,
+  etc.) moved into `src/lib/components/activities/VocabDrillActivity.svelte`
+  (props: `userId`, `username`, `onExit`). List selection moved with it —
+  `ListSelector` is rendered from inside `VocabDrillActivity`, not the
+  shell, since which list to drill is vocab-drill's own setup step, not a
+  concept every future activity will necessarily share. To add activity #2:
+  append one entry to `ACTIVITIES`, add one new component under
+  `src/lib/components/activities/`, and add one `{:else if}` branch in
+  `+page.svelte` — no changes needed to `ActivityPicker.svelte`,
+  `UserSelector.svelte`, or any DB table. Deliberately **no DB schema
+  changes** this release: `sessions`/`session_attempts`/`word_state`/
+  `word_lists`/`list_words` stay exactly as they are — they're all
+  vocab-drill-specific already, and nothing stops activity #2 from picking
+  its own distinct table names later, so reserving/renaming anything now
+  would just be guessing against an unknown future shape. Also deliberately
+  **not** persisting the last-picked activity in localStorage (unlike
+  `user-selection.ts` for the user) — with only one real activity there's
+  nothing yet to validate that behavior against, and adding a third,
+  differently-behaved persistence pattern on top of the existing
+  `UserSelector` (remembers) / `ListSelector` (doesn't) split would make
+  that inconsistency worse, not better. Revisit once activity #2 exists.
 
 ---
 
