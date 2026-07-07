@@ -166,7 +166,13 @@
 				recordFinalOutcome(item, answerInput);
 				phase = 'correct';
 			} else if (attemptsUsed < 3) {
-				const hint = await getConjugationHint(item.word, item.wordClass, item.formId, answerInput);
+				const hint = await getConjugationHint(
+					item.word,
+					item.wordClass,
+					item.formId,
+					answerInput,
+					canonical
+				);
 				hintText = hint.hint;
 				answerInput = '';
 				phase = 'retry';

@@ -44,14 +44,16 @@ export function getConjugationHint(
 	word: string,
 	wordClass: string,
 	formId: string,
-	userAnswer: string
+	userAnswer: string,
+	canonicalAnswer: string
 ): Promise<ConjugationHintResult> {
 	return authorizedPost('/api/evaluate', {
 		mode: 'conjugation_hint',
 		word,
 		wordClass,
 		formId,
-		userAnswer
+		userAnswer,
+		canonicalAnswer
 	});
 }
 

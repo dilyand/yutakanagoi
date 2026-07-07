@@ -74,6 +74,7 @@ export type ConjugationHintRequest = {
 	wordClass: string;
 	formId: string;
 	userAnswer: string;
+	canonicalAnswer: string;
 };
 export type ConjugationExampleRequest = {
 	mode: 'conjugation_example';
@@ -198,6 +199,36 @@ const NO_ROMAJI_NOTE =
 	'reinterpret, or "correct" the base word given to you — if you refer ' +
 	'to it, copy it exactly as given, character for character.';
 
+// Verified live: two distinct failure modes surfaced once NO_ROMAJI_NOTE
+// alone wasn't enough. (1) A learner wrote a word entirely unrelated to the
+// one being drilled (e.g. 雪がない for 注ぐ), and the hint gave a generic
+// rule reminder instead of pointing out the mismatch — the two paragraphs
+// below fix this by requiring the model to check the stem match first, and
+// by supplying the correct answer as private grounding so it can actually
+// tell the two cases apart. (2) A hint compared 狂う (godan_u) to 飲む/読む
+// (godan_mu) as if they conjugated the same way, which they don't — the
+// third paragraph removes comparison-verb citation entirely rather than
+// hoping the model only cites verbs that genuinely share the same ending.
+const CONJUGATION_HINT_RULES =
+	'A Japanese learner got a conjugation drill wrong. You are given the ' +
+	'base word, its grammatical class, the target form, the correct answer, ' +
+	"and the learner's incorrect answer. The correct answer is for grounding " +
+	'your explanation only — never state, spell out, or otherwise reveal it ' +
+	'in your hint, even partially. ' +
+	"First check whether the learner's answer shares the same stem as the " +
+	'base word at all. If they wrote a different word or stem entirely (not ' +
+	'just a wrong ending), say so directly and encourage them to conjugate ' +
+	'the word actually given — do not give a generic grammar rule in this ' +
+	"case, since it wouldn't address their actual mistake. If they did use " +
+	'the correct stem but applied the wrong transformation, explain what ' +
+	"changes using only this word's own ending and the specific sound " +
+	'change it takes (e.g. which kana row it shifts to) — do not compare to ' +
+	'other example verbs from memory, since an incorrectly-recalled ' +
+	'comparison verb (one that does not actually share the same conjugation ' +
+	'pattern) has caused real mistakes before. Give a short, encouraging ' +
+	'hint (1-2 sentences) that points toward the correct pattern without ' +
+	'simply stating the correct answer outright.';
+
 /**
  * Grades, explains, or evaluates a Japanese vocab or conjugation drill
  * interaction via the Claude API. This is the only place in the app that
@@ -279,11 +310,7 @@ export async function evaluate(request: EvaluateRequest) {
 					thinking: { type: 'disabled' },
 					output_config: { format: zodOutputFormat(ConjugationHintResult) },
 					system:
-						'A Japanese learner got a conjugation drill wrong. Given the base word, its ' +
-						"grammatical class, the target form, and the learner's incorrect answer, give " +
-						'a short, encouraging hint (1-2 sentences) that points toward the correct ' +
-						'conjugation pattern without simply stating the correct answer outright. ' +
-						`Respond in English. ${NO_ROMAJI_NOTE} ` +
+						`${CONJUGATION_HINT_RULES} Respond in English. ${NO_ROMAJI_NOTE} ` +
 						UNTRUSTED_INPUT_NOTE,
 					messages: [
 						{
@@ -291,6 +318,7 @@ export async function evaluate(request: EvaluateRequest) {
 							content:
 								`Word: ${tagUntrusted(request.word)}\nClass: ${tagUntrusted(request.wordClass)}\n` +
 								`Target form: ${tagUntrusted(request.formId)}\n` +
+								`Correct answer (do not reveal): ${tagUntrusted(request.canonicalAnswer)}\n` +
 								`Learner's answer: ${tagUntrusted(request.userAnswer)}`
 						}
 					]
@@ -307,7 +335,11 @@ export async function evaluate(request: EvaluateRequest) {
 					'brief English translation. The sentence MUST contain the given conjugated ' +
 					'form as a literal, exact substring — do not substitute a different word or ' +
 					'a different conjugation of it. Keep the sentence short and easy for a ' +
-					'language learner. ' +
+					'language learner. Many natural Japanese sentences omit the subject entirely ' +
+					'when it is inferable from context — do not default to always stating an ' +
+					'explicit subject like 私は/彼は/彼女は. Vary this the way a native speaker ' +
+					'actually would: often omit the subject, and only include one when it is ' +
+					'genuinely needed for the sentence to make sense. ' +
 					UNTRUSTED_INPUT_NOTE;
 
 				async function requestExample(extraInstruction: string) {

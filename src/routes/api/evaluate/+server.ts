@@ -35,7 +35,8 @@ const RequestSchema = z.discriminatedUnion('mode', [
 		word,
 		wordClass: shortIdentifier,
 		formId: shortIdentifier,
-		userAnswer: freeText
+		userAnswer: freeText,
+		canonicalAnswer: word
 	}),
 	z.object({ mode: z.literal('conjugation_example'), word, conjugatedForm: word }),
 	z.object({
