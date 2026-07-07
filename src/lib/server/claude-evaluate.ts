@@ -13,6 +13,15 @@ import { logError } from '$lib/server/logger';
 const GRADING_MODEL = 'claude-sonnet-5';
 const EXPLAIN_MODEL = 'claude-haiku-4-5';
 
+// conjugation_hint/conjugation_example are the same task shape as
+// explain_word (concise, non-judgment-call generation), so they reuse
+// EXPLAIN_MODEL. conjugation_leniency_check is a genuine judgment call
+// (accept a correct-but-differently-spelled answer) like grade_answer/
+// evaluate_sentence, so it reuses GRADING_MODEL for the same reason those do.
+const CONJUGATION_HINT_MODEL = EXPLAIN_MODEL;
+const CONJUGATION_EXAMPLE_MODEL = EXPLAIN_MODEL;
+const CONJUGATION_LENIENCY_MODEL = GRADING_MODEL;
+
 const GradeAnswerResult = z.object({
 	correct: z.boolean(),
 	explanation: z.string()
@@ -27,6 +36,20 @@ const EvaluateSentenceResult = z.object({
 	acceptable: z.boolean()
 });
 
+const ConjugationHintResult = z.object({
+	hint: z.string()
+});
+
+const ConjugationExampleResult = z.object({
+	sentence: z.string(),
+	meaning: z.string()
+});
+
+const ConjugationLeniencyResult = z.object({
+	acceptable: z.boolean(),
+	explanation: z.string()
+});
+
 export type GradeAnswerRequest = { mode: 'grade_answer'; word: string; userAnswer: string };
 export type ExplainWordRequest = { mode: 'explain_word'; word: string };
 export type EvaluateSentenceRequest = {
@@ -34,8 +57,31 @@ export type EvaluateSentenceRequest = {
 	word: string;
 	sentence: string;
 };
+export type ConjugationHintRequest = {
+	mode: 'conjugation_hint';
+	word: string;
+	wordClass: string;
+	formId: string;
+	userAnswer: string;
+};
+export type ConjugationExampleRequest = {
+	mode: 'conjugation_example';
+	word: string;
+	conjugatedForm: string;
+};
+export type ConjugationLeniencyCheckRequest = {
+	mode: 'conjugation_leniency_check';
+	canonicalAnswer: string;
+	userAnswer: string;
+};
 
-export type EvaluateRequest = GradeAnswerRequest | ExplainWordRequest | EvaluateSentenceRequest;
+export type EvaluateRequest =
+	| GradeAnswerRequest
+	| ExplainWordRequest
+	| EvaluateSentenceRequest
+	| ConjugationHintRequest
+	| ConjugationExampleRequest
+	| ConjugationLeniencyCheckRequest;
 
 function createClient() {
 	const apiKey = env.ANTHROPIC_API_KEY;
@@ -116,10 +162,17 @@ const JAPANESE_FEEDBACK_LEVEL =
 	'them.';
 
 /**
- * Grades, explains, or evaluates a Japanese vocab drill interaction via the
- * Claude API. This is the only place in the app that calls Anthropic — the
- * deterministic due-word/box logic in $lib/drill-algorithm never touches an
- * LLM, by design (see the PWA migration plan).
+ * Grades, explains, or evaluates a Japanese vocab or conjugation drill
+ * interaction via the Claude API. This is the only place in the app that
+ * calls Anthropic — the deterministic due-word/box logic in
+ * $lib/drill-algorithm and the deterministic conjugation logic in
+ * $lib/conjugation-engine never touch an LLM, by design. For conjugation
+ * drills specifically, grading itself happens client/route-side via
+ * exact-match against $lib/conjugation-engine's conjugate() output — the
+ * three conjugation_* modes here are only for what's genuinely generative
+ * (a hint on failure, an example sentence on success) or a genuine judgment
+ * call (accepting a differently-spelled-but-valid answer when exact-match
+ * fails).
  */
 export async function evaluate(request: EvaluateRequest) {
 	const client = createClient();
@@ -180,6 +233,79 @@ export async function evaluate(request: EvaluateRequest) {
 					]
 				});
 				return EvaluateSentenceResult.parse(response.parsed_output);
+			}
+
+			case 'conjugation_hint': {
+				const response = await client.messages.parse({
+					model: CONJUGATION_HINT_MODEL,
+					max_tokens: 512,
+					thinking: { type: 'disabled' },
+					output_config: { format: zodOutputFormat(ConjugationHintResult) },
+					system:
+						'A Japanese learner got a conjugation drill wrong. Given the base word, its ' +
+						"grammatical class, the target form, and the learner's incorrect answer, give " +
+						'a short, encouraging hint (1-2 sentences) that points toward the correct ' +
+						'conjugation pattern without simply stating the correct answer outright. ' +
+						'Respond in English. ' +
+						UNTRUSTED_INPUT_NOTE,
+					messages: [
+						{
+							role: 'user',
+							content:
+								`Word: ${tagUntrusted(request.word)}\nClass: ${tagUntrusted(request.wordClass)}\n` +
+								`Target form: ${tagUntrusted(request.formId)}\n` +
+								`Learner's answer: ${tagUntrusted(request.userAnswer)}`
+						}
+					]
+				});
+				return ConjugationHintResult.parse(response.parsed_output);
+			}
+
+			case 'conjugation_example': {
+				const response = await client.messages.parse({
+					model: CONJUGATION_EXAMPLE_MODEL,
+					max_tokens: 512,
+					thinking: { type: 'disabled' },
+					output_config: { format: zodOutputFormat(ConjugationExampleResult) },
+					system:
+						'Given a Japanese word and one of its conjugated forms, write one natural, ' +
+						'simple example sentence in Japanese that uses the conjugated form, plus a ' +
+						'brief English translation. Keep the sentence short and easy for a language ' +
+						'learner. ' +
+						UNTRUSTED_INPUT_NOTE,
+					messages: [
+						{
+							role: 'user',
+							content: `Word: ${tagUntrusted(request.word)}\nConjugated form: ${tagUntrusted(request.conjugatedForm)}`
+						}
+					]
+				});
+				return ConjugationExampleResult.parse(response.parsed_output);
+			}
+
+			case 'conjugation_leniency_check': {
+				const response = await client.messages.parse({
+					model: CONJUGATION_LENIENCY_MODEL,
+					max_tokens: 512,
+					thinking: { type: 'disabled' },
+					output_config: { effort: 'low', format: zodOutputFormat(ConjugationLeniencyResult) },
+					system:
+						'You are grading a Japanese conjugation drill. Given the canonical correct ' +
+						"answer and the learner's answer, judge whether the learner's answer is an " +
+						'acceptable variant of the canonical one (e.g. a different but valid kana/kanji ' +
+						'spelling, an okurigana variation, or a harmless typo-level difference) rather ' +
+						'than a genuinely different or incorrect conjugation. Do not accept a different ' +
+						'grammatical form (a different tense, polarity, or register) even if related. ' +
+						'Respond in English. ' +
+						UNTRUSTED_INPUT_NOTE,
+					messages: [
+						{
+							role: 'user',
+							content: `Canonical answer: ${tagUntrusted(request.canonicalAnswer)}\nLearner's answer: ${tagUntrusted(request.userAnswer)}`
+						}
+					]
+				});
+				return ConjugationLeniencyResult.parse(response.parsed_output);
 			}
 		}
 	} catch (e) {
