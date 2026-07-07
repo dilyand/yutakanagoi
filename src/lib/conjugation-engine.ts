@@ -7,6 +7,7 @@
  * API call for the common case.
  */
 
+import type { DrillOutcome, DrillResult } from './drill-algorithm';
 import type { ConjugationWord, VerbClass, WordClass } from './conjugation-word-list';
 import {
 	cellId,
@@ -17,6 +18,29 @@ import {
 	VERB_FORMS,
 	type VerbFormId
 } from './conjugation-forms';
+
+const MAX_BOX = 4;
+
+/**
+ * Same box/interval shape as drill-algorithm.ts's applyOutcome, but WITHOUT
+ * its "correct on first exposure jumps straight to box 4" exception —
+ * that's a deliberate vocab-only shortcut (a frequency-ranked word list
+ * contains many words an intermediate learner already knows outright), and
+ * the conjugation-drills design explicitly rejected it here: conjugation is
+ * mechanical/rule-based, so getting a brand-new cell right on the first try
+ * doesn't mean it's "already mastered" the way already-knowing a word's
+ * meaning does. A new cell answered correctly starts at box 1, like every
+ * other correct answer.
+ */
+export function applyConjugationOutcome({ box, correct, sessionIndex }: DrillOutcome): DrillResult {
+	if (box === undefined) {
+		return { box: correct ? 1 : 0, lastSession: sessionIndex };
+	}
+	if (correct) {
+		return { box: Math.min(box + 1, MAX_BOX), lastSession: sessionIndex };
+	}
+	return { box: Math.max(box - 1, 0), lastSession: sessionIndex };
+}
 
 const GODAN_ROWS: Record<string, { a: string; i: string; e: string; o: string }> = {
 	う: { a: 'わ', i: 'い', e: 'え', o: 'お' },

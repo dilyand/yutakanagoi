@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	applyConjugationOutcome,
 	buildConjugationRegistry,
 	conjugate,
 	conjugateCopula,
@@ -219,5 +220,43 @@ describe('pickWordForCell', () => {
 
 	it('throws when no candidate exists for the requested class', () => {
 		expect(() => pickWordForCell('suru', 'nai', words)).toThrow();
+	});
+});
+
+describe('applyConjugationOutcome', () => {
+	it('starts a new cell at box 1 on a correct answer, NOT box 4 like vocab drill', () => {
+		expect(applyConjugationOutcome({ box: undefined, correct: true, sessionIndex: 1 })).toEqual({
+			box: 1,
+			lastSession: 1
+		});
+	});
+
+	it('starts a new cell at box 0 on an incorrect answer', () => {
+		expect(applyConjugationOutcome({ box: undefined, correct: false, sessionIndex: 1 })).toEqual({
+			box: 0,
+			lastSession: 1
+		});
+	});
+
+	it('increments an existing cell by one on a correct answer, capped at 4', () => {
+		expect(applyConjugationOutcome({ box: 2, correct: true, sessionIndex: 3 })).toEqual({
+			box: 3,
+			lastSession: 3
+		});
+		expect(applyConjugationOutcome({ box: 4, correct: true, sessionIndex: 3 })).toEqual({
+			box: 4,
+			lastSession: 3
+		});
+	});
+
+	it('decrements an existing cell by one on an incorrect answer, floored at 0', () => {
+		expect(applyConjugationOutcome({ box: 2, correct: false, sessionIndex: 3 })).toEqual({
+			box: 1,
+			lastSession: 3
+		});
+		expect(applyConjugationOutcome({ box: 0, correct: false, sessionIndex: 3 })).toEqual({
+			box: 0,
+			lastSession: 3
+		});
 	});
 });

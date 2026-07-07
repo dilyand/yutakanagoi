@@ -121,3 +121,14 @@ export const COPULA_FORMS: FormDescriptor<CopulaFormId>[] = [
 export function cellId(wordClass: WordClass, formId: string): string {
 	return `${wordClass}:${formId}`;
 }
+
+/** Human-readable label for a (word class, form) pair, e.g. "causative passive past". */
+export function getFormLabel(wordClass: WordClass, formId: string): string {
+	const forms: FormDescriptor<string>[] =
+		wordClass === 'i_adjective'
+			? I_ADJECTIVE_FORMS
+			: wordClass === 'copula'
+				? COPULA_FORMS
+				: VERB_FORMS;
+	return forms.find((form) => form.id === formId)?.label ?? formId;
+}
