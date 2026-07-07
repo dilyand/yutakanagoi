@@ -6000,7 +6000,7 @@ export const CONJUGATION_WORDS: ConjugationWord[] = [
 		wordClass: 'godan_su',
 		included: true,
 		reading: 'ながす',
-		meaning: 'to flow'
+		meaning: 'to pour'
 	},
 	{
 		word: '正面',
@@ -7039,7 +7039,7 @@ export const CONJUGATION_WORDS: ConjugationWord[] = [
 		frequencyRank: 1100,
 		wordClass: 'copula',
 		included: true,
-		reading: 'めいらか',
+		reading: 'あきらか',
 		meaning: 'clear'
 	},
 	{
@@ -7168,7 +7168,7 @@ export const CONJUGATION_WORDS: ConjugationWord[] = [
 		wordClass: 'godan_u',
 		included: true,
 		reading: 'まう',
-		meaning: 'to finish'
+		meaning: 'to dance'
 	},
 	{
 		word: '樹',
@@ -7240,7 +7240,7 @@ export const CONJUGATION_WORDS: ConjugationWord[] = [
 		wordClass: 'godan_ku',
 		included: true,
 		reading: 'こく',
-		meaning: 'to tell'
+		meaning: 'to blurt out (informal)'
 	},
 	{
 		word: '毛',
@@ -9495,7 +9495,7 @@ export const CONJUGATION_WORDS: ConjugationWord[] = [
 		frequencyRank: 1451,
 		wordClass: 'ichidan',
 		included: true,
-		reading: 'さけける',
+		reading: 'さける',
 		meaning: 'to avoid'
 	},
 	{
@@ -11400,7 +11400,7 @@ export const CONJUGATION_WORDS: ConjugationWord[] = [
 		wordClass: 'godan_gu',
 		included: true,
 		reading: 'はぐ',
-		meaning: 'to brush'
+		meaning: 'to peel off'
 	},
 	{
 		word: 'お母さん',
