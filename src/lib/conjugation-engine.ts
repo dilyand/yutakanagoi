@@ -355,6 +355,20 @@ const ALL_VERB_CLASSES: VerbClass[] = [
 	'kuru'
 ];
 
+interface PseudoClass {
+	wordClass: WordClass;
+	forms: { id: string }[];
+}
+
+// Treats the 12 verb classes plus i_adjective plus copula as 14 "columns" of
+// a jagged grid (25 forms deep for verbs, 10 for i_adjective, 9 for copula),
+// for buildConjugationRegistry's diagonal traversal below.
+const PSEUDO_CLASSES: PseudoClass[] = [
+	...ALL_VERB_CLASSES.map((wordClass): PseudoClass => ({ wordClass, forms: VERB_FORMS })),
+	{ wordClass: 'i_adjective', forms: I_ADJECTIVE_FORMS },
+	{ wordClass: 'copula', forms: COPULA_FORMS }
+];
+
 /**
  * The full (word_class, form) cell registry — progress state is tracked per
  * cell here, independent of which specific word gets drilled for it (see
@@ -362,27 +376,41 @@ const ALL_VERB_CLASSES: VerbClass[] = [
  * verb classes + 10 + 9); exactly 319 here (25 x 12 verb classes, since
  * there are 12 not 11 — the estimate was always approximate).
  *
- * Iteration order is form-major, class-minor (not the other way around):
- * this array's index doubles as the "new cell" introduction order for
- * selectDrillWords (the same role vocab's frequencyRank plays), so looping
- * classes-first would drill a learner through godan_u's
- * causative_passive_past before they ever saw a single godan_ku form.
- * Form-major spreads difficulty evenly instead — every class's nai-form
- * before any class's ta-form, and so on — extending VERB_FORMS' own
- * simple-before-compound ordering across the whole curriculum.
+ * This array's index doubles as the "new cell" introduction order for
+ * selectDrillWords (the same role vocab's frequencyRank plays), so the
+ * iteration order matters a lot for how varied an early session feels.
+ * Neither axis-major order works: class-major (all 25 forms of one class
+ * before the next class) drills a learner through causative_passive_past
+ * before they see a second verb class at all; form-major (every class's
+ * nai-form before any class's ta-form) fixes that but overcorrects the
+ * other way — a whole session of different words all asking for the same
+ * form. Cells are instead enumerated by **diagonal** traversal over the 14
+ * pseudo-classes (see PSEUDO_CLASSES): for increasing `d` (class-index +
+ * form-index), emit every pair whose form-index falls within that
+ * pseudo-class's own form count, classes ascending within a diagonal. This
+ * is the standard technique for enumerating a 2D (here jagged) grid so
+ * that any short prefix already spans both axes — e.g. the first 10 cells
+ * become godan_u:nai, godan_u:ta, godan_ku:nai, godan_u:nakatta,
+ * godan_ku:ta, godan_gu:nai, godan_u:te, godan_ku:nakatta, godan_gu:ta,
+ * godan_su:nai — 4 distinct forms across 4 distinct classes, instead of 1
+ * form across 10 classes or 10 forms of 1 class.
  */
 export function buildConjugationRegistry(): ConjugationCell[] {
 	const cells: ConjugationCell[] = [];
-	for (const form of VERB_FORMS) {
-		for (const wordClass of ALL_VERB_CLASSES) {
-			cells.push({ id: cellId(wordClass, form.id), wordClass, formId: form.id });
+	const maxFormCount = Math.max(...PSEUDO_CLASSES.map((p) => p.forms.length));
+	const maxDiagonal = maxFormCount - 1 + PSEUDO_CLASSES.length - 1;
+	for (let d = 0; d <= maxDiagonal; d++) {
+		for (let classIndex = 0; classIndex < PSEUDO_CLASSES.length; classIndex++) {
+			const formIndex = d - classIndex;
+			const pseudoClass = PSEUDO_CLASSES[classIndex];
+			if (formIndex < 0 || formIndex >= pseudoClass.forms.length) continue;
+			const form = pseudoClass.forms[formIndex];
+			cells.push({
+				id: cellId(pseudoClass.wordClass, form.id),
+				wordClass: pseudoClass.wordClass,
+				formId: form.id
+			});
 		}
-	}
-	for (const form of I_ADJECTIVE_FORMS) {
-		cells.push({ id: cellId('i_adjective', form.id), wordClass: 'i_adjective', formId: form.id });
-	}
-	for (const form of COPULA_FORMS) {
-		cells.push({ id: cellId('copula', form.id), wordClass: 'copula', formId: form.id });
 	}
 	return cells;
 }

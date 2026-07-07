@@ -2,7 +2,6 @@
 	import type { WordState } from '$lib/drill-algorithm';
 	import { applyConjugationOutcome, conjugate } from '$lib/conjugation-engine';
 	import type { WordClass } from '$lib/conjugation-word-list';
-	import { getFormLabel } from '$lib/conjugation-forms';
 	import {
 		checkConjugationLeniency,
 		getConjugationExample,
@@ -24,8 +23,12 @@
 	interface ConjugationDrillItem {
 		cellId: string;
 		word: string;
+		reading: string;
+		meaning: string;
 		wordClass: string;
 		formId: string;
+		formLabel: string;
+		targetMeaning: string;
 		isNew: boolean;
 		box?: number;
 	}
@@ -58,8 +61,10 @@
 	let exampleMeaning = $state('');
 
 	// Grading is locked in from the first attempt only (see recordFinalOutcome)
-	// — retries 2-3 are teaching, not additional grading, per the design.
-	let attemptsThisCell = $state(1);
+	// — retries after that are teaching, not additional grading, per the
+	// design. 0-indexed ("how many attempts consumed so far") so the header
+	// badge can render {attemptsUsed}/3 directly.
+	let attemptsUsed = $state(0);
 	let firstAttemptCorrect: boolean | null = null;
 
 	let cellStateUpdates: WordState[] = [];
@@ -68,12 +73,15 @@
 
 	let currentItem = $derived<ConjugationDrillItem | undefined>(drillItems[currentIndex]);
 	let promptNumber = $derived(currentIndex + 1);
-	let formLabel = $derived(
-		currentItem ? getFormLabel(currentItem.wordClass as WordClass, currentItem.formId) : ''
-	);
 	let showWordBlock = $derived(
 		currentItem !== undefined && phase !== 'idle' && phase !== 'starting' && phase !== 'done'
 	);
+
+	// Kanji, not the reading, is what makes a word unreadable without help —
+	// pure-kana words (e.g. だめ) don't need a reading line at all.
+	function hasKanji(word: string): boolean {
+		return /[一-龯]/.test(word);
+	}
 
 	function resetPerCellState() {
 		answerInput = '';
@@ -81,7 +89,7 @@
 		revealedAnswer = '';
 		exampleSentence = '';
 		exampleMeaning = '';
-		attemptsThisCell = 1;
+		attemptsUsed = 0;
 		firstAttemptCorrect = null;
 	}
 
@@ -128,8 +136,14 @@
 			boxBefore,
 			boxAfter: outcome.box,
 			userAnswer,
-			attemptsUsed: attemptsThisCell
+			attemptsUsed
 		});
+	}
+
+	async function fetchExample(word: string, canonical: string) {
+		const example = await getConjugationExample(word, canonical);
+		exampleSentence = example.sentence;
+		exampleMeaning = example.meaning;
 	}
 
 	async function submitAnswer() {
@@ -144,22 +158,21 @@
 				const leniency = await checkConjugationLeniency(canonical, answerInput);
 				accepted = leniency.acceptable;
 			}
-			if (attemptsThisCell === 1) firstAttemptCorrect = accepted;
+			if (attemptsUsed === 0) firstAttemptCorrect = accepted;
+			attemptsUsed += 1;
 
 			if (accepted) {
-				const example = await getConjugationExample(item.word, canonical);
-				exampleSentence = example.sentence;
-				exampleMeaning = example.meaning;
+				await fetchExample(item.word, canonical);
 				recordFinalOutcome(item, answerInput);
 				phase = 'correct';
-			} else if (attemptsThisCell < 3) {
+			} else if (attemptsUsed < 3) {
 				const hint = await getConjugationHint(item.word, item.wordClass, item.formId, answerInput);
 				hintText = hint.hint;
-				attemptsThisCell += 1;
 				answerInput = '';
 				phase = 'retry';
 			} else {
 				revealedAnswer = canonical;
+				await fetchExample(item.word, canonical);
 				recordFinalOutcome(item, answerInput);
 				phase = 'revealed';
 			}
@@ -211,24 +224,23 @@
 
 {#if showWordBlock && currentItem}
 	<div class="word-block">
-		<p class="prompt-number">{promptNumber}.</p>
+		<div class="cell-header">
+			<span class="badge">{promptNumber}.</span>
+			<span class="badge" class:badge--danger={phase === 'retry'}>{attemptsUsed}/3</span>
+		</div>
 		<p class="word">{currentItem.word}</p>
-		<p class="subtitle">{formLabel}</p>
+		{#if hasKanji(currentItem.word)}<p class="reading">{currentItem.reading}</p>{/if}
+		<p class="meaning">{currentItem.meaning}</p>
+		<div class="target-form-block">
+			<p class="target-form-eyebrow">target form</p>
+			<p class="target-form">{currentItem.formLabel}</p>
+			<p class="target-meaning">{currentItem.targetMeaning}</p>
+		</div>
 	</div>
 {/if}
 
 {#if phase === 'idle' || phase === 'starting'}
 	<p class="subtitle">{username}</p>
-	<div class="card">
-		<p><strong>How this works</strong></p>
-		<p class="subtitle">
-			Each prompt shows a word and a target form (e.g. "causative passive past") — type the
-			conjugated form. Compound forms chain multiple transformations together (causative passive
-			past = causative + passive + past). If you get it wrong, you'll get a hint and can try again
-			(up to 3 attempts) before the answer is revealed — only your first try counts toward your
-			progress.
-		</p>
-	</div>
 	<button class="button-primary" onclick={start} disabled={phase === 'starting'}>
 		{#if phase === 'starting'}<span class="spinner" aria-hidden="true"></span>{/if}
 		{phase === 'starting' ? 'Starting…' : 'Start session'}
@@ -253,7 +265,7 @@
 					<span class="feedback-card__icon" aria-hidden="true">✕</span>{hintText}
 				</div>
 				<div class="field">
-					<span>Try again ({attemptsThisCell}/3):</span>
+					<span>Try again:</span>
 					<input
 						type="text"
 						bind:value={answerInput}
@@ -262,12 +274,19 @@
 				</div>
 			{:else if phase === 'correct'}
 				<div class="feedback-card feedback-card--correct">
-					<span class="feedback-card__icon" aria-hidden="true">✓</span>{exampleSentence}
+					<p class="example-jp">
+						<span class="feedback-card__icon" aria-hidden="true">✓</span>
+						<span class="example-label">Ex.</span>{exampleSentence}
+					</p>
+					<p class="example-en">{exampleMeaning}</p>
 				</div>
-				<p class="subtitle">{exampleMeaning}</p>
 			{:else if phase === 'revealed'}
 				<div class="feedback-card feedback-card--incorrect">
-					<span class="feedback-card__icon" aria-hidden="true">✕</span>Correct answer: {revealedAnswer}
+					<p class="revealed-answer">
+						<span class="feedback-card__icon" aria-hidden="true">✕</span>Correct answer: {revealedAnswer}
+					</p>
+					<p class="example-jp"><span class="example-label">Ex.</span>{exampleSentence}</p>
+					<p class="example-en">{exampleMeaning}</p>
 				</div>
 			{/if}
 		</div>

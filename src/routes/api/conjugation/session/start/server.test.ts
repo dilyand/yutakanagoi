@@ -11,7 +11,8 @@ vi.mock('$lib/server/supabase', () => ({
 const mocks = vi.hoisted(() => ({
 	verifyUserExists: vi.fn(),
 	fetchConjugationContext: vi.fn(),
-	startSession: vi.fn()
+	startSession: vi.fn(),
+	evaluate: vi.fn()
 }));
 
 vi.mock('$lib/server/conjugation-auth', async (importOriginal) => {
@@ -22,6 +23,10 @@ vi.mock('$lib/server/conjugation-auth', async (importOriginal) => {
 vi.mock('$lib/server/conjugation-repository', () => ({
 	fetchConjugationContext: mocks.fetchConjugationContext,
 	startSession: mocks.startSession
+}));
+
+vi.mock('$lib/server/claude-evaluate', () => ({
+	evaluate: mocks.evaluate
 }));
 
 import { POST } from './+server';
@@ -82,6 +87,10 @@ describe('POST /api/conjugation/session/start', () => {
 			callOrder.push('start');
 			return 5;
 		});
+		mocks.evaluate.mockImplementationOnce(async (req: { items: { cellId: string }[] }) => {
+			callOrder.push('glosses');
+			return { glosses: req.items.map((i) => ({ cellId: i.cellId, targetMeaning: 'test gloss' })) };
+		});
 
 		const response = await POST(makeEvent({ userId: 2 }));
 		const body = await response.json();
@@ -94,10 +103,17 @@ describe('POST /api/conjugation/session/start', () => {
 			expect(typeof item.wordClass).toBe('string');
 			expect(typeof item.formId).toBe('string');
 			expect(typeof item.word).toBe('string');
+			expect(typeof item.reading).toBe('string');
+			expect(typeof item.meaning).toBe('string');
+			expect(typeof item.formLabel).toBe('string');
+			expect(item.targetMeaning).toBe('test gloss');
 			expect(item.cellId).toBe(`${item.wordClass}:${item.formId}`);
 		}
 		expect(mocks.verifyUserExists).toHaveBeenCalledWith(expect.anything(), 2);
-		expect(callOrder).toEqual(['verify', 'fetch', 'start']);
+		expect(mocks.evaluate).toHaveBeenCalledWith(
+			expect.objectContaining({ mode: 'conjugation_prompt_glosses' })
+		);
+		expect(callOrder).toEqual(['verify', 'fetch', 'start', 'glosses']);
 	});
 
 	it('rejects with 429 once the per-IP rate limit is exceeded', async () => {
@@ -107,6 +123,9 @@ describe('POST /api/conjugation/session/start', () => {
 			sessionIndex: 0
 		}));
 		mocks.startSession.mockImplementation(async () => 1);
+		mocks.evaluate.mockImplementation(async (req: { items: { cellId: string }[] }) => ({
+			glosses: req.items.map((i) => ({ cellId: i.cellId, targetMeaning: 'test gloss' }))
+		}));
 
 		const ip = `198.51.100.${Math.floor(Math.random() * 255)}`;
 		for (let i = 0; i < 20; i++) {

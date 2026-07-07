@@ -70,4 +70,20 @@ describe('conjugation word classification: known regression cases', () => {
 			expect(w.included).toBe(true);
 		}
 	});
+
+	it('gives every included entry a non-empty reading and meaning', () => {
+		for (const w of CONJUGATION_WORDS) {
+			if (!w.included) continue;
+			expect(w.reading).not.toBe('');
+			expect(w.meaning).not.toBe('');
+		}
+	});
+
+	it('spot-checks readings/meanings for well-known words', () => {
+		const byWord = new Map(CONJUGATION_WORDS.map((w) => [w.word, w]));
+		expect(byWord.get('食べる')).toMatchObject({ reading: 'たべる', meaning: 'to eat' });
+		expect(byWord.get('話す')).toMatchObject({ reading: 'はなす' });
+		expect(byWord.get('大きい')).toMatchObject({ reading: 'おおきい' });
+		expect(byWord.get('する')).toMatchObject({ reading: 'する', meaning: 'to do' });
+	});
 });

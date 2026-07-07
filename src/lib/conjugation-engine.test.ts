@@ -188,14 +188,75 @@ describe('buildConjugationRegistry', () => {
 		expect(cells).toHaveLength(25 * 12 + 10 + 9);
 		expect(new Set(cells.map((c) => c.id)).size).toBe(cells.length);
 	});
+
+	it('the exact first 10 cells match the expected diagonal traversal order', () => {
+		const cells = buildConjugationRegistry().slice(0, 10);
+		expect(cells.map((c) => c.id)).toEqual([
+			'godan_u:nai',
+			'godan_u:ta',
+			'godan_ku:nai',
+			'godan_u:nakatta',
+			'godan_ku:ta',
+			'godan_gu:nai',
+			'godan_u:te',
+			'godan_ku:nakatta',
+			'godan_gu:ta',
+			'godan_su:nai'
+		]);
+	});
+
+	it('spreads variety across both forms and classes within a short prefix, unlike a single-axis-major order', () => {
+		const cells = buildConjugationRegistry();
+		// A form-major order (the previous fix, which caused this regression)
+		// would show exactly 1 distinct form here; a class-major order (the
+		// fix before that) would show exactly 1 distinct class. Diagonal
+		// traversal grows both together instead.
+		const first10Forms = new Set(cells.slice(0, 10).map((c) => c.formId));
+		const first10Classes = new Set(cells.slice(0, 10).map((c) => c.wordClass));
+		expect(first10Forms.size).toBeGreaterThanOrEqual(4);
+		expect(first10Classes.size).toBeGreaterThanOrEqual(4);
+
+		const first50Classes = new Set(cells.slice(0, 50).map((c) => c.wordClass));
+		const first50Forms = new Set(cells.slice(0, 50).map((c) => c.formId));
+		expect(first50Classes.size).toBeGreaterThanOrEqual(8);
+		expect(first50Forms.size).toBeGreaterThanOrEqual(9);
+	});
 });
 
 describe('pickWordForCell', () => {
 	const words: ConjugationWord[] = [
-		{ word: 'ある', frequencyRank: 4, wordClass: 'godan_ru', included: true },
-		{ word: '帰る', frequencyRank: 104, wordClass: 'godan_ru', included: true },
-		{ word: '食べる', frequencyRank: 386, wordClass: 'ichidan', included: true },
-		{ word: '静か', frequencyRank: 391, wordClass: 'copula', included: false }
+		{
+			word: 'ある',
+			frequencyRank: 4,
+			wordClass: 'godan_ru',
+			included: true,
+			reading: 'ある',
+			meaning: 'to exist'
+		},
+		{
+			word: '帰る',
+			frequencyRank: 104,
+			wordClass: 'godan_ru',
+			included: true,
+			reading: 'かえる',
+			meaning: 'to return'
+		},
+		{
+			word: '食べる',
+			frequencyRank: 386,
+			wordClass: 'ichidan',
+			included: true,
+			reading: 'たべる',
+			meaning: 'to eat'
+		},
+		{
+			word: '静か',
+			frequencyRank: 391,
+			wordClass: 'copula',
+			included: false,
+			reading: '',
+			meaning: ''
+		}
 	];
 
 	it('never picks ある for its irregular-negative cells', () => {

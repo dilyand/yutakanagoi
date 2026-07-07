@@ -59,24 +59,31 @@ export interface FormDescriptor<Id extends string> {
 	label: string;
 }
 
+// Labels deliberately drop the romaji suffix (e.g. "negative", not
+// "negative (-nai)") unless the kana-suffixed name is genuinely how the
+// form is naturally referred to (te-form, masu-form-family, etc.) or is
+// needed to tell two forms apart (the two conditionals). Where a suffix is
+// kept, it's the actual kana (〜て), not a romanized fragment — see
+// claude-evaluate.ts's NO_ROMAJI_NOTE for why romaji is avoided throughout
+// this feature's UI and generated text.
 export const VERB_FORMS: FormDescriptor<VerbFormId>[] = [
-	{ id: 'nai', label: 'negative (-nai)' },
-	{ id: 'ta', label: 'past (-ta)' },
-	{ id: 'nakatta', label: 'negative past (-nakatta)' },
-	{ id: 'te', label: 'te-form' },
-	{ id: 'nakute', label: 'negative te-form (-nakute)' },
+	{ id: 'nai', label: 'negative' },
+	{ id: 'ta', label: 'past' },
+	{ id: 'nakatta', label: 'negative past' },
+	{ id: 'te', label: '〜て form' },
+	{ id: 'nakute', label: 'negative 〜て form' },
 	{ id: 'potential', label: 'potential' },
 	{ id: 'passive', label: 'passive' },
 	{ id: 'causative', label: 'causative' },
 	{ id: 'volitional', label: 'volitional' },
-	{ id: 'conditional_ba', label: 'conditional (-ba)' },
-	{ id: 'conditional_tara', label: 'conditional (-tara)' },
+	{ id: 'conditional_ba', label: '〜ば form' },
+	{ id: 'conditional_tara', label: '〜たら form' },
 	{ id: 'imperative', label: 'imperative' },
-	{ id: 'tai', label: 'want to (-tai)' },
-	{ id: 'masu', label: 'polite (-masu)' },
-	{ id: 'masen', label: 'polite negative (-masen)' },
-	{ id: 'mashita', label: 'polite past (-mashita)' },
-	{ id: 'masen_deshita', label: 'polite negative past (-masen deshita)' },
+	{ id: 'tai', label: '〜たい form' },
+	{ id: 'masu', label: 'polite' },
+	{ id: 'masen', label: 'polite negative' },
+	{ id: 'mashita', label: 'polite past' },
+	{ id: 'masen_deshita', label: 'polite negative past' },
 	{ id: 'potential_negative', label: 'potential negative' },
 	{ id: 'potential_past', label: 'potential past' },
 	{ id: 'passive_negative', label: 'passive negative' },
@@ -88,28 +95,28 @@ export const VERB_FORMS: FormDescriptor<VerbFormId>[] = [
 ];
 
 export const I_ADJECTIVE_FORMS: FormDescriptor<IAdjectiveFormId>[] = [
-	{ id: 'negative', label: 'negative (-kunai)' },
-	{ id: 'past', label: 'past (-katta)' },
-	{ id: 'past_negative', label: 'negative past (-kunakatta)' },
-	{ id: 'te', label: 'te-form (-kute)' },
-	{ id: 'negative_te', label: 'negative te-form (-kunakute)' },
-	{ id: 'conditional_kereba', label: 'conditional (-kereba)' },
-	{ id: 'adverbial', label: 'adverbial (+naru/suru)' },
-	{ id: 'sou', label: 'looks like (-sou)' },
-	{ id: 'polite', label: 'polite (-desu)' },
-	{ id: 'polite_past', label: 'polite past (-katta desu)' }
+	{ id: 'negative', label: 'negative' },
+	{ id: 'past', label: 'past' },
+	{ id: 'past_negative', label: 'negative past' },
+	{ id: 'te', label: '〜て form' },
+	{ id: 'negative_te', label: 'negative 〜て form' },
+	{ id: 'conditional_kereba', label: '〜ければ form' },
+	{ id: 'adverbial', label: 'adverbial' },
+	{ id: 'sou', label: '〜そう form' },
+	{ id: 'polite', label: 'polite' },
+	{ id: 'polite_past', label: 'polite past' }
 ];
 
 export const COPULA_FORMS: FormDescriptor<CopulaFormId>[] = [
-	{ id: 'negative', label: 'negative (janai)' },
-	{ id: 'past', label: 'past (datta)' },
-	{ id: 'past_negative', label: 'negative past (janakatta)' },
-	{ id: 'te', label: 'te-form (de)' },
-	{ id: 'conditional_nara', label: 'conditional (nara)' },
-	{ id: 'desu', label: 'polite (desu)' },
-	{ id: 'negative_desu', label: 'polite negative (janai desu)' },
-	{ id: 'deshita', label: 'polite past (deshita)' },
-	{ id: 'past_negative_desu', label: 'polite negative past (janakatta desu)' }
+	{ id: 'negative', label: 'negative' },
+	{ id: 'past', label: 'past' },
+	{ id: 'past_negative', label: 'negative past' },
+	{ id: 'te', label: '〜で form' },
+	{ id: 'conditional_nara', label: '〜なら form' },
+	{ id: 'desu', label: 'polite' },
+	{ id: 'negative_desu', label: 'polite negative' },
+	{ id: 'deshita', label: 'polite past' },
+	{ id: 'past_negative_desu', label: 'polite negative past' }
 ];
 
 /**

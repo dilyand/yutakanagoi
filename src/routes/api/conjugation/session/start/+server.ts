@@ -6,9 +6,18 @@ import { createServiceClient } from '$lib/server/supabase';
 import { fetchConjugationContext, startSession } from '$lib/server/conjugation-repository';
 import { verifyUserExists, UserNotFoundError } from '$lib/server/conjugation-auth';
 import { checkRateLimit } from '$lib/server/rate-limit';
+import { evaluate, type ConjugationPromptGlossesResult } from '$lib/server/claude-evaluate';
 import { selectDrillWords } from '$lib/drill-algorithm';
 import { buildConjugationRegistry, pickWordForCell } from '$lib/conjugation-engine';
+import { getFormLabel } from '$lib/conjugation-forms';
 import { CONJUGATION_WORDS } from '$lib/conjugation-word-list';
+import type { WordClass } from '$lib/conjugation-word-list';
+
+function partOfSpeechFor(wordClass: WordClass): 'verb' | 'i_adjective' | 'copula' {
+	if (wordClass === 'i_adjective') return 'i_adjective';
+	if (wordClass === 'copula') return 'copula';
+	return 'verb';
+}
 
 const RequestSchema = z.object({ userId: z.number().int() });
 
@@ -62,10 +71,35 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 				cellId: cell.id,
 				wordClass: cell.wordClass,
 				formId: cell.formId,
-				word: picked.word
+				word: picked.word,
+				reading: picked.reading,
+				meaning: picked.meaning,
+				formLabel: getFormLabel(cell.wordClass, cell.formId)
 			};
 		}
 	);
 
-	return json({ sessionIndex, drillItems });
+	// One batched Claude call for the whole session (not one per cell) to
+	// compose each item's target-form meaning (e.g. "to wait" + negative ->
+	// "doesn't wait") — see claude-evaluate.ts's conjugation_prompt_glosses
+	// for why this needs a real LLM call rather than a template.
+	const glossResult = (await evaluate({
+		mode: 'conjugation_prompt_glosses',
+		items: drillItems.map((item) => ({
+			cellId: item.cellId,
+			word: item.word,
+			meaning: item.meaning,
+			partOfSpeech: partOfSpeechFor(item.wordClass),
+			formLabel: item.formLabel
+		}))
+	})) as ConjugationPromptGlossesResult;
+	const targetMeaningByCellId = new Map(
+		glossResult.glosses.map((g) => [g.cellId, g.targetMeaning])
+	);
+	const drillItemsWithGlosses = drillItems.map((item) => ({
+		...item,
+		targetMeaning: targetMeaningByCellId.get(item.cellId) ?? ''
+	}));
+
+	return json({ sessionIndex, drillItems: drillItemsWithGlosses });
 };
