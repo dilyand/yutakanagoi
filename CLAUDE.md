@@ -151,6 +151,49 @@ Useful context for working in this repo:
   no column, data, or constraint/RLS semantics changed, only names (plus
   the underlying constraints/indexes/identity sequences, which Postgres
   doesn't auto-rename along with the table).
+- **2.0.0**: activity #2 — conjugation drills, alongside vocab drill.
+  Deliberately **not** built on `word_lists`/`list_words`: conjugation
+  progress is tracked per `(word_class, form_id)` cell (e.g. all
+  godan-む verbs share one box for the causative-passive-past form), not
+  per specific word — a frequency-ranked word list contains far more
+  words than distinct conjugation patterns, so per-word progress would
+  just be redundant bookkeeping for cells that behave identically. New
+  tables `conjugation_state`/`conjugation_sessions`/
+  `conjugation_session_attempts` (schema + rationale in
+  `supabase/README.md`), keyed by `user_id` only — no `list_id`, since
+  the registry (`src/lib/conjugation-forms.ts`'s form lists ×
+  `src/lib/conjugation-word-list.ts`'s ~593 drillable words, both static
+  code data generated once via `scripts/classify-conjugation-words.ts`
+  and hand-reviewed, not a DB table) is shared across all users, not
+  per-list. `src/lib/conjugation-engine.ts`'s `conjugate()` is a pure,
+  deterministic function — grading tries an exact match against it
+  first (zero Claude calls for the common case), only falling through to
+  `claude-evaluate.ts`'s new `conjugation_leniency_check` (accepts valid
+  orthographic variants), `conjugation_hint` (wrong-answer explanation,
+  grounded in the verified-correct answer so it can distinguish "wrong
+  word/stem entirely" from "right stem, wrong transformation" instead of
+  citing possibly-mismatched comparison verbs from memory), or
+  `conjugation_example` (success-path example sentence, retried once if
+  it doesn't literally contain the drilled form) — bumped `/api/evaluate`'s
+  rate limit to 45/5min accordingly, since one drilled cell can now cost
+  up to 3 Claude calls instead of vocab's ~1-2.
+  `buildConjugationRegistry()` enumerates cells via **diagonal**
+  traversal (increasing class-index + form-index sum) rather than
+  class-major or form-major order — either axis-major order means a
+  session's first ~10 cells are monotonous (all one form across many
+  classes, or all one class across many forms); diagonal traversal
+  guarantees an early session already spans multiple classes and forms.
+  Per-word `reading`/`meaning` and the per-session composed target-form
+  gloss (e.g. "to wait" + negative → "doesn't wait", needs real English-
+  grammar judgment so isn't template-generated) were filled in as
+  **non-API** work — Claude Code itself (parallel subagents), not
+  `ANTHROPIC_API_KEY` calls — per [[feedback_no_api_calls_for_prep_work]]:
+  one-time enrichment/review work should spend the Claude Code
+  subscription, not metered API credits reserved for the running app's
+  actual drill sessions. Same non-API approach used for a final
+  translation-correctness pass across all 593 drillable words, which
+  caught and fixed 6 wrong readings/meanings (e.g. はぐ was glossed "to
+  brush" instead of "to peel off").
 
 ---
 

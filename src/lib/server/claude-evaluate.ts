@@ -13,6 +13,18 @@ import { logError } from '$lib/server/logger';
 const GRADING_MODEL = 'claude-sonnet-5';
 const EXPLAIN_MODEL = 'claude-haiku-4-5';
 
+// conjugation_hint/conjugation_example are the same task shape as
+// explain_word (concise, non-judgment-call generation), so they reuse
+// EXPLAIN_MODEL. conjugation_leniency_check is a genuine judgment call
+// (accept a correct-but-differently-spelled answer) like grade_answer/
+// evaluate_sentence, so it reuses GRADING_MODEL for the same reason those do.
+const CONJUGATION_HINT_MODEL = EXPLAIN_MODEL;
+const CONJUGATION_EXAMPLE_MODEL = EXPLAIN_MODEL;
+const CONJUGATION_LENIENCY_MODEL = GRADING_MODEL;
+// Composing "to wait" + negative -> "doesn't wait" is compositional, not a
+// judgment call — same tier as explain_word/conjugation_hint.
+const CONJUGATION_PROMPT_GLOSSES_MODEL = EXPLAIN_MODEL;
+
 const GradeAnswerResult = z.object({
 	correct: z.boolean(),
 	explanation: z.string()
@@ -27,6 +39,28 @@ const EvaluateSentenceResult = z.object({
 	acceptable: z.boolean()
 });
 
+const ConjugationHintResult = z.object({
+	hint: z.string()
+});
+
+const ConjugationExampleResult = z.object({
+	sentence: z.string(),
+	meaning: z.string()
+});
+
+const ConjugationLeniencyResult = z.object({
+	acceptable: z.boolean(),
+	explanation: z.string()
+});
+
+const ConjugationPromptGlossesResult = z.object({
+	glosses: z.array(z.object({ cellId: z.string(), targetMeaning: z.string() }))
+});
+// Exported so callers that need this mode's specific shape (session/start,
+// which reads .glosses) don't have to narrow evaluate()'s general return
+// union themselves.
+export type ConjugationPromptGlossesResult = z.infer<typeof ConjugationPromptGlossesResult>;
+
 export type GradeAnswerRequest = { mode: 'grade_answer'; word: string; userAnswer: string };
 export type ExplainWordRequest = { mode: 'explain_word'; word: string };
 export type EvaluateSentenceRequest = {
@@ -34,8 +68,43 @@ export type EvaluateSentenceRequest = {
 	word: string;
 	sentence: string;
 };
+export type ConjugationHintRequest = {
+	mode: 'conjugation_hint';
+	word: string;
+	wordClass: string;
+	formId: string;
+	userAnswer: string;
+	canonicalAnswer: string;
+};
+export type ConjugationExampleRequest = {
+	mode: 'conjugation_example';
+	word: string;
+	conjugatedForm: string;
+};
+export type ConjugationLeniencyCheckRequest = {
+	mode: 'conjugation_leniency_check';
+	canonicalAnswer: string;
+	userAnswer: string;
+};
+export type ConjugationPromptGlossesRequest = {
+	mode: 'conjugation_prompt_glosses';
+	items: {
+		cellId: string;
+		word: string;
+		meaning: string;
+		partOfSpeech: 'verb' | 'i_adjective' | 'copula';
+		formLabel: string;
+	}[];
+};
 
-export type EvaluateRequest = GradeAnswerRequest | ExplainWordRequest | EvaluateSentenceRequest;
+export type EvaluateRequest =
+	| GradeAnswerRequest
+	| ExplainWordRequest
+	| EvaluateSentenceRequest
+	| ConjugationHintRequest
+	| ConjugationExampleRequest
+	| ConjugationLeniencyCheckRequest
+	| ConjugationPromptGlossesRequest;
 
 function createClient() {
 	const apiKey = env.ANTHROPIC_API_KEY;
@@ -115,11 +184,63 @@ const JAPANESE_FEEDBACK_LEVEL =
 	'without those words, write the feedback in English instead of using ' +
 	'them.';
 
+// Verified live: an earlier version of conjugation_hint without this note
+// produced feedback like "for godan verbs ending in -tsu, add -anai (not
+// -tenai)" — romaji throughout — and separately, in one case, referred to
+// a completely different (if similar-looking) word than the one actually
+// given (待つ when the drilled word was 持つ). The second sentence below
+// targets that directly: telling the model not to re-derive the base word
+// from memory at all removes the opportunity to substitute a wrong one.
+const NO_ROMAJI_NOTE =
+	'When your response includes any Japanese sounds, endings, or words, ' +
+	'always write them in actual Japanese script (hiragana/katakana/kanji ' +
+	'as appropriate) — never romanized (romaji). For example, write ない ' +
+	'not "-nai", つ not "-tsu", 勝つ not "katsu". Do not restate, ' +
+	'reinterpret, or "correct" the base word given to you — if you refer ' +
+	'to it, copy it exactly as given, character for character.';
+
+// Verified live: two distinct failure modes surfaced once NO_ROMAJI_NOTE
+// alone wasn't enough. (1) A learner wrote a word entirely unrelated to the
+// one being drilled (e.g. 雪がない for 注ぐ), and the hint gave a generic
+// rule reminder instead of pointing out the mismatch — the two paragraphs
+// below fix this by requiring the model to check the stem match first, and
+// by supplying the correct answer as private grounding so it can actually
+// tell the two cases apart. (2) A hint compared 狂う (godan_u) to 飲む/読む
+// (godan_mu) as if they conjugated the same way, which they don't — the
+// third paragraph removes comparison-verb citation entirely rather than
+// hoping the model only cites verbs that genuinely share the same ending.
+const CONJUGATION_HINT_RULES =
+	'A Japanese learner got a conjugation drill wrong. You are given the ' +
+	'base word, its grammatical class, the target form, the correct answer, ' +
+	"and the learner's incorrect answer. The correct answer is for grounding " +
+	'your explanation only — never state, spell out, or otherwise reveal it ' +
+	'in your hint, even partially. ' +
+	"First check whether the learner's answer shares the same stem as the " +
+	'base word at all. If they wrote a different word or stem entirely (not ' +
+	'just a wrong ending), say so directly and encourage them to conjugate ' +
+	'the word actually given — do not give a generic grammar rule in this ' +
+	"case, since it wouldn't address their actual mistake. If they did use " +
+	'the correct stem but applied the wrong transformation, explain what ' +
+	"changes using only this word's own ending and the specific sound " +
+	'change it takes (e.g. which kana row it shifts to) — do not compare to ' +
+	'other example verbs from memory, since an incorrectly-recalled ' +
+	'comparison verb (one that does not actually share the same conjugation ' +
+	'pattern) has caused real mistakes before. Give a short, encouraging ' +
+	'hint (1-2 sentences) that points toward the correct pattern without ' +
+	'simply stating the correct answer outright.';
+
 /**
- * Grades, explains, or evaluates a Japanese vocab drill interaction via the
- * Claude API. This is the only place in the app that calls Anthropic — the
- * deterministic due-word/box logic in $lib/drill-algorithm never touches an
- * LLM, by design (see the PWA migration plan).
+ * Grades, explains, or evaluates a Japanese vocab or conjugation drill
+ * interaction via the Claude API. This is the only place in the app that
+ * calls Anthropic — the deterministic due-word/box logic in
+ * $lib/drill-algorithm and the deterministic conjugation logic in
+ * $lib/conjugation-engine never touch an LLM, by design. For conjugation
+ * drills specifically, grading itself happens client/route-side via
+ * exact-match against $lib/conjugation-engine's conjugate() output — the
+ * three conjugation_* modes here are only for what's genuinely generative
+ * (a hint on failure, an example sentence on success) or a genuine judgment
+ * call (accepting a differently-spelled-but-valid answer when exact-match
+ * fails).
  */
 export async function evaluate(request: EvaluateRequest) {
 	const client = createClient();
@@ -180,6 +301,147 @@ export async function evaluate(request: EvaluateRequest) {
 					]
 				});
 				return EvaluateSentenceResult.parse(response.parsed_output);
+			}
+
+			case 'conjugation_hint': {
+				const response = await client.messages.parse({
+					model: CONJUGATION_HINT_MODEL,
+					max_tokens: 512,
+					thinking: { type: 'disabled' },
+					output_config: { format: zodOutputFormat(ConjugationHintResult) },
+					system:
+						`${CONJUGATION_HINT_RULES} Respond in English. ${NO_ROMAJI_NOTE} ` +
+						UNTRUSTED_INPUT_NOTE,
+					messages: [
+						{
+							role: 'user',
+							content:
+								`Word: ${tagUntrusted(request.word)}\nClass: ${tagUntrusted(request.wordClass)}\n` +
+								`Target form: ${tagUntrusted(request.formId)}\n` +
+								`Correct answer (do not reveal): ${tagUntrusted(request.canonicalAnswer)}\n` +
+								`Learner's answer: ${tagUntrusted(request.userAnswer)}`
+						}
+					]
+				});
+				return ConjugationHintResult.parse(response.parsed_output);
+			}
+
+			case 'conjugation_example': {
+				const word = request.word;
+				const conjugatedForm = request.conjugatedForm;
+				const baseSystem =
+					'Given a Japanese word and one of its conjugated forms, write one natural, ' +
+					'simple example sentence in Japanese that uses the conjugated form, plus a ' +
+					'brief English translation. The sentence MUST contain the given conjugated ' +
+					'form as a literal, exact substring — do not substitute a different word or ' +
+					'a different conjugation of it. Keep the sentence short and easy for a ' +
+					'language learner. Many natural Japanese sentences omit the subject entirely ' +
+					'when it is inferable from context — do not default to always stating an ' +
+					'explicit subject like 私は/彼は/彼女は. Vary this the way a native speaker ' +
+					'actually would: often omit the subject, and only include one when it is ' +
+					'genuinely needed for the sentence to make sense. ' +
+					UNTRUSTED_INPUT_NOTE;
+
+				async function requestExample(extraInstruction: string) {
+					const response = await client.messages.parse({
+						model: CONJUGATION_EXAMPLE_MODEL,
+						max_tokens: 512,
+						thinking: { type: 'disabled' },
+						output_config: { format: zodOutputFormat(ConjugationExampleResult) },
+						system: extraInstruction ? `${baseSystem} ${extraInstruction}` : baseSystem,
+						messages: [
+							{
+								role: 'user',
+								content: `Word: ${tagUntrusted(word)}\nConjugated form: ${tagUntrusted(conjugatedForm)}`
+							}
+						]
+					});
+					return ConjugationExampleResult.parse(response.parsed_output);
+				}
+
+				let result = await requestExample('');
+				if (!result.sentence.includes(conjugatedForm)) {
+					// Verified live: without an explicit literal-substring
+					// requirement, the model sometimes substitutes a different,
+					// similar-sounding real word (e.g. 殴る instead of the given
+					// なぐ) rather than using the exact form asked for. One retry
+					// with a stronger, example-specific instruction fixes this in
+					// practice; if it still fails, accept the result rather than
+					// blocking the drill on a rare edge case, but log it.
+					result = await requestExample(
+						`Your previous attempt did not literally contain "${conjugatedForm}" — this ` +
+							'retry MUST include that exact string, unmodified. Do not substitute a ' +
+							'different word or a different conjugation of it.'
+					);
+					if (!result.sentence.includes(conjugatedForm)) {
+						await logError(
+							'evaluate',
+							new Error('conjugation_example sentence missing the drilled form after retry'),
+							{ mode: request.mode, conjugatedForm, sentence: result.sentence }
+						);
+					}
+				}
+				return result;
+			}
+
+			case 'conjugation_leniency_check': {
+				const response = await client.messages.parse({
+					model: CONJUGATION_LENIENCY_MODEL,
+					max_tokens: 512,
+					thinking: { type: 'disabled' },
+					output_config: { effort: 'low', format: zodOutputFormat(ConjugationLeniencyResult) },
+					system:
+						'You are grading a Japanese conjugation drill. Given the canonical correct ' +
+						"answer and the learner's answer, judge whether the learner's answer is an " +
+						'acceptable variant of the canonical one (e.g. a different but valid kana/kanji ' +
+						'spelling, an okurigana variation, or a harmless typo-level difference) rather ' +
+						'than a genuinely different or incorrect conjugation. Do not accept a different ' +
+						'grammatical form (a different tense, polarity, or register) even if related. ' +
+						`Respond in English. ${NO_ROMAJI_NOTE} ` +
+						UNTRUSTED_INPUT_NOTE,
+					messages: [
+						{
+							role: 'user',
+							content: `Canonical answer: ${tagUntrusted(request.canonicalAnswer)}\nLearner's answer: ${tagUntrusted(request.userAnswer)}`
+						}
+					]
+				});
+				return ConjugationLeniencyResult.parse(response.parsed_output);
+			}
+
+			case 'conjugation_prompt_glosses': {
+				// Batched once per session (all ~10 drill items in one call), not
+				// per cell — composing "to wait" + negative -> "doesn't wait"
+				// needs real English-grammar judgment (irregular verbs, and verb
+				// vs adjective vs copula phrasing all differ), so this can't
+				// safely be a template, but it's cheap enough to do once per
+				// session rather than once per drilled cell. Word/meaning/
+				// formLabel all come from static reference data (the reviewed
+				// word list and forms registry), never free-typed user input, so
+				// this is the one mode that doesn't wrap its content in
+				// <untrusted> tags.
+				const response = await client.messages.parse({
+					model: CONJUGATION_PROMPT_GLOSSES_MODEL,
+					max_tokens: 1024,
+					thinking: { type: 'disabled' },
+					output_config: { format: zodOutputFormat(ConjugationPromptGlossesResult) },
+					system:
+						'For each item below, compose a short English phrase describing the given ' +
+						"word's meaning when conjugated into the target grammatical form. Examples: " +
+						'word meaning "to wait" + form "negative" (verb) -> "doesn\'t wait"; word ' +
+						'meaning "big" + form "negative" (i_adjective) -> "isn\'t big"; word meaning ' +
+						'"quiet" + form "negative" (copula) -> "isn\'t quiet". Keep each phrase very ' +
+						'short (2-5 words), natural English, present tense unless the form is ' +
+						`explicitly a past form. ${NO_ROMAJI_NOTE} Return one gloss per item, each ` +
+						'tagged with its cellId so results can be matched back up.',
+					messages: [
+						{
+							role: 'user',
+							content: JSON.stringify(request.items)
+						}
+					]
+				});
+				return ConjugationPromptGlossesResult.parse(response.parsed_output);
 			}
 		}
 	} catch (e) {

@@ -3,6 +3,7 @@
 	import UserSelector from '$lib/components/UserSelector.svelte';
 	import ActivityPicker from '$lib/components/ActivityPicker.svelte';
 	import VocabDrillActivity from '$lib/components/activities/VocabDrillActivity.svelte';
+	import ConjugationDrillActivity from '$lib/components/activities/ConjugationDrillActivity.svelte';
 	import FontSizeControl from '$lib/components/FontSizeControl.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import { transitionDuration } from '$lib/client/motion';
@@ -49,6 +50,16 @@
 		{:else if selectedActivityId === 'vocab-drill'}
 			<div class="activity-screen" transition:fade={{ duration: transitionDuration(150) }}>
 				<VocabDrillActivity
+					userId={selectedUserId}
+					username={selectedUsername}
+					onExit={() => {
+						selectedActivityId = null;
+					}}
+				/>
+			</div>
+		{:else if selectedActivityId === 'conjugation-drill'}
+			<div class="activity-screen" transition:fade={{ duration: transitionDuration(150) }}>
+				<ConjugationDrillActivity
 					userId={selectedUserId}
 					username={selectedUsername}
 					onExit={() => {
