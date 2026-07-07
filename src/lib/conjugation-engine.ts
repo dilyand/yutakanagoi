@@ -337,11 +337,20 @@ const ALL_VERB_CLASSES: VerbClass[] = [
  * pickWordForCell). ~294 in the original design estimate (25 forms x ~11
  * verb classes + 10 + 9); exactly 319 here (25 x 12 verb classes, since
  * there are 12 not 11 — the estimate was always approximate).
+ *
+ * Iteration order is form-major, class-minor (not the other way around):
+ * this array's index doubles as the "new cell" introduction order for
+ * selectDrillWords (the same role vocab's frequencyRank plays), so looping
+ * classes-first would drill a learner through godan_u's
+ * causative_passive_past before they ever saw a single godan_ku form.
+ * Form-major spreads difficulty evenly instead — every class's nai-form
+ * before any class's ta-form, and so on — extending VERB_FORMS' own
+ * simple-before-compound ordering across the whole curriculum.
  */
 export function buildConjugationRegistry(): ConjugationCell[] {
 	const cells: ConjugationCell[] = [];
-	for (const wordClass of ALL_VERB_CLASSES) {
-		for (const form of VERB_FORMS) {
+	for (const form of VERB_FORMS) {
+		for (const wordClass of ALL_VERB_CLASSES) {
 			cells.push({ id: cellId(wordClass, form.id), wordClass, formId: form.id });
 		}
 	}
