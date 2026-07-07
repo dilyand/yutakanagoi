@@ -123,3 +123,22 @@ cutover.
   because Vercel's own function-log retention is short and this repo has no
   linked Vercel CLI session — read recent rows with `npm run logs:errors`
   (`scripts/read-error-log.ts`) instead of the Vercel dashboard.
+- `conjugation_state` — added in 2.0.0, for the conjugation-drills activity.
+  One row per `(user_id, cell_id)`, `box` 0-4, `last_session` — same
+  box/interval shape as `word_state`, but keyed by `cell_id` (the opaque
+  `"wordClass:formId"` string from `src/lib/conjugation-forms.ts`'s
+  `cellId()`, e.g. `"godan_mu:causative_passive_past"`) instead of `word`,
+  and with no `list_id` at all. Unlike vocab drill's per-user authored
+  lists, conjugation drills work off one shared word-class/form registry —
+  `src/lib/conjugation-word-list.ts` and `conjugation-forms.ts`, static code
+  data, not a table, since it never changes per-user. See
+  `src/lib/conjugation-engine.ts`.
+- `conjugation_sessions` — one row per conjugation-drill session (`user_id`,
+  `session_index`, `started_at`, `completed_at`, `cells_drilled`).
+  `session_index` is a per-user counter (there's no list to scope it to).
+- `conjugation_session_attempts` — one row per cell drilled per session
+  (`session_id`, `user_id`, `cell_id`, `word` — the specific word shown for
+  this cell this attempt, since the word isn't part of the progress state
+  itself — `correct`, box before/after, the user's answer, `attempts_used`
+  1-3). `attempts_used` records the hint-then-retry-up-to-3 interaction from
+  the design; grading is still based on the first attempt only.
