@@ -16,7 +16,8 @@
 		"test:watch": "vitest",
 		"add-user": "tsx --env-file=.env scripts/add-user.ts",
 		"migrate:legacy-user-list": "tsx --env-file=.env scripts/migrate-legacy-user-list.ts",
-		"logs:errors": "tsx --env-file=.env scripts/read-error-log.ts"
+		"logs:errors": "tsx --env-file=.env scripts/read-error-log.ts",
+		"classify-conjugation-words": "tsx --env-file=.env scripts/classify-conjugation-words.ts"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
