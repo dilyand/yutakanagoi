@@ -40,6 +40,27 @@ If you need to point the CLI at a different project temporarily (e.g. to
 re-seed a staging project), `link` to it, run your commands, then `link`
 back to the production ref — it's just a local pointer, safe to switch.
 
+**Before trusting any constraint documentation in this file (including the
+Schema section below) as current, verify it directly against the live
+database rather than just reading migration files by hand** — migration
+files are the intended source of truth, but the only way to know for
+certain there's no undocumented drift (a manual change made directly in the
+Supabase dashboard/SQL editor, or in some tool that isn't this repo) is to
+ask the live database itself:
+
+```sh
+npx supabase link --project-ref <project-ref>
+npx supabase db diff --linked --schema public   # read-only; "No schema changes found" = no drift
+```
+
+Run this against both `suibcyizndchihpzaodc` (production) and
+`vlvndoglveivlxejjuzn` (staging) — remember to `link` back to whichever
+project you started on afterward, since it's a shared local pointer, not
+per-command. Confirmed **zero drift on both** as of 2026-07-08, right before
+writing this note and the constraint documentation below — every FK/unique
+constraint documented in this file was cross-checked against the live
+schema, not just inferred from reading `.sql` files.
+
 ## One-time data migrations, historical
 
 These already ran, against real data, exactly once, and their scripts have
