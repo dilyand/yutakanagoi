@@ -108,28 +108,6 @@ const GODAN_ENDING_TO_CLASS: Record<string, VerbClass> = {
 };
 const VALID_VERB_ENDINGS = new Set([...Object.keys(GODAN_ENDING_TO_CLASS), 'る']);
 
-// Known problem entries in japanese-2000-most-frequent-words.md, found during
-// 2.0.0 conjugation-drill classification review — excluded from conjugation
-// drilling without editing the frozen source file (see CLAUDE.md), for two
-// different reasons:
-//   - まえる, ばる: don't parse as real standalone Japanese words (likely
-//     truncated/garbled extraction artifacts from the source corpus — e.g.
-//     まえる may be a fragment of 捕まえる, ばる of 頑張る/がんばる). Tracked
-//     in https://github.com/dilyand/yutakanagoi/issues/25 to revisit the
-//     source list itself.
-//   - 隠る, 恐る: real words, but archaic/classical verb forms (modern
-//     equivalents 隠れる/恐れる, both ichidan) probably from stylized/period
-//     dialogue in the source corpus — a modern speaker conjugates the
-//     ichidan form, not these, so drilling them with modern godan_ru
-//     conjugation would teach forms nobody actually uses. Not a source-list
-//     data error (no issue filed), just out of scope for this drill.
-//   - ごとし: a classical auxiliary ("as if/like", 如し) with no modern
-//     conjugation of its own — not a real content word for either the
-//     i_adjective or na_adjective_or_noun bucket, unlike other words that
-//     fail the i_adjective ending check (see the na_adjective_or_noun
-//     reclassification below, which this is deliberately excluded from).
-const KNOWN_BAD_SOURCE_ENTRIES = new Set(['まえる', 'ばる', '隠る', '恐る', 'ごとし']);
-
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) {
 	console.error(
@@ -387,8 +365,6 @@ async function main() {
 		);
 	}
 
-	for (const bad of KNOWN_BAD_SOURCE_ENTRIES) pass1.delete(bad);
-
 	const verbCandidates = words.filter((w) => pass1.get(w.word) === 'verb');
 	const iAdjectiveCandidates = words.filter((w) => pass1.get(w.word) === 'i_adjective');
 
@@ -399,9 +375,7 @@ async function main() {
 	// prefix forms of 白い/薄い, 真っ赤 is a na-adjective — 真っ赤な/だ, not
 	// 真っ赤い, 同じ famously conjugates like a na-adjective despite meaning
 	// "same") — so these get reclassified into the copula candidate pool
-	// rather than dropped, except for KNOWN_BAD_SOURCE_ENTRIES-style cases
-	// that aren't a real content word in either category (see ごとし there:
-	// a classical auxiliary, not a modern adjective or noun).
+	// rather than dropped.
 	const iAdjectives = iAdjectiveCandidates.filter((w) => w.word.endsWith('い'));
 	const misclassifiedAsIAdjective = iAdjectiveCandidates.filter((w) => !w.word.endsWith('い'));
 	if (misclassifiedAsIAdjective.length > 0) {

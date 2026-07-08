@@ -1,6 +1,9 @@
 # Vocab master list
 
-Frozen 2000-word core list, ordered by frequency (most frequent first).
+Core word list, ordered by frequency (most frequent first). Not read or
+written by the running app, but maintained as real, current vocabulary —
+edited when a data-quality issue is found (see CLAUDE.md's release notes),
+not left to rot untouched.
 Source: frozen-2000-word-core-list.txt
 
 - する
@@ -149,7 +152,6 @@ Source: frozen-2000-word-core-list.txt
 - 以上
 - 答える
 - 名
-- なん
 - 腰
 - 振る
 - 置く
@@ -279,8 +281,7 @@ Source: frozen-2000-word-core-list.txt
 - 消える
 - 頃
 - 父
-- だす
-- ほる
+- 掘る
 - ゆっくり
 - 好き
 - 自身
@@ -451,8 +452,6 @@ Source: frozen-2000-word-core-list.txt
 - 腹
 - 以外
 - 気分
-- うい
-- かる
 - ベッド
 - 島
 - かしら
@@ -479,13 +478,9 @@ Source: frozen-2000-word-core-list.txt
 - 危険
 - 穴
 - 完全
-- 分る
-- さい
 - 左
 - 隠す
 - 攻撃
-- つた
-- たく
 - 何か
 - 仲間
 - いろいろ
@@ -503,7 +498,6 @@ Source: frozen-2000-word-core-list.txt
 - 違い
 - 激しい
 - さすが
-- けい
 - 低い
 - 瞳
 - 残す
@@ -550,7 +544,6 @@ Source: frozen-2000-word-core-list.txt
 - うる
 - 起こす
 - 眺める
-- あがる
 - 貴族
 - サー
 - だめ
@@ -587,25 +580,21 @@ Source: frozen-2000-word-core-list.txt
 - 認める
 - 元
 - 雨
-- もどる
 - 落とす
 - 運ぶ
 - 老人
 - 嘘
 - 自然
-- しん
 - 城
 - 突然
 - 例
 - バー
 - 起きる
-- 下げ
 - 眠る
 - 回
 - 箱
 - 痛い
 - 考え
-- じゅう
 - 手紙
 - 食う
 - いきなり
@@ -619,7 +608,6 @@ Source: frozen-2000-word-core-list.txt
 - 明日
 - 助ける
 - 地面
-- あう
 - 熱い
 - 浮かぶ
 - 冷たい
@@ -638,9 +626,7 @@ Source: frozen-2000-word-core-list.txt
 - 凄い
 - 無い
 - おかしい
-- げん
 - 変
-- ちょう
 - 位置
 - 怖い
 - つい
@@ -672,7 +658,6 @@ Source: frozen-2000-word-core-list.txt
 - 昨日
 - それら
 - 雪
-- げき
 - 情報
 - 生まれる
 - 悲鳴
@@ -682,10 +667,8 @@ Source: frozen-2000-word-core-list.txt
 - 化
 - 戦争
 - 旅
-- まつ
 - 妙
 - もう一度
-- みせる
 - 一方
 - 住む
 - 方法
@@ -699,16 +682,13 @@ Source: frozen-2000-word-core-list.txt
 - いったい
 - 選ぶ
 - 口調
-- 泰
 - 殿
 - へる
 - 感情
 - 触れる
-- しょ
 - 皆
 - 愛
 - 犯人
-- 魅
 - 気配
 - 尋ねる
 - なんか
@@ -725,7 +705,6 @@ Source: frozen-2000-word-core-list.txt
 - 嫌
 - 叩く
 - 氏
-- たん
 - 目的
 - 決める
 - 裏
@@ -744,12 +723,10 @@ Source: frozen-2000-word-core-list.txt
 - あまりに
 - 楽しい
 - つかむ
-- せん
 - 抜く
 - 噂
 - 全部
 - 告げる
-- たてる
 - ものの
 - いただく
 - 方向
@@ -773,7 +750,6 @@ Source: frozen-2000-word-core-list.txt
 - 約束
 - 机
 - たぶん
-- あく
 - 現実
 - 結局
 - 魔術
@@ -804,7 +780,6 @@ Source: frozen-2000-word-core-list.txt
 - そのもの
 - 現在
 - 死体
-- 言
 - 下げる
 - 描く
 - 全体
@@ -815,7 +790,6 @@ Source: frozen-2000-word-core-list.txt
 - 用意
 - 震える
 - いたす
-- へん
 - 翼
 - 吹く
 - ほしい
@@ -828,9 +802,7 @@ Source: frozen-2000-word-core-list.txt
 - 猫
 - 武器
 - 全く
-- 向う
 - 降る
-- たた
 - 吸う
 - 汗
 - 間違い
@@ -842,7 +814,6 @@ Source: frozen-2000-word-core-list.txt
 - 空間
 - 笑顔
 - 回る
-- いえる
 - 匂い
 - いずれ
 - ありがとう
@@ -853,13 +824,11 @@ Source: frozen-2000-word-core-list.txt
 - 棒
 - 伸ばす
 - そりゃ
-- がた
 - 脚
 - 等
 - いっぱい
 - 態度
 - 発見
-- はん
 - 緊張
 - 鬼
 - 銃
@@ -882,13 +851,11 @@ Source: frozen-2000-word-core-list.txt
 - 面白い
 - 程度
 - ふく
-- がん
 - かぶる
 - 訳
 - 慣れる
 - 中央
 - 限り
-- ひく
 - 寄せる
 - 戦
 - 聖
@@ -897,7 +864,6 @@ Source: frozen-2000-word-core-list.txt
 - 語る
 - 大変
 - 生命
-- 之
 - 蹴る
 - 必死
 - 端
@@ -910,9 +876,7 @@ Source: frozen-2000-word-core-list.txt
 - 計画
 - 今夜
 - 夏
-- 判る
 - 美
-- いち
 - 届く
 - 反対
 - 彼等
@@ -924,8 +888,6 @@ Source: frozen-2000-word-core-list.txt
 - 勢い
 - たま
 - 興味
-- しゅん
-- ぜん
 - 事情
 - 肉体
 - 決まる
@@ -938,7 +900,6 @@ Source: frozen-2000-word-core-list.txt
 - 下ろす
 - 逆
 - 教室
-- しゅう
 - 父親
 - 寄る
 - 社会
@@ -947,8 +908,6 @@ Source: frozen-2000-word-core-list.txt
 - 為
 - どうしても
 - 線
-- まわす
-- 静
 - ほんの
 - もはや
 - はく
@@ -966,7 +925,6 @@ Source: frozen-2000-word-core-list.txt
 - 甘い
 - 岩
 - 爆発
-- ゆき
 - 移動
 - 玄関
 - 消す
@@ -976,12 +934,10 @@ Source: frozen-2000-word-core-list.txt
 - さえる
 - 注意
 - 破壊
-- おん
 - 又
 - たとえ
 - 役
 - 庭
-- まわる
 - 研究
 - ガラス
 - なす
@@ -1007,9 +963,7 @@ Source: frozen-2000-word-core-list.txt
 - 新聞
 - 秀麗
 - 人形
-- はな
 - 連絡
-- じん
 - 食事
 - 作戦
 - 文字
@@ -1030,7 +984,6 @@ Source: frozen-2000-word-core-list.txt
 - なお
 - 負ける
 - 紙
-- てい
 - 非常
 - 余
 - 充分
@@ -1043,12 +996,9 @@ Source: frozen-2000-word-core-list.txt
 - 真
 - さて
 - 苦しい
-- 令
 - 当たる
-- れい
 - 罪
 - しかる
-- ませる
 - 見つかる
 - 中心
 - 夫人
@@ -1078,9 +1028,7 @@ Source: frozen-2000-word-core-list.txt
 - ぼんやり
 - 南
 - 弟
-- 圭一
 - 準備
-- りょう
 - はあ
 - 渡る
 - ぶつ
@@ -1114,13 +1062,10 @@ Source: frozen-2000-word-core-list.txt
 - 奇妙
 - 集まる
 - 興奮
-- ぶり
-- きれる
 - 薄い
 - 挨拶
 - まう
 - 樹
-- てん
 - ホテル
 - 最も
 - 頷く
@@ -1128,22 +1073,17 @@ Source: frozen-2000-word-core-list.txt
 - 界
 - 縁
 - 会話
-- こく
 - 毛
 - あそこ
 - そうして
 - 優しい
 - 含む
 - 飛び出す
-- ぎょ
-- 秘
 - 冗談
 - 運命
 - 基地
 - 書
 - なぞ
-- っぽい
-- おう
 - 離す
 - 付き
 - 鏡
@@ -1158,18 +1098,14 @@ Source: frozen-2000-word-core-list.txt
 - キロ
 - 午後
 - 正直
-- やく
 - 家族
-- きゅう
 - 歴史
 - わき
 - はっ
-- こん
 - 確かめる
 - 片手
 - 無
 - みな
-- りゅう
 - 位
 - 技術
 - カー
@@ -1201,7 +1137,6 @@ Source: frozen-2000-word-core-list.txt
 - 映る
 - 迎える
 - 大事
-- ちがい
 - 突く
 - 艦隊
 - あける
@@ -1214,7 +1149,6 @@ Source: frozen-2000-word-core-list.txt
 - もらえる
 - 息子
 - いくつ
-- とぶ
 - 発
 - 文学
 - 意志
@@ -1224,7 +1158,6 @@ Source: frozen-2000-word-core-list.txt
 - なんと
 - 邪魔
 - 代わり
-- 伊
 - 姫
 - 草
 - 隊長
@@ -1236,7 +1169,6 @@ Source: frozen-2000-word-core-list.txt
 - わく
 - 参る
 - 答え
-- 其の
 - 喋る
 - 紅
 - 無視
@@ -1266,8 +1198,6 @@ Source: frozen-2000-word-core-list.txt
 - 証拠
 - 借りる
 - 表
-- ひざ
-- 来
 - 一気に
 - つき
 - 直す
@@ -1289,24 +1219,19 @@ Source: frozen-2000-word-core-list.txt
 - 友人
 - あつい
 - 布
-- 斎
 - 丸い
 - 程
 - 東
 - 救う
 - 世
 - 大切
-- われる
 - おかげ
 - 熱
 - 迫る
-- きん
 - 地下
-- ほお
 - 繰り返す
 - ごめん
 - 十分
-- まわり
 - 格好
 - 味方
 - 少なくとも
@@ -1359,10 +1284,6 @@ Source: frozen-2000-word-core-list.txt
 - 疑う
 - かまう
 - 遊ぶ
-- しょう
-- 坐る
-- らん
-- 貴方
 - 集中
 - クラス
 - 内容
@@ -1386,7 +1307,6 @@ Source: frozen-2000-word-core-list.txt
 - 事態
 - 指先
 - 焼く
-- ぞう
 - 本人
 - 休む
 - 駆る
@@ -1394,7 +1314,6 @@ Source: frozen-2000-word-core-list.txt
 - 視界
 - 番
 - 筋
-- 離
 - 押さえる
 - 友
 - 園
@@ -1406,7 +1325,6 @@ Source: frozen-2000-word-core-list.txt
 - 余裕
 - 雰囲気
 - 呪文
-- まえる
 - 恥
 - 沈む
 - 三つ
@@ -1423,10 +1341,8 @@ Source: frozen-2000-word-core-list.txt
 - 問う
 - どんなに
 - 野郎
-- しよう
 - 文句
 - いかにも
-- 変る
 - 時計
 - 文
 - 神経
@@ -1451,35 +1367,30 @@ Source: frozen-2000-word-core-list.txt
 - 江戸
 - 我慢
 - 集める
-- めい
 - 責任
 - 避ける
 - 効果
 - 差し出す
 - パイロット
 - とうとう
-- 斗
 - 踏む
 - 将軍
 - 掛ける
 - 倒す
 - 全て
 - 戻す
-- 重
 - 屋根
 - 相当
 - 爪
 - 一言
 - 洗う
 - 週間
-- 現われる
 - 林
 - 耐える
 - 命じる
 - 術
 - 茶
 - 畳
-- 薄
 - ぶつかる
 - 霧
 - 飛行
@@ -1491,13 +1402,11 @@ Source: frozen-2000-word-core-list.txt
 - 振り向く
 - 気付く
 - 西
-- 有る
 - だけど
 - 異常
 - 多分
 - それにしても
 - 多少
-- 相
 - わっ
 - 成功
 - お茶
@@ -1507,10 +1416,8 @@ Source: frozen-2000-word-core-list.txt
 - 病気
 - 緑
 - 偶然
-- だま
 - 際
 - わざわざ
-- われ
 - まっすぐ
 - 従う
 - 内側
@@ -1545,7 +1452,6 @@ Source: frozen-2000-word-core-list.txt
 - ますます
 - 板
 - 宙
-- のむ
 - 灯
 - 呟く
 - 礼
@@ -1561,16 +1467,12 @@ Source: frozen-2000-word-core-list.txt
 - 否定
 - 虫
 - 帯
-- みょう
-- ほほ
-- ごとし
 - 艦長
 - 一種
 - 勝つ
 - 観察
 - パン
 - すく
-- にゃ
 - 小屋
 - 活動
 - この世
@@ -1584,7 +1486,6 @@ Source: frozen-2000-word-core-list.txt
 - 支える
 - すら
 - 糸
-- 何処
 - さく
 - 貰う
 - 真実
@@ -1600,14 +1501,12 @@ Source: frozen-2000-word-core-list.txt
 - 散る
 - のぞく
 - 秋
-- うえ
 - 面倒
 - 浮く
 - 都市
 - テレビ
 - 精霊
 - せっかく
-- なぐ
 - 出会う
 - 途端
 - 港
@@ -1632,10 +1531,8 @@ Source: frozen-2000-word-core-list.txt
 - びっくり
 - 構う
 - 見下ろす
-- ばる
 - 濃い
 - 類
-- くつ
 - 確実
 - 這う
 - 素直
@@ -1668,7 +1565,7 @@ Source: frozen-2000-word-core-list.txt
 - 冷静
 - 初め
 - 作
-- やみ
+- 闇
 - かえって
 - 現象
 - 本来
@@ -1681,8 +1578,6 @@ Source: frozen-2000-word-core-list.txt
 - もる
 - 及ぶ
 - 道路
-- 気持
-- とら
 - 応じる
 - 通じる
 - 立
@@ -1727,7 +1622,6 @@ Source: frozen-2000-word-core-list.txt
 - はぐ
 - お母さん
 - 片
-- うける
 - 風呂
 - たっぷり
 - しる
@@ -1737,13 +1631,9 @@ Source: frozen-2000-word-core-list.txt
 - 条件
 - 冒険
 - 時々
-- ぽい
 - 手段
 - 学
 - むら
-- 聞える
-- だいじょうぶ
-- どおり
 - 腿
 - 見事
 - 手首
@@ -1761,7 +1651,6 @@ Source: frozen-2000-word-core-list.txt
 - 辺り
 - 紹介
 - 脳
-- さわ
 - アメリカ
 - 追いかける
 - にくい
@@ -1773,7 +1662,6 @@ Source: frozen-2000-word-core-list.txt
 - 前後
 - こめる
 - 価値
-- まいる
 - 道具
 - まさに
 - もともと
@@ -1803,18 +1691,15 @@ Source: frozen-2000-word-core-list.txt
 - お話
 - せめて
 - 容易
-- となり
 - 平気
 - いかに
 - ママ
-- うわさ
 - 呼びかける
 - 人類
 - 確信
 - やさしい
 - 商売
 - 慌てる
-- 終る
 - 出発
 - 迷惑
 - いつか
@@ -1827,7 +1712,6 @@ Source: frozen-2000-word-core-list.txt
 - ふた
 - 解放
 - しめる
-- 遣る
 - かぎり
 - うわ
 - ひそめる
@@ -1838,16 +1722,13 @@ Source: frozen-2000-word-core-list.txt
 - 騎
 - 帽子
 - 開始
-- あたる
 - まずい
 - 事故
 - お金
 - エネルギー
 - どこか
 - 毒
-- 隠る
 - 満ちる
-- 恐る
 - 比べる
 - 生物
 - いつの間にか
@@ -1858,11 +1739,7 @@ Source: frozen-2000-word-core-list.txt
 - スクリーン
 - こする
 - 着物
-- 行なう
-- のる
-- 仰る
 - 叔父
-- みえる
 - 助かる
 - 広場
 - 発す
@@ -1884,7 +1761,6 @@ Source: frozen-2000-word-core-list.txt
 - ためらう
 - 次々
 - 解く
-- みちる
 - 積む
 - 自体
 - 幽霊
@@ -1898,7 +1774,6 @@ Source: frozen-2000-word-core-list.txt
 - ガス
 - 司令
 - どうにか
-- もしか
 - 男性
 - 日本人
 - 寺
@@ -1926,7 +1801,6 @@ Source: frozen-2000-word-core-list.txt
 - 真っ赤
 - 美人
 - 衣
-- あご
 - 単純
 - 群
 - 暮らす
@@ -1939,7 +1813,6 @@ Source: frozen-2000-word-core-list.txt
 - お客
 - 見守る
 - 漂う
-- ふつう
 - 工場
 - 中身
 - 入り口
