@@ -24,7 +24,18 @@ describe('conjugation word classification: known regression cases', () => {
 	});
 
 	it('excludes known problem entries from the frozen source list', () => {
-		for (const word of ['まえる', 'ばる', '隠る', '恐る']) {
+		for (const word of [
+			'まえる',
+			'ばる',
+			'隠る',
+			'恐る',
+			'やって来る', // duplicate of やってくる
+			'ゆく', // duplicate of 行く
+			'訊く', // duplicate of 聞く
+			'気がつく', // duplicate of 気づく
+			'ほしい', // duplicate of 欲しい
+			'ちまう' // colloquial contraction of 〜てしまう, not a dictionary lemma
+		]) {
 			expect(classOf(word)).toBeUndefined();
 		}
 	});
@@ -64,16 +75,8 @@ describe('conjugation word classification: known regression cases', () => {
 		expect(new Set(words).size).toBe(words.length);
 	});
 
-	it('marks every verb class and i_adjective entry as included (only suru/copula are down-sampled)', () => {
+	it('gives every entry a non-empty reading and meaning', () => {
 		for (const w of CONJUGATION_WORDS) {
-			if (w.wordClass === 'suru' || w.wordClass === 'copula') continue;
-			expect(w.included).toBe(true);
-		}
-	});
-
-	it('gives every included entry a non-empty reading and meaning', () => {
-		for (const w of CONJUGATION_WORDS) {
-			if (!w.included) continue;
 			expect(w.reading).not.toBe('');
 			expect(w.meaning).not.toBe('');
 		}

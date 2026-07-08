@@ -432,9 +432,7 @@ export function pickWordForCell(
 	formId: string,
 	words: ConjugationWord[]
 ): ConjugationWord {
-	const candidates = words.filter(
-		(w) => w.wordClass === wordClass && w.included && canConjugate(w.word, formId)
-	);
+	const candidates = words.filter((w) => w.wordClass === wordClass && canConjugate(w.word, formId));
 	if (candidates.length === 0) {
 		throw new Error(`No drillable word available for ${wordClass}/${formId}`);
 	}

@@ -229,7 +229,6 @@ describe('pickWordForCell', () => {
 			word: 'ある',
 			frequencyRank: 4,
 			wordClass: 'godan_ru',
-			included: true,
 			reading: 'ある',
 			meaning: 'to exist'
 		},
@@ -237,7 +236,6 @@ describe('pickWordForCell', () => {
 			word: '帰る',
 			frequencyRank: 104,
 			wordClass: 'godan_ru',
-			included: true,
 			reading: 'かえる',
 			meaning: 'to return'
 		},
@@ -245,17 +243,8 @@ describe('pickWordForCell', () => {
 			word: '食べる',
 			frequencyRank: 386,
 			wordClass: 'ichidan',
-			included: true,
 			reading: 'たべる',
 			meaning: 'to eat'
-		},
-		{
-			word: '静か',
-			frequencyRank: 391,
-			wordClass: 'copula',
-			included: false,
-			reading: '',
-			meaning: ''
 		}
 	];
 
@@ -273,10 +262,6 @@ describe('pickWordForCell', () => {
 		}
 		expect(picks.has('ある')).toBe(true);
 		expect(picks.has('帰る')).toBe(true);
-	});
-
-	it('ignores words not marked included', () => {
-		expect(() => pickWordForCell('copula', 'desu', words)).toThrow();
 	});
 
 	it('throws when no candidate exists for the requested class', () => {

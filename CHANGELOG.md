@@ -5,6 +5,34 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 2.0.2 — conjugation word list cleanup + downsizing
+
+Second of the cleanup patch series. `conjugation-word-list.ts` inherited the
+same data-quality problems 2.0.1 fixed in the master vocab list (it was
+generated from the pre-cleanup version of that file) — cross-referencing
+confirmed 96 of 2.0.1's 130 changed words were still present here, 42 of
+them actively drillable. Fixed those, plus a handful of additional
+kana/kanji duplicate pairs of the same lexeme found during this pass
+(ゆく/行く, 訊く/聞く, 気がつく/気づく, ほしい/欲しい, やってくる/やって来る)
+and one colloquial contraction masquerading as a dictionary verb (ちまう).
+
+At the same time, reshaped the list from "full frequency-ranked pool with a
+down-sample flag" (593 of 1697 words drillable) to a small, deliberately
+curated set per word class (320 words total): top ~30 per verb class plus
+a guaranteed-inclusion set of canonical textbook verbs/adjectives that a
+pure frequency cutoff would otherwise exclude (e.g. 食べる, 寝る, 起きる),
+30 new suru-compound entries built from scratch (the file previously had
+only する itself), copula kept exactly at its existing 30 hand-picked
+な-adjectives (verified all still correct, no expansion), kuru deduplicated
+to 2 entries. The now-fully-vestigial `included` field (down-sampling no
+longer happens at this layer) was dropped from the type, `pickWordForCell`,
+and the tests. Deleted `scripts/classify-conjugation-words.ts` (called the
+metered Anthropic API for classification — this pass used Claude Code
+subagents directly instead, never the API) since its output shape no
+longer matches the new schema. No DB migration needed — confirmed via
+`supabase/README.md`'s conjugation-tables section — progress is keyed on
+`(word_class, form_id)` cells, never on word text.
+
 ## 2.0.1 — master word list data-quality cleanup
 
 First of a planned series of patch releases working through existing open
