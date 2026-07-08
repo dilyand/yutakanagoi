@@ -1,7 +1,7 @@
 {
 	"name": "yutakanagoi",
 	"private": true,
-	"version": "2.0.0",
+	"version": "2.0.1",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -17,7 +17,8 @@
 		"add-user": "tsx --env-file=.env scripts/add-user.ts",
 		"migrate:legacy-user-list": "tsx --env-file=.env scripts/migrate-legacy-user-list.ts",
 		"logs:errors": "tsx --env-file=.env scripts/read-error-log.ts",
-		"classify-conjugation-words": "tsx --env-file=.env scripts/classify-conjugation-words.ts"
+		"classify-conjugation-words": "tsx --env-file=.env scripts/classify-conjugation-words.ts",
+		"scrub-master-list-cleanup": "tsx --env-file=.env scripts/scrub-master-list-cleanup.ts"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",

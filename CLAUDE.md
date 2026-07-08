@@ -194,6 +194,66 @@ Useful context for working in this repo:
   translation-correctness pass across all 593 drillable words, which
   caught and fixed 6 wrong readings/meanings (e.g. はぐ was glossed "to
   brush" instead of "to peel off").
+- **2.0.1**: first of a series of patch releases working through existing
+  open issues/tech debt before starting activity #3 — this one closes
+  issue #25 (`japanese-2000-most-frequent-words.md` data-quality cleanup).
+  130 entries removed and 2 replaced with their standard spelling, via
+  three rounds of parallel Claude Code subagents (not the Anthropic API,
+  per [[feedback_no_api_calls_for_prep_work]]) classifying the full
+  2000-word list against itself, each followed by an independent
+  verification pass: round 1 (16 batches) found 85 issues, round 2 (8
+  batches, on the round-1 result) found 39 more, round 3 (8 batches) found
+  8 more — a converging, diminishing-returns curve, not evidence the
+  process was broken. Categories: confirmed corrupt/truncated fragments
+  (the original issue's まえる/ばる plus ばる's known-bad siblings 隠る/恐る/
+  ごとし, and others like うい/かる/つた/たく), bare kana on'yomi readings
+  that are never standalone words (けい, しん, げん, etc. — ~30 of these),
+  nonstandard okurigana where the standard form was already listed (分る→
+  already-listed 分かる, 行なう→行う, etc.), kana/kanji duplicate pairs of a
+  lexeme already present under its standard spelling (もどる/戻る, うえ/上,
+  のむ/飲む, まわり/周り — the largest category), and one obscure personal
+  name that had leaked in (圭一). Two replacements (やみ→闇, ほる→掘る) where
+  no standard-spelling entry already existed. Deliberately did **not**
+  remove common country/city names (東京, アメリカ) despite an early pass
+  flagging them as "proper nouns" — those are genuinely high-frequency,
+  useful learner vocabulary, unlike 圭一's obscure-name-as-corpus-artifact
+  case. Also did not remove kana words just because they're ambiguous about
+  which kanji they map to (かな, ちまう, ふく, たま, はく, とく survived for
+  this reason) — ambiguity isn't the same as "not a real word." Every
+  automated word-level edit to the file went through a deterministic
+  apply script that re-derives each change's expected word straight from
+  the file by rank and aborts the whole write on any mismatch (verifies
+  the classification agents actually read the real file rather than
+  hallucinating content) — ran clean (zero mismatches) across all three
+  rounds. Removed the now-dead `KNOWN_BAD_SOURCE_ENTRIES` workaround from
+  `scripts/classify-conjugation-words.ts`, since all 5 of its entries are
+  now gone from the source file. New one-time script
+  `scripts/scrub-master-list-cleanup.ts` applies the same word-level diff
+  to the DB — necessary because `japanese-2000-most-frequent-words.md`'s
+  content was copied into `list_words` for the two accounts from
+  `scripts/migrate-legacy-user-list.ts`, so the file being "frozen"/unread
+  by the running app doesn't mean editing it has zero downstream effect.
+  Verifying this against the local Supabase stack first (per
+  [[feedback_verify_against_local_db]]) surfaced two real constraints not
+  documented in the README's prose: `word_state` and `vocab_session_attempts`
+  both have an actual FK to `list_words(list_id, word)` (not just
+  informally-shared columns), and `list_words` has a unique constraint on
+  `(list_id, frequency_rank)`. That means (1) removing a word requires
+  deleting its `vocab_session_attempts` rows too, not just leaving them as
+  an untouched historical log as originally planned — a record of
+  "drilling" a word later determined to be corrupt/duplicate/archaic isn't
+  worth keeping, and the FK actively prevents leaving it dangling anyway;
+  (2) an in-place spelling replacement can't simply update `list_words.word`
+  or insert-then-delete at the same rank — it has to insert the new
+  spelling at a temporary negative placeholder rank (real ranks are always
+  positive), repoint `word_state`/`vocab_session_attempts` to it, delete the
+  old row, then restore the real rank. Both real users (`dilyan`, `vanya`)
+  had zero `word_state`/`vocab_session_attempts` rows for any removed word,
+  so this cleanup had no drill-progress impact in practice. Script run
+  dry-run → real on staging → dry-run (idempotency check) → same sequence
+  on production, per [[feedback_production_migration_discipline]], with an
+  explicit output line always printing the resolved `SUPABASE_URL` so which
+  database a run targets is never ambiguous.
 
 ---
 
