@@ -157,7 +157,10 @@ pattern again.
   1-3). `attempts_used` records the hint-then-retry-up-to-3 interaction from
   the design; grading is still based on the first attempt only.
   **Constraints:** `session_id` → `conjugation_sessions(id)`; `user_id` →
-  `users(id)`. No FK on `cell_id` (same reason as `conjugation_state`).
+  `users(id)`. No FK on `cell_id` (same reason as `conjugation_state`), and
+  **no FK on `word` either** — it's a free-text historical record of what
+  was actually shown for that attempt, not tied to any registry table (see
+  the migration-gotchas note below for why this matters).
 
 ### Migration gotchas: no FK here cascades
 
@@ -191,3 +194,32 @@ constraint ..._list_word_fkey` if any `word_state` or
   deciding what happens to its `vocab_session_attempts` history** — you
   can't just leave it, since the FK forbids an orphaned reference. Either
   delete the history rows too, or don't remove the `list_words` row.
+
+### Conjugation tables: no equivalent gotcha, checked and confirmed
+
+A cleanup of `src/lib/conjugation-word-list.ts` is queued for 2.0.2 (it has
+the same corrupt/duplicate/archaic-word problems 2.0.1 fixed in
+`japanese-2000-most-frequent-words.md` — see project memory
+`project_conjugation_word_list_cleanup_needed` for the full scope). Checked
+directly against `20260707000001_conjugation_tables.sql` so this doesn't
+have to be rediscovered live the way the `list_words` gotchas above were:
+
+**None of `conjugation_state`, `conjugation_sessions`, or
+`conjugation_session_attempts` have any FK or unique constraint on word
+text at all.** `conjugation_state` and `conjugation_session_attempts` key
+on `cell_id` (`"wordClass:formId"`, e.g. `"godan_mu:causative_passive_past"`),
+which has no FK to anything — the registry it names
+(`conjugation-word-list.ts` + `conjugation-forms.ts`) is static code, not a
+table. `conjugation_session_attempts.word` — the specific word actually
+shown for that attempt — is a plain `not null text` column with **no FK at
+all**, not even to `cell_id`'s (nonexistent) registry table.
+
+Practical upshot: **removing or renaming an entry in
+`conjugation-word-list.ts` needs no DB migration or scrub script.**
+Progress (`conjugation_state`) is keyed on the class/form cell, not the
+specific word, so it's completely unaffected by which words exist in the
+static list. Historical `conjugation_session_attempts.word` values for a
+since-removed word just sit there as an accurate record of what was shown
+at the time — no FK forces a decision the way `vocab_session_attempts` did
+for the vocab list. If 2.0.2 needs to touch the DB for some other reason,
+it isn't this.
