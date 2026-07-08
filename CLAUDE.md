@@ -32,17 +32,24 @@ Useful context for working in this repo:
   multi-list support. If you're changing drill behavior, that's the file to
   edit — the rules below are the reference for what it should do.
 - `japanese-2000-most-frequent-words.md` (formerly `vocab-master.md`) is
-  frozen as of the 0.1.0 cutover. It is **not** read or written by the
-  running app and does not reflect current progress — live data is in
-  Supabase (`users`, `word_lists`, `list_words`, `word_state`,
-  `vocab_sessions`, `vocab_session_attempts` tables; schema in
-  `supabase/migrations/`, notes in `supabase/README.md`). Don't edit this
-  file expecting it to affect the app, and don't treat it as current. Its
-  content is still real, current vocabulary, though — cleaned up in 2.0.1
-  (see that release's notes) — unlike `vocab-state.md` (the frozen
-  progress-tracking sibling this file used to have), which was deleted in
-  2.0.1: it was a one-time snapshot of one user's real progress at the exact
-  moment of the 0.1.0 cutover, migrated into `word_state` once by the
+  **not wired into the running app's read/write path** — the app never
+  reads this file directly, live data is in Supabase (`users`, `word_lists`,
+  `list_words`, `word_state`, `vocab_sessions`, `vocab_session_attempts`
+  tables; schema in `supabase/migrations/`, notes in `supabase/README.md`).
+  Don't call this file "frozen," though (an earlier version of this doc did,
+  and it was misleading) — its content is real, current, maintained
+  vocabulary, edited when it has an actual data-quality problem (as 2.0.1
+  did, see that release's notes) or content genuinely needs updating.
+  **Editing it never *automatically* changes the app's behavior**, since
+  nothing reads it live — its content was copied into each `word_lists`
+  row named after it once, at list-creation time, so any edit meant to
+  reach already-created lists needs a companion DB migration/scrub script
+  (2.0.1's `scripts/scrub-master-list-cleanup.ts` is a worked example).
+  Unlike this file, `vocab-state.md` (the progress-tracking sibling this
+  file used to have) genuinely was frozen — untouched, unread, and
+  eventually deleted in 2.0.1: it was a one-time snapshot of one user's
+  real progress at the exact moment of the 0.1.0 cutover, migrated into
+  `word_state` once by the
   since-removed `migrate-vocab-state.ts` and never read again, with no
   forward-looking reference value the way the word list itself still has.
   The "original spec" section below still documents `vocab-state.md`'s
@@ -241,10 +248,10 @@ Useful context for working in this repo:
   now gone from the source file. New one-time script
   `scripts/scrub-master-list-cleanup.ts` applies the same word-level diff
   to the DB — necessary because `japanese-2000-most-frequent-words.md`'s
-  content was copied into `list_words` for the two accounts originally created by the now-deleted
-  `scripts/migrate-legacy-user-list.ts` (see `supabase/README.md`), so the
-  file being "frozen"/unread
-  by the running app doesn't mean editing it has zero downstream effect.
+  content was copied into `list_words` for the two accounts originally
+  created by the now-deleted `scripts/migrate-legacy-user-list.ts` (see
+  `supabase/README.md`), so the file being unread by the running app
+  doesn't mean editing it has zero downstream effect.
   Verifying this against the local Supabase stack first (per
   [[feedback_verify_against_local_db]]) surfaced two real constraints not
   documented in the README's prose: `word_state` and `vocab_session_attempts`
@@ -283,7 +290,9 @@ Useful context for working in this repo:
   forward-looking reference value (a frozen one-time snapshot of real
   progress from the exact moment of the 0.1.0 cutover, migrated into
   `word_state` once and never read again) — see the "Current status" section
-  above for the updated framing now that only the word list remains frozen.
+  above, which also stopped calling the word list itself "frozen": that
+  framing was misleading once a release (this one) started actually editing
+  its content for legitimate data-quality reasons.
   **Follow-up queued for 2.0.2** (see
   [[project_conjugation_word_list_cleanup_needed]]): the same data-quality
   problems fixed here also exist in `src/lib/conjugation-word-list.ts`,

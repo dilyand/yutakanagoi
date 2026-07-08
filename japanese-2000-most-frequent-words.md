@@ -1,6 +1,9 @@
 # Vocab master list
 
-Frozen 2000-word core list, ordered by frequency (most frequent first).
+Core word list, ordered by frequency (most frequent first). Not read or
+written by the running app, but maintained as real, current vocabulary —
+edited when a data-quality issue is found (see CLAUDE.md's release notes),
+not left to rot untouched.
 Source: frozen-2000-word-core-list.txt
 
 - する
