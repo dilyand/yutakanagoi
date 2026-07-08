@@ -40,58 +40,57 @@ If you need to point the CLI at a different project temporarily (e.g. to
 re-seed a staging project), `link` to it, run your commands, then `link`
 back to the production ref — it's just a local pointer, safe to switch.
 
-## One-time data migration, historical (japanese-2000-most-frequent-words.md / vocab-state.md → Supabase)
+## One-time data migrations, historical
 
-The 0.1.0 cutover seeded a single global vocabulary/progress from the
-markdown files, via `scripts/migrate-vocab-master.ts` and
-`scripts/migrate-vocab-state.ts`. Both scripts targeted the (now-dropped)
-global `vocab_master` table, so they've been removed — this is what
-`scripts/migrate-legacy-user-list.ts` (below) reads from at the 0.2.0
-cutover, not something that needs re-running.
+These already ran, against real data, exactly once, and their scripts have
+since been deleted — kept here only as a record of what happened and in
+what order, not as something to re-run or copy as a template (the table
+names below are the **pre-1.2.0** names; see the rename note in the Schema
+section).
 
-## Multi-user / multi-list migration (0.2.0)
-
-0.2.0 adds `users`/`word_lists`/`list_words` and scopes `word_state` /
-`sessions` / `session_attempts` by `list_id` instead of a single global
-vocabulary. Because this needs to run against a database that may already
-have real 0.1.0 progress in it, it's split into two migrations with a data
-backfill script in between — **apply them in this exact order**:
-
-1. **`supabase/migrations/20260704000001_users_lists_additive.sql`** — purely
-   additive: creates `users`/`word_lists`/`list_words`, and adds nullable
-   `list_id` columns (plus a surrogate `id` on `sessions`) to the existing
-   tables. Safe to apply immediately; the app still runs against the old
-   0.1.0 shape until the next steps happen.
-2. **`scripts/add-user.ts`** (as needed) and
-   **`scripts/migrate-legacy-user-list.ts`** — copy `.env.example` to `.env`
-   and fill in `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`, then:
-
-   ```sh
-   npm run add-user -- <username>                                    # create additional users
-   npm run migrate:legacy-user-list -- <primary-user> <second-user>  # --dry-run supported
-   ```
-
-   `migrate:legacy-user-list` creates (or reuses) the two given users, gives
-   each their own `japanese-2000-most-frequent-words.md` list seeded from the
-   existing `vocab_master` table, and backfills `list_id` (and
-   `session_attempts.session_id`) on every existing `word_state`/`sessions`/
-   `session_attempts` row onto the **primary** user's list — the **second**
-   user gets a fresh copy of the list with zero progress. Usernames are only
-   ever passed as CLI arguments and stored in the `users` table — never
-   hardcoded in the script or written to a committed file. Safe to re-run.
-
-3. **`supabase/migrations/20260704000002_finalize_list_scoping.sql`** —
-   apply only after step 2 has completed: enforces `list_id` not-null,
-   swaps `sessions`' primary key from `session_index` to the surrogate `id`,
-   replaces the old bare-`word` foreign keys with composite
-   `(list_id, word)` ones, and drops the now-unused `vocab_master` table.
-   Applying this before the backfill script has run will fail its not-null
-   constraints.
+- **0.1.0 cutover**: seeded a single global vocabulary/progress from
+  `japanese-2000-most-frequent-words.md`/`vocab-state.md` into the
+  (now-dropped) global `vocab_master` table, via `scripts/migrate-vocab-master.ts`
+  and `scripts/migrate-vocab-state.ts`. Removed in 0.2.2 once `vocab_master`
+  was dropped.
+- **0.2.0 cutover** (multi-user/multi-list): added `users`/`word_lists`/
+  `list_words` and scoped `word_state`/`sessions`/`session_attempts` by
+  `list_id` instead of a single global vocabulary. Ran in three steps
+  against a database that already had real 0.1.0 progress in it:
+  1. `supabase/migrations/20260704000001_users_lists_additive.sql` — purely
+     additive: created `users`/`word_lists`/`list_words`, and added nullable
+     `list_id` columns (plus a surrogate `id` on `sessions`) to the existing
+     tables. Safe to apply immediately; the app still ran against the old
+     0.1.0 shape until the next steps happened.
+  2. `scripts/migrate-legacy-user-list.ts` — created two users, gave each
+     their own `japanese-2000-most-frequent-words.md` list seeded from the
+     existing `vocab_master` table, and backfilled `list_id` (and
+     `session_attempts.session_id`) on every existing `word_state`/
+     `sessions`/`session_attempts` row onto the **primary** user's list —
+     the **second** user got a fresh copy of the list with zero progress.
+     Deleted in 2.0.1: it queried the pre-1.2.0 table names (`sessions`,
+     `session_attempts`), so it would error immediately if run today, and
+     there's no remaining legacy 0.1.0 data left for it to migrate anyway —
+     keeping a script that's both unrunnable and stale-by-name around as a
+     "template" risked someone copying broken table names into a future
+     migration script rather than helping.
+  3. `supabase/migrations/20260704000002_finalize_list_scoping.sql` —
+     applied only after step 2 completed: enforced `list_id` not-null,
+     swapped `sessions`' primary key from `session_index` to the surrogate
+     `id`, replaced the old bare-`word` foreign keys with composite
+     `(list_id, word)` ones, and dropped the now-unused `vocab_master` table.
 
 Local dev (`npx supabase db reset`) applies all migrations to an empty
-database, so this ordering only matters for a database that already has
-0.1.0 data — i.e. the staging and production projects during the 0.2.0
-cutover.
+database, so none of this sequencing matters there — it only mattered for
+the staging and production projects during the actual 0.2.0 cutover, which
+is long past.
+
+If a similar future cutover needs its own one-time migration script, follow
+the _shape_ of the deleted `migrate-legacy-user-list.ts` (idempotent,
+`--dry-run` support, usernames only ever passed as CLI args and never
+hardcoded/committed) rather than resurrecting the file itself, since its
+literal table/column references will be stale by the time anyone needs the
+pattern again.
 
 ## Schema
 
@@ -99,11 +98,20 @@ cutover.
   out-of-band via `scripts/add-user.ts`, never through the app itself.
 - `word_lists` — one row per uploaded/migrated word list (`user_id`, `name`).
   Private per user; `name` is always the uploaded filename, unique per user.
+  **Constraints:** `user_id` → `users(id)`; unique `(user_id, name)`.
 - `list_words` — one row per word in a list (`list_id`, `word`,
   `frequency_rank`). Replaces the 0.1.0-era global `vocab_master`.
+  **Constraints:** `list_id` → `word_lists(id)`; unique `(list_id, word)`
+  **and** unique `(list_id, frequency_rank)` — the second one is easy to
+  forget since most code only ever thinks in terms of `word`, but it means
+  you can't insert a new spelling at a rank that's still occupied by the
+  word it's replacing (see the migration gotchas below).
 - `word_state` — one row per word that's been drilled at least once within a
   list (`list_id`, `word`, `box` 0-4, `last_session`). Progress is scoped to
   `(list_id, word)`, not shared across lists or users.
+  **Constraints:** `list_id` → `word_lists(id)`; composite
+  `(list_id, word)` → `list_words(list_id, word)` (not a plain FK on `word`
+  alone — see below); unique `(list_id, word)`.
 - `vocab_sessions` — one row per drill session (`list_id`, `session_index`,
   `started_at`, `completed_at`, `words_drilled`). `session_index` is a
   per-list counter (not global) — the due-word interval algorithm measures
@@ -111,18 +119,21 @@ cutover.
   across lists would give wrong due-dates. See `src/lib/drill-algorithm.ts`
   and `CLAUDE.md`. Named `sessions` before 1.2.0 — renamed since the bare
   name carried no vocab-specific token, unlike `word_state`/`word_lists`/
-  `list_words`.
+  `list_words`. **Constraints:** `list_id` → `word_lists(id)`; unique
+  `(list_id, session_index)`.
 - `vocab_session_attempts` — one row per word drilled per session
   (`session_id`, `list_id`, `word`, `correct`, box before/after, the user's
   answer). Named `session_attempts` before 1.2.0, renamed alongside
-  `vocab_sessions` for the same reason.
+  `vocab_sessions` for the same reason. **Constraints:** `session_id` →
+  `vocab_sessions(id)`; `list_id` → `word_lists(id)`; composite
+  `(list_id, word)` → `list_words(list_id, word)`.
 - `error_events` — added in 0.6.0. One row per unexpected server-side error
   (route, message, stack, jsonb context), written best-effort by
   `src/lib/server/logger.ts` from `src/hooks.server.ts`'s `handleError` hook
   (and directly from `claude-evaluate.ts` for Claude API failures). Exists
   because Vercel's own function-log retention is short and this repo has no
   linked Vercel CLI session — read recent rows with `npm run logs:errors`
-  (`scripts/read-error-log.ts`) instead of the Vercel dashboard.
+  (`scripts/read-error-log.ts`) instead of the Vercel dashboard. No FKs.
 - `conjugation_state` — added in 2.0.0, for the conjugation-drills activity.
   One row per `(user_id, cell_id)`, `box` 0-4, `last_session` — same
   box/interval shape as `word_state`, but keyed by `cell_id` (the opaque
@@ -132,13 +143,51 @@ cutover.
   lists, conjugation drills work off one shared word-class/form registry —
   `src/lib/conjugation-word-list.ts` and `conjugation-forms.ts`, static code
   data, not a table, since it never changes per-user. See
-  `src/lib/conjugation-engine.ts`.
+  `src/lib/conjugation-engine.ts`. **Constraints:** `user_id` → `users(id)`;
+  unique `(user_id, cell_id)`. `cell_id` has no FK — the registry it names
+  is code, not a table.
 - `conjugation_sessions` — one row per conjugation-drill session (`user_id`,
   `session_index`, `started_at`, `completed_at`, `cells_drilled`).
   `session_index` is a per-user counter (there's no list to scope it to).
+  **Constraints:** `user_id` → `users(id)`; unique `(user_id, session_index)`.
 - `conjugation_session_attempts` — one row per cell drilled per session
   (`session_id`, `user_id`, `cell_id`, `word` — the specific word shown for
   this cell this attempt, since the word isn't part of the progress state
   itself — `correct`, box before/after, the user's answer, `attempts_used`
   1-3). `attempts_used` records the hint-then-retry-up-to-3 interaction from
   the design; grading is still based on the first attempt only.
+  **Constraints:** `session_id` → `conjugation_sessions(id)`; `user_id` →
+  `users(id)`. No FK on `cell_id` (same reason as `conjugation_state`).
+
+### Migration gotchas: no FK here cascades
+
+**None of the foreign keys above have `ON DELETE`/`ON UPDATE CASCADE`** —
+every one is Postgres's default `NO ACTION`. This matters most for
+`list_words`, since two other tables (`word_state`,
+`vocab_session_attempts`) hold composite FKs into it on `(list_id, word)`,
+not just a plain `list_id` FK:
+
+- **Deleting a `list_words` row** fails with `violates foreign key
+constraint ..._list_word_fkey` if any `word_state` or
+  `vocab_session_attempts` row still has that exact `(list_id, word)` —
+  delete those child rows first (order between the two children doesn't
+  matter, only child-before-parent matters).
+- **Renaming a word in place** (updating `list_words.word`, e.g. to fix a
+  spelling) can't be done as a single `UPDATE`, and can't even be done as
+  insert-new-row-then-repoint-then-delete-old-row at the _same_
+  `frequency_rank`, because of the `(list_id, frequency_rank)` unique
+  constraint above — the new row collides with the old one until the old
+  one is gone. The working sequence is: insert the new spelling at a
+  placeholder rank that can't collide (e.g. the negative of the real rank,
+  since real ranks are always positive) → repoint `word_state`/
+  `vocab_session_attempts` to the new spelling (now valid, since a
+  `list_words` row for it exists) → delete the old spelling's row (now
+  unreferenced) → update the new row's rank to the real value (now free).
+  `scripts/scrub-master-list-cleanup.ts` is a worked, tested example of this
+  exact dance — reuse its pattern rather than rediscovering it, which is
+  how this section came to exist (found live while running that script
+  against the local stack, not from reading this file first).
+- This also means **a REMOVE-style cleanup of a word from a list requires
+  deciding what happens to its `vocab_session_attempts` history** — you
+  can't just leave it, since the FK forbids an orphaned reference. Either
+  delete the history rows too, or don't remove the `list_words` row.

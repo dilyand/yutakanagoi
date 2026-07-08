@@ -5,9 +5,10 @@ import { createAdminClient } from './lib/supabase-admin.ts';
 // spelling (see CLAUDE.md's cleanup-release notes for the full rationale per
 // category). The file itself isn't read by the running app, but its content
 // was copied verbatim into list_words for every user whose list is named
-// after it (currently the two accounts from scripts/migrate-legacy-user-list.ts)
-// — this script applies the same word-level diff to those DB rows so live
-// user data matches the corrected source file.
+// after it (currently the two accounts created by the since-deleted
+// scripts/migrate-legacy-user-list.ts — see supabase/README.md) — this
+// script applies the same word-level diff to those DB rows so live user
+// data matches the corrected source file.
 //
 // word_state AND vocab_session_attempts both have a real FK to
 // list_words(list_id, word) (see 20260704000002_finalize_list_scoping.sql) —
