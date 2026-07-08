@@ -31,13 +31,24 @@ Useful context for working in this repo:
   vocab/word-state arrays as plain parameters, so it needed zero changes for
   multi-list support. If you're changing drill behavior, that's the file to
   edit — the rules below are the reference for what it should do.
-- `japanese-2000-most-frequent-words.md` (formerly `vocab-master.md`) and
-  `vocab-state.md` are frozen as of the 0.1.0 cutover. They are **not** read
-  or written by the running app and do not reflect current progress — live
-  data is in Supabase (`users`, `word_lists`, `list_words`, `word_state`,
-  `vocab_sessions`, `vocab_session_attempts` tables; schema in `supabase/migrations/`,
-  notes in `supabase/README.md`). Don't edit these two files expecting it to
-  affect the app, and don't treat them as current.
+- `japanese-2000-most-frequent-words.md` (formerly `vocab-master.md`) is
+  frozen as of the 0.1.0 cutover. It is **not** read or written by the
+  running app and does not reflect current progress — live data is in
+  Supabase (`users`, `word_lists`, `list_words`, `word_state`,
+  `vocab_sessions`, `vocab_session_attempts` tables; schema in
+  `supabase/migrations/`, notes in `supabase/README.md`). Don't edit this
+  file expecting it to affect the app, and don't treat it as current. Its
+  content is still real, current vocabulary, though — cleaned up in 2.0.1
+  (see that release's notes) — unlike `vocab-state.md` (the frozen
+  progress-tracking sibling this file used to have), which was deleted in
+  2.0.1: it was a one-time snapshot of one user's real progress at the exact
+  moment of the 0.1.0 cutover, migrated into `word_state` once by the
+  since-removed `migrate-vocab-state.ts` and never read again, with no
+  forward-looking reference value the way the word list itself still has.
+  The "original spec" section below still documents `vocab-state.md`'s
+  format/role in the historical git-sync workflow — that's describing what
+  the file *was*, for anyone trying to understand the algorithm's origins,
+  not implying the file still exists in this repo.
 - Grading, word explanations, and sentence evaluation happen via the Claude
   API through a server-side proxy (`src/lib/server/claude-evaluate.ts`,
   called from `/api/evaluate`) — not by an agent reading these files in a
@@ -267,7 +278,12 @@ Useful context for working in this repo:
   exported but only ever consumed within their own defining file (harmless
   over-export, not dead code) and `@sveltejs/vite-plugin-svelte` looks
   unused by grep but is a required peer dependency of `@sveltejs/kit`, so
-  don't remove it if this sweep is ever repeated.
+  don't remove it if this sweep is ever repeated. Also deleted
+  `vocab-state.md`, user-confirmed: unlike the word list, it had no
+  forward-looking reference value (a frozen one-time snapshot of real
+  progress from the exact moment of the 0.1.0 cutover, migrated into
+  `word_state` once and never read again) — see the "Current status" section
+  above for the updated framing now that only the word list remains frozen.
   **Follow-up queued for 2.0.2** (see
   [[project_conjugation_word_list_cleanup_needed]]): the same data-quality
   problems fixed here also exist in `src/lib/conjugation-word-list.ts`,
