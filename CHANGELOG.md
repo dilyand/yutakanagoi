@@ -1,0 +1,148 @@
+# Changelog
+
+For what belongs here vs. `CLAUDE.md` vs. Claude Code's local memory, see
+CLAUDE.md's "Keeping this doc useful" section. Short version: this file
+records what shipped and why, briefly — current behavior lives in
+`CLAUDE.md`, deep session-specific detail lives in memory.
+
+## 2.0.1 — master word list data-quality cleanup
+
+First of a planned series of patch releases working through existing open
+issues/tech debt before starting a third activity. Closes #25:
+`japanese-2000-most-frequent-words.md` had 130 corrupt/duplicate/archaic
+entries removed and 2 replaced with their standard spelling (2000 → 1870
+words), via three rounds of parallel Claude Code subagent classification
+plus independent verification. Categories: corrupt/truncated fragments,
+bare kana on'yomi readings that are never standalone words, nonstandard
+okurigana, kana/kanji duplicate pairs of a word already listed elsewhere,
+and one obscure personal name. Removed the dead `KNOWN_BAD_SOURCE_ENTRIES`
+workaround from `scripts/classify-conjugation-words.ts` and the stale
+`scripts/migrate-legacy-user-list.ts` (queried pre-1.2.0 table names).
+Deleted `vocab-state.md` (a frozen, functionally-dead 0.1.0 progress
+snapshot with no forward-looking value, unlike the word list). Added
+`scripts/scrub-master-list-cleanup.ts` to apply the same word-level diff to
+the DB, run against staging and production. `supabase/README.md`'s Schema
+section now documents every FK/unique constraint explicitly, discovered
+live while building that script. A related cleanup of
+`conjugation-word-list.ts` (which has the same problems, generated from
+the pre-cleanup word list) is queued for 2.0.2.
+
+## 2.0.0 — conjugation drills (second activity)
+
+Added a second drill activity alongside vocab drill: conjugation practice
+across verb/adjective classes and forms. Progress tracked per
+`(word_class, form_id)` cell rather than per word, since a frequency-ranked
+word list contains far more words than distinct conjugation patterns.
+Grading tries an exact deterministic match first (`conjugation-engine.ts`),
+falling through to Claude only for leniency checks, wrong-answer hints, and
+success-path examples. Word readings/meanings and translation QA for all
+593 drillable words were done via Claude Code subagents, not the metered
+API.
+
+## 1.2.0 — table rename (prep for conjugation drills)
+
+Renamed `sessions`/`session_attempts` to `vocab_sessions`/
+`vocab_session_attempts` — the bare names carried no vocab-specific token,
+so once conjugation drills added their own `conjugation_sessions` table
+the old names would have misleadingly read as shared/generic. Pure rename,
+no semantics changed — but Postgres doesn't auto-rename constraints,
+indexes, or identity sequences along with a table, so those needed
+explicit renames too.
+
+## 1.1.0 — activity-picker scaffolding
+
+Prepared the app to support more than one activity. Added the
+`ACTIVITIES` registry (`src/lib/activities.ts`) and `ActivityPicker.svelte`;
+moved all vocab-drill state/logic out of `+page.svelte` and into
+`VocabDrillActivity.svelte`, leaving `+page.svelte` as a thin
+user-then-activity-picker shell. No DB schema changes — existing tables
+stayed exactly as they were, since nothing yet justified guessing at a
+future activity's shape.
+
+## 1.0.0 — pre-1.0 hardening
+
+Closed the remaining gaps from a pre-1.0 review: rate limiting extended to
+the session start/complete routes (both write to Supabase and
+`session/start` bumps `session_index`, so an unbounded retry loop there was
+a real stability risk). Added `.github/workflows/ci.yml` (lint/check/test
+on every PR and push to `main`). Added test coverage for the
+auth/ownership boundary itself. Added `Strict-Transport-Security` and
+`Permissions-Policy` headers, and a "Lock" button on the passphrase gate.
+
+## 0.6.0 — stability and security hardening
+
+A full codebase review turned up: zero server-side logging, zero rate
+limiting, no retries around Supabase calls, a non-constant-time secret
+comparison, and a real IDOR (`listId`/`userId` were fully client-supplied
+with no ownership binding — Supabase's RLS gave no protection since every
+route uses the service-role key). All fixed: constant-time secret compare,
+per-IP rate limiting, `verifyListOwnership` on every list-scoped route,
+`withRetry` around Supabase calls, structured error logging to both
+console and a new `error_events` table. A hand-rolled CSP header shipped
+initially and broke hydration in the real Vercel build (not reproducible
+against `vite dev`) — fixed by moving CSP into `vite.config.ts`'s
+`sveltekit({ csp })` option instead, which lets SvelteKit generate a
+matching per-request nonce automatically.
+
+## 0.5.0 — LLM prompt hardening
+
+Hardened the app's only LLM integration (`claude-evaluate.ts`). Free-typed
+learner text is now wrapped in `<untrusted>` tags with an explicit
+instruction not to treat it as commands. Added length caps on graded text
+and uploaded word lists. Added an explicit 20s timeout on the Anthropic
+client (previously the SDK default of 10 minutes could hang the UI
+indefinitely). Ran a live Sonnet-vs-Haiku comparison before moving
+`explain_word` to Haiku; `grade_answer`/`evaluate_sentence` stayed on
+Sonnet since Haiku graded a loosely-phrased-but-correct answer as wrong. A
+follow-up pass fixed two grading bugs (rejecting naturally-subject-omitted
+sentences, marking unnatural-but-grammatical sentences unacceptable
+instead of suggesting a rewrite) and pinned feedback language to
+lower-intermediate Japanese via an explicit grammar-jargon denylist.
+
+## 0.4.0 — word-picking algorithm overhaul
+
+Fixed several issues in the due-word selection algorithm: a word answered
+correctly on its true first exposure now jumps straight to box 4 instead
+of crawling through boxes 1-3; an incorrect answer on an already-tracked
+word steps the box down by 1 instead of resetting to 0; due-word selection
+became round-robin across boxes 0-4 instead of a strict box-ascending sort,
+so a large box-0 backlog can't starve box 1-4 reviews; same-box ties now
+break deterministically. Confined entirely to the pure functions in
+`drill-algorithm.ts`, no schema/UI changes.
+
+## 0.3.0 — UI/UX polish
+
+A full design pass over what had been almost entirely unstyled: a
+CSS-custom-property design-token system with light/dark themes, a
+slate/indigo/emerald/rose palette, the target word as a framed card, a
+fixed-position action-button slot so layout doesn't shift during grading,
+WCAG-AA-passing contrast throughout, and the self-maintaining footer. No
+functionality or schema changes.
+
+## 0.2.2 — remove dead 0.1.0 migration scripts
+
+Removed `migrate-vocab-master.ts`/`migrate-vocab-state.ts`/
+`parse-vocab-files.ts` once their target table (`vocab_master`) was
+dropped by 0.2.0's finalize migration.
+
+## 0.2.1 — pin vite
+
+Pinned `vite` to an exact `8.0.16` (not a caret range): 8.1.x's default
+Rolldown-based dependency optimizer misresolves the project root when run
+inside a git worktree, breaking `dev`/`build`/`vitest`.
+
+## 0.2.0 — multi-user, multi-list
+
+Added `users`/`word_lists`/`list_words`; scoped `word_state`/`sessions`/
+`session_attempts` by `list_id` instead of a single global vocabulary
+(per-list `session_index`, not global). Two real users migrated in:
+`dilyan` (original data owner, real historical progress) and `vanya`
+(fresh account, own copy of the same starter list).
+
+## 0.1.0 — initial scaffold
+
+Scaffolded the SvelteKit PWA, added the one-time data migration scripts
+that seeded a single global vocabulary/progress from
+`japanese-2000-most-frequent-words.md`/`vocab-state.md` into Supabase,
+built the deterministic drill algorithm module, and added the Claude API
+proxy for grading/explaining/sentence evaluation.
