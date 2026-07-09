@@ -25,6 +25,14 @@ applies to all uploads, not only `.xml` ones. No production backfill
 needed, since existing list names were already lowercase-hyphenated by
 coincidence of how they were originally typed.
 
+Also fixed a pre-existing gap in the update-conflict flow surfaced while
+verifying this release on a Preview deployment: confirming an update
+(`ListSelector.svelte`'s `confirmUpdate`) navigated straight into the list
+with no indication of how many words were actually added, so a merge that
+silently added 0 words looked identical to one that added several. Now
+shows an explicit "Added N words" / "already up to date" message with a
+"Continue" button before proceeding.
+
 ## 2.0.3 — support updating an existing word list
 
 Third of the cleanup patch series (issue #28). Re-uploading a filename that

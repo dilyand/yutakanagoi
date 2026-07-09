@@ -21,6 +21,7 @@
 	let uploading = $state(false);
 	let uploadError = $state('');
 	let pendingUpdate = $state<{ name: string; words: string[] } | null>(null);
+	let updateResult = $state<{ listId: number; name: string; addedCount: number } | null>(null);
 
 	async function load() {
 		status = 'loading';
@@ -96,14 +97,17 @@
 		uploading = true;
 		uploadError = '';
 		try {
-			const result = await authorizedPost<{ listId: number }>('/api/lists/upload', {
-				userId,
-				name,
-				words,
-				update: true
-			});
+			const result = await authorizedPost<{ listId: number; addedCount: number }>(
+				'/api/lists/upload',
+				{
+					userId,
+					name,
+					words,
+					update: true
+				}
+			);
 			pendingUpdate = null;
-			onSelect(result.listId, name);
+			updateResult = { listId: result.listId, name, addedCount: result.addedCount };
 		} catch (e) {
 			uploadError = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -113,6 +117,13 @@
 
 	function cancelUpdate() {
 		pendingUpdate = null;
+	}
+
+	function continueToList() {
+		if (!updateResult) return;
+		const { listId, name } = updateResult;
+		updateResult = null;
+		onSelect(listId, name);
 	}
 </script>
 
@@ -153,6 +164,17 @@
 			</p>
 			<button class="button-primary" onclick={confirmUpdate} disabled={uploading}>Update</button>
 			<p class="cancel"><button onclick={cancelUpdate} disabled={uploading}>Cancel</button></p>
+		{/if}
+		{#if updateResult}
+			<p>
+				{#if updateResult.addedCount === 0}
+					No new words to add — "{updateResult.name}" is already up to date.
+				{:else}
+					Added {updateResult.addedCount}
+					{updateResult.addedCount === 1 ? 'word' : 'words'} to "{updateResult.name}".
+				{/if}
+			</p>
+			<button class="button-primary" onclick={continueToList}>Continue</button>
 		{/if}
 	</div>
 {/if}
