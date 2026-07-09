@@ -5,6 +5,26 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 2.1.2 — Fix conjugation-example sentences generated for the wrong word
+
+Reported via a screenshot: drilling まう (舞う, "to dance") produced the
+example sentence 宿題をまった。("I finished the homework.") — the model had
+generated a sentence for a different verb (most likely 待つ "to wait") that
+happens to share the same kana past-tense reading, まった. An earlier fix
+(`conjugation_hint` grounding, see the 2.0.0 entry) covered the hint path but
+never extended to `conjugation_example`, which sent the model only a bare
+kana word and conjugated form with no way to disambiguate homophones — and
+the retry safety net only checked that the kana substring appeared, which
+both words in a colliding pair equally satisfy.
+
+Fixed by passing the word's `meaning` (already stored on every
+`ConjugationWord` and already displayed on the drill card) through to the
+`conjugation_example` prompt as grounding, with an explicit instruction not
+to re-derive the word from its reading alone. Verified live against both the
+reported まう/舞う case and a second known collision pair (むく: "to peel"
+vs. "to face") — same kana conjugated form, correct sentence content for
+each given meaning, across multiple runs.
+
 ## 2.1.1 — Font-size control now scales the whole card, not just the word
 
 The A-/A+ text-size control only ever grew the main word: `--font-size-small`

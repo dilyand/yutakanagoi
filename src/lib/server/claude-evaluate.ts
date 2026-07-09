@@ -79,6 +79,7 @@ export type ConjugationHintRequest = {
 export type ConjugationExampleRequest = {
 	mode: 'conjugation_example';
 	word: string;
+	meaning: string;
 	conjugatedForm: string;
 };
 export type ConjugationLeniencyCheckRequest = {
@@ -328,18 +329,34 @@ export async function evaluate(request: EvaluateRequest) {
 
 			case 'conjugation_example': {
 				const word = request.word;
+				const meaning = request.meaning;
 				const conjugatedForm = request.conjugatedForm;
+				// Verified live: a word stored as kana-only in conjugation-word-list.ts
+				// (e.g. まう, "to dance") is indistinguishable to the model from any other
+				// word sharing that reading — it once generated a sentence for 待つ ("to
+				// wait") when given まう/まった, since 待った and 舞った are both spelled
+				// まった in kana and the model had no signal beyond the bare kana word to
+				// tell them apart. Passing the given meaning as grounding, and telling the
+				// model not to substitute a different word even if it shares the reading,
+				// fixes this the same way canonicalAnswer grounding fixed the analogous
+				// conjugation_hint bug (see CONJUGATION_HINT_RULES above).
 				const baseSystem =
-					'Given a Japanese word and one of its conjugated forms, write one natural, ' +
-					'simple example sentence in Japanese that uses the conjugated form, plus a ' +
-					'brief English translation. The sentence MUST contain the given conjugated ' +
-					'form as a literal, exact substring — do not substitute a different word or ' +
-					'a different conjugation of it. Keep the sentence short and easy for a ' +
-					'language learner. Many natural Japanese sentences omit the subject entirely ' +
-					'when it is inferable from context — do not default to always stating an ' +
-					'explicit subject like 私は/彼は/彼女は. Vary this the way a native speaker ' +
-					'actually would: often omit the subject, and only include one when it is ' +
-					'genuinely needed for the sentence to make sense. ' +
+					'Given a Japanese word, its English meaning, and one of its conjugated ' +
+					'forms, write one natural, simple example sentence in Japanese that uses ' +
+					'the conjugated form, plus a brief English translation. The sentence MUST ' +
+					'contain the given conjugated form as a literal, exact substring — do not ' +
+					'substitute a different word or a different conjugation of it. The sentence ' +
+					"must reflect the word's given meaning specifically — Japanese has many " +
+					'words that share the same kana reading (e.g. まった could be the past ' +
+					'tense of either 舞う "to dance" or 待つ "to wait"); if the conjugated form ' +
+					'is ambiguous this way, use the meaning given to you to pick the correct ' +
+					'word, never re-derive or guess the word from the kana reading alone. Keep ' +
+					'the sentence short and easy for a language learner. Many natural Japanese ' +
+					'sentences omit the subject entirely when it is inferable from context — do ' +
+					'not default to always stating an explicit subject like 私は/彼は/彼女は. ' +
+					'Vary this the way a native speaker actually would: often omit the subject, ' +
+					'and only include one when it is genuinely needed for the sentence to make ' +
+					'sense. ' +
 					UNTRUSTED_INPUT_NOTE;
 
 				async function requestExample(extraInstruction: string) {
@@ -352,7 +369,9 @@ export async function evaluate(request: EvaluateRequest) {
 						messages: [
 							{
 								role: 'user',
-								content: `Word: ${tagUntrusted(word)}\nConjugated form: ${tagUntrusted(conjugatedForm)}`
+								content:
+									`Word: ${tagUntrusted(word)}\nMeaning: ${tagUntrusted(meaning)}\n` +
+									`Conjugated form: ${tagUntrusted(conjugatedForm)}`
 							}
 						]
 					});

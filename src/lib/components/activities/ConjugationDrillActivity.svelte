@@ -140,8 +140,8 @@
 		});
 	}
 
-	async function fetchExample(word: string, canonical: string) {
-		const example = await getConjugationExample(word, canonical);
+	async function fetchExample(word: string, meaning: string, canonical: string) {
+		const example = await getConjugationExample(word, meaning, canonical);
 		exampleSentence = example.sentence;
 		exampleMeaning = example.meaning;
 	}
@@ -162,7 +162,7 @@
 			attemptsUsed += 1;
 
 			if (accepted) {
-				await fetchExample(item.word, canonical);
+				await fetchExample(item.word, item.meaning, canonical);
 				recordFinalOutcome(item, answerInput);
 				phase = 'correct';
 			} else if (attemptsUsed < 3) {
@@ -178,7 +178,7 @@
 				phase = 'retry';
 			} else {
 				revealedAnswer = canonical;
-				await fetchExample(item.word, canonical);
+				await fetchExample(item.word, item.meaning, canonical);
 				recordFinalOutcome(item, answerInput);
 				phase = 'revealed';
 			}

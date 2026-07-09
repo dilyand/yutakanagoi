@@ -59,9 +59,15 @@ export function getConjugationHint(
 
 export function getConjugationExample(
 	word: string,
+	meaning: string,
 	conjugatedForm: string
 ): Promise<ConjugationExampleResult> {
-	return authorizedPost('/api/evaluate', { mode: 'conjugation_example', word, conjugatedForm });
+	return authorizedPost('/api/evaluate', {
+		mode: 'conjugation_example',
+		word,
+		meaning,
+		conjugatedForm
+	});
 }
 
 export function checkConjugationLeniency(
