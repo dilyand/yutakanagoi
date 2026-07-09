@@ -5,6 +5,26 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 2.1.0 — AnkiApp deck import for vocab drill lists
+
+Word list uploads previously only accepted one-word-per-line `.txt`/`.md`
+files; importing a deck exported from AnkiApp (a flashcard app) meant
+manually converting its XML export first — done once, by hand, for the
+`hellotalk-words` list. Now permanent: uploading a `.xml` file runs it
+through `parseAnkiAppDeck()` (`src/lib/ankiapp-deck-parser.ts`), which reads
+each card's `<japanese>` field via the browser's native `DOMParser` and
+discards the `Meaning` field (meanings always come from Claude at drill
+time, never from the source list). Parsing stays entirely client-side, so
+`/api/lists/upload` and its schema are unchanged — both `.txt`/`.md` and
+`.xml` uploads converge on the same `words: string[]` shape, and the
+database has no record of which format a list originated from.
+
+Also normalized list naming: names are now kebab-cased from the uploaded
+filename (`HelloTalk.xml` → `hello-talk`), not just extension-stripped —
+applies to all uploads, not only `.xml` ones. No production backfill
+needed, since existing list names were already lowercase-hyphenated by
+coincidence of how they were originally typed.
+
 ## 2.0.3 — support updating an existing word list
 
 Third of the cleanup patch series (issue #28). Re-uploading a filename that

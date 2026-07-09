@@ -50,7 +50,16 @@ constraints (don't duplicate that detail here):
   list-creation time. Editing it never *automatically* changes the app's
   behavior; reaching already-created lists needs a companion DB
   migration/scrub script (`scripts/scrub-master-list-cleanup.ts` is a
-  worked example).
+  worked example). Uploads accept either a one-word-per-line `.txt`/`.md`
+  file or an AnkiApp deck `.xml` export (parsed client-side by
+  `src/lib/ankiapp-deck-parser.ts`'s `parseAnkiAppDeck`, which reads each
+  `<card>`'s `<japanese>` field and discards the `Meaning` field — meanings
+  come from Claude at drill time, never from the source list). Both paths
+  converge on the same `words: string[]` sent to `/api/lists/upload`; the
+  database has no record of which format a list originated from. The list
+  name is always derived from the uploaded filename via
+  `src/lib/list-naming.ts`'s `deriveListName` — extension stripped,
+  kebab-cased (e.g. `HelloTalk.xml` → `hello-talk`).
 - **Conjugation drill**: no per-user lists — one shared word-class/form
   registry (`src/lib/conjugation-word-list.ts` + `conjugation-forms.ts`,
   static code, not a table). Progress is tracked per `(user_id, cell_id)`
