@@ -101,8 +101,10 @@ branch in `+page.svelte`. No changes needed to `ActivityPicker.svelte`,
   `conjugation_hint` (grounded in the verified-correct answer, not the
   model's own recall, so it can tell "wrong stem entirely" from "right
   stem, wrong transformation" instead of citing a possibly-mismatched verb
-  from memory), `conjugation_example` (retried once if it doesn't
-  literally contain the drilled form).
+  from memory), `conjugation_example` (grounded in the word's `meaning`,
+  since many words share the same kana reading and the model can't
+  otherwise tell which one it's meant to write a sentence about — retried
+  once if the sentence doesn't literally contain the drilled form).
 - `src/lib/server/user-list-repository.ts` (`verifyListOwnership`) and
   `src/lib/server/conjugation-auth.ts` (`verifyUserExists`) — ownership
   checks. Conjugation drills have no `listId` to check against, so

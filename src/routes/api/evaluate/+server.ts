@@ -38,7 +38,7 @@ const RequestSchema = z.discriminatedUnion('mode', [
 		userAnswer: freeText,
 		canonicalAnswer: word
 	}),
-	z.object({ mode: z.literal('conjugation_example'), word, conjugatedForm: word }),
+	z.object({ mode: z.literal('conjugation_example'), word, meaning: word, conjugatedForm: word }),
 	z.object({
 		mode: z.literal('conjugation_leniency_check'),
 		canonicalAnswer: word,
