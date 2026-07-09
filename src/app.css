@@ -149,8 +149,10 @@ body {
 	font-family:
 		-apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Yu Gothic', Roboto, sans-serif;
 	/* User-adjustable via FontSizeControl.svelte, which sets this custom
-	   property; 18px is the same default as before that control existed. */
-	font-size: var(--app-font-size, 18px);
+	   property; 28px matches DEFAULT_FONT_SIZE_PX (src/lib/client/font-size.ts)
+	   so there's no flash of a different size before JS applies the stored
+	   value on mount. */
+	font-size: var(--app-font-size, 28px);
 	background: var(--color-bg);
 	color: var(--color-text);
 }
@@ -210,8 +212,8 @@ input[type='file'],
 select {
 	font-family: inherit;
 	/* Inputs below 16px trigger iOS Safari's auto-zoom-on-focus, which also
-	   scrolls parts of the page out of view. Inheriting the body size (18px)
-	   keeps inputs comfortably above that threshold. */
+	   scrolls parts of the page out of view. Inheriting the body size (28px
+	   by default) keeps inputs comfortably above that threshold. */
 	font-size: inherit;
 	min-height: var(--tap-target-min);
 	border-radius: var(--radius-md);

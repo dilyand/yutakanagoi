@@ -27,6 +27,11 @@ prompt/cell number (top-left) and attempt tracker (top-right) badges, the
 app footer, and the A-/A+ buttons' own label text all stay a fixed size
 across the whole range.
 
+Also moved the default (`DEFAULT_FONT_SIZE_PX`,
+`src/lib/client/font-size.ts`) from `18` to `28` — the middle of the
+11-step `FONT_SIZES_PX` range, not the near-bottom step it was sitting at.
+A first-time visitor now has equal headroom to size text up or down.
+
 ## 2.1.0 — AnkiApp deck import for vocab drill lists
 
 Word list uploads previously only accepted one-word-per-line `.txt`/`.md`
