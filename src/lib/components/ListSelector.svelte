@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { authorizedGet, authorizedPost, HttpError } from '$lib/client/api-client';
+	import { deriveListName } from '$lib/list-naming';
+	import { parseAnkiAppDeck } from '$lib/ankiapp-deck-parser';
 
 	interface WordListSummary {
 		id: number;
@@ -19,6 +21,7 @@
 	let uploading = $state(false);
 	let uploadError = $state('');
 	let pendingUpdate = $state<{ name: string; words: string[] } | null>(null);
+	let updateResult = $state<{ listId: number; name: string; addedCount: number } | null>(null);
 
 	async function load() {
 		status = 'loading';
@@ -37,15 +40,6 @@
 		load();
 	}
 
-	// List names are derived from the uploaded filename minus its extension —
-	// the extension is an artifact of the upload mechanism, not part of the
-	// list's identity, and would be actively misleading once other file types
-	// are supported.
-	function stripExtension(filename: string): string {
-		const dotIndex = filename.lastIndexOf('.');
-		return dotIndex > 0 ? filename.slice(0, dotIndex) : filename;
-	}
-
 	function handleChange(e: Event) {
 		const select = e.currentTarget as HTMLSelectElement;
 		const listId = Number(select.value);
@@ -61,12 +55,22 @@
 
 		uploading = true;
 		uploadError = '';
-		const name = stripExtension(file.name);
+		const name = deriveListName(file.name);
 		const text = await file.text();
-		const words = text
-			.split('\n')
-			.map((line) => line.trim())
-			.filter((line) => line.length > 0);
+		let words: string[];
+		try {
+			words = file.name.toLowerCase().endsWith('.xml')
+				? parseAnkiAppDeck(text)
+				: text
+						.split('\n')
+						.map((line) => line.trim())
+						.filter((line) => line.length > 0);
+		} catch (e) {
+			uploadError = e instanceof Error ? e.message : String(e);
+			uploading = false;
+			input.value = '';
+			return;
+		}
 		try {
 			const result = await authorizedPost<{ listId: number }>('/api/lists/upload', {
 				userId,
@@ -93,14 +97,17 @@
 		uploading = true;
 		uploadError = '';
 		try {
-			const result = await authorizedPost<{ listId: number }>('/api/lists/upload', {
-				userId,
-				name,
-				words,
-				update: true
-			});
+			const result = await authorizedPost<{ listId: number; addedCount: number }>(
+				'/api/lists/upload',
+				{
+					userId,
+					name,
+					words,
+					update: true
+				}
+			);
 			pendingUpdate = null;
-			onSelect(result.listId, name);
+			updateResult = { listId: result.listId, name, addedCount: result.addedCount };
 		} catch (e) {
 			uploadError = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -110,6 +117,13 @@
 
 	function cancelUpdate() {
 		pendingUpdate = null;
+	}
+
+	function continueToList() {
+		if (!updateResult) return;
+		const { listId, name } = updateResult;
+		updateResult = null;
+		onSelect(listId, name);
 	}
 </script>
 
@@ -135,8 +149,9 @@
 
 		<label class="field">
 			<span>Upload a new list</span>
-			<input type="file" accept=".txt,.md" onchange={handleFileUpload} disabled={uploading} />
+			<input type="file" accept=".txt,.md,.xml" onchange={handleFileUpload} disabled={uploading} />
 		</label>
+		<p class="hint">Accepts .txt/.md (one word per line) or an AnkiApp .xml deck export.</p>
 		{#if uploading}
 			<p><span class="spinner" aria-hidden="true"></span>Uploading…</p>
 		{/if}
@@ -150,5 +165,23 @@
 			<button class="button-primary" onclick={confirmUpdate} disabled={uploading}>Update</button>
 			<p class="cancel"><button onclick={cancelUpdate} disabled={uploading}>Cancel</button></p>
 		{/if}
+		{#if updateResult}
+			<p>
+				{#if updateResult.addedCount === 0}
+					No new words to add — "{updateResult.name}" is already up to date.
+				{:else}
+					Added {updateResult.addedCount}
+					{updateResult.addedCount === 1 ? 'word' : 'words'} to "{updateResult.name}".
+				{/if}
+			</p>
+			<button class="button-primary" onclick={continueToList}>Continue</button>
+		{/if}
 	</div>
 {/if}
+
+<style>
+	.hint {
+		font-size: var(--font-size-tiny);
+		color: var(--color-text-secondary);
+	}
+</style>
