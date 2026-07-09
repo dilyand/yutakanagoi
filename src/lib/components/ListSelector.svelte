@@ -37,6 +37,15 @@
 		load();
 	}
 
+	// List names are derived from the uploaded filename minus its extension —
+	// the extension is an artifact of the upload mechanism, not part of the
+	// list's identity, and would be actively misleading once other file types
+	// are supported.
+	function stripExtension(filename: string): string {
+		const dotIndex = filename.lastIndexOf('.');
+		return dotIndex > 0 ? filename.slice(0, dotIndex) : filename;
+	}
+
 	function handleChange(e: Event) {
 		const select = e.currentTarget as HTMLSelectElement;
 		const listId = Number(select.value);
@@ -52,6 +61,7 @@
 
 		uploading = true;
 		uploadError = '';
+		const name = stripExtension(file.name);
 		const text = await file.text();
 		const words = text
 			.split('\n')
@@ -60,13 +70,13 @@
 		try {
 			const result = await authorizedPost<{ listId: number }>('/api/lists/upload', {
 				userId,
-				name: file.name,
+				name,
 				words
 			});
-			onSelect(result.listId, file.name);
+			onSelect(result.listId, name);
 		} catch (e) {
 			if (e instanceof HttpError && e.status === 409) {
-				pendingUpdate = { name: file.name, words };
+				pendingUpdate = { name, words };
 			} else {
 				uploadError = e instanceof Error ? e.message : String(e);
 			}

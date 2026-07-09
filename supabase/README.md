@@ -67,7 +67,10 @@ schema, not just inferred from reading `.sql` files.
 - `users` — one row per person using the app (`username`, unique). Created
   out-of-band via `scripts/add-user.ts`, never through the app itself.
 - `word_lists` — one row per uploaded/migrated word list (`user_id`, `name`).
-  Private per user; `name` is always the uploaded filename, unique per user.
+  Private per user; `name` is the uploaded filename with its extension
+  stripped (stripped client-side at upload time — the extension is an
+  artifact of the upload mechanism, not part of the list's identity), unique
+  per user.
   **Constraints:** `user_id` → `users(id)`; unique `(user_id, name)`.
 - `list_words` — one row per word in a list (`list_id`, `word`,
   `frequency_rank`).

@@ -67,8 +67,8 @@ export async function verifyListOwnership(
 /**
  * Creates a word list and its words in one call. Throws ListNameConflictError
  * if this user already has a list with this name (list name = uploaded
- * filename, and re-uploading the same filename is rejected rather than
- * silently overwriting progress).
+ * filename with its extension stripped, and re-uploading the same filename
+ * is rejected rather than silently overwriting progress).
  */
 export async function createWordList(
 	supabase: SupabaseClient,

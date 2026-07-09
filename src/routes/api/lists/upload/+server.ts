@@ -26,9 +26,11 @@ const RequestSchema = z.object({
 	update: z.boolean().optional().default(false)
 });
 
-// List name = the uploaded filename, per the app's convention. Re-uploading a
-// name this user already has is rejected (409) unless `update` is set, in
-// which case new words are merged into that existing list instead (see
+// List name = the uploaded filename with its extension stripped (done
+// client-side, in ListSelector.svelte — the extension is an artifact of the
+// upload mechanism, not part of the list's identity). Re-uploading a name
+// this user already has is rejected (409) unless `update` is set, in which
+// case new words are merged into that existing list instead (see
 // updateWordList — additive only, existing words/progress are never
 // touched).
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
