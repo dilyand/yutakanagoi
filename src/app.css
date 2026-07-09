@@ -44,13 +44,16 @@
 
 	/* em, not rem: these need to scale with --app-font-size (set on body),
 	   and rem would instead anchor to the root <html> element, which never
-	   moves. --font-size-footer stays on rem deliberately below, since the
-	   footer is the one thing that must NOT scale with this control. */
+	   moves. The *-static variants stay on rem deliberately, for the chrome
+	   that must NOT scale with this control (page footer, lock button,
+	   prompt/cell numbering, attempt tracker) — same pixel values as their
+	   scaling counterparts, just anchored to the untouched root instead. */
 	--font-size-word: 2.5em;
 	--font-size-word-weight: 700;
 	--font-size-small: 0.9em;
 	--font-size-tiny: 0.8em;
-	--font-size-footer: 0.8rem;
+	--font-size-small-static: 0.9rem;
+	--font-size-tiny-static: 0.8rem;
 
 	--radius-md: 0.5rem;
 	--radius-lg: 0.75rem;
@@ -285,7 +288,7 @@ input[type='password'] {
 	position: absolute;
 	top: var(--space-3);
 	left: var(--space-3);
-	font-size: var(--font-size-tiny);
+	font-size: var(--font-size-tiny-static);
 	font-weight: 600;
 	color: var(--color-text-secondary);
 	background: var(--color-surface);
@@ -317,7 +320,7 @@ input[type='password'] {
 }
 
 .badge {
-	font-size: var(--font-size-tiny);
+	font-size: var(--font-size-tiny-static);
 	font-weight: 600;
 	color: var(--color-text-secondary);
 	background: var(--color-surface);
@@ -506,7 +509,7 @@ input[type='password'] {
 	color: var(--color-text-secondary);
 	text-decoration: underline;
 	font-weight: 400;
-	font-size: var(--font-size-small);
+	font-size: var(--font-size-small-static);
 	padding: var(--space-2);
 }
 
@@ -544,7 +547,7 @@ input[type='password'] {
 	margin-top: auto;
 	padding-top: var(--space-4);
 	text-align: center;
-	font-size: var(--font-size-footer);
+	font-size: var(--font-size-tiny-static);
 	color: var(--color-text-secondary);
 }
 

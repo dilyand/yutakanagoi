@@ -13,15 +13,19 @@ text, and badges) were defined in `rem`, which always resolves against the
 root `<html>` element — and nothing sets that element's font-size, so it
 stayed pinned at the browser default regardless of the control. Only
 `--font-size-word` happened to work, since it's in `em` and inherits from
-`body`, which the control does drive. Switched both tokens to `em` so all of
-that text now scales together with the word. Card padding/gaps/border-radius
-are untouched by design — scaling those too risked pushing un-wrapped
-control rows off a narrow phone's viewport at the largest setting. Gave the
-footer its own fixed `--font-size-footer` token so it keeps not resizing
-(intentional, per `CLAUDE.md`) instead of only coincidentally not resizing
-because it shared a token with now-scaling badges. Also pinned the A-/A+
-buttons' own font-size so the control itself stays a constant size (matching
-the theme toggle) instead of ballooning along with the text it controls.
+`body`, which the control does drive. Switched both tokens to `em` so
+reading/meaning/target-form/translation text now scales together with the
+word. Card padding/gaps/border-radius are untouched by design — scaling
+those too risked pushing un-wrapped control rows off a narrow phone's
+viewport at the largest setting.
+
+Chrome that isn't drill content stays deliberately static instead, via new
+`--font-size-small-static`/`--font-size-tiny-static` tokens (same default
+pixel values as their scaling counterparts, just anchored to the untouched
+root so they never move): the passphrase gate's "Lock" button, the card's
+prompt/cell number (top-left) and attempt tracker (top-right) badges, the
+app footer, and the A-/A+ buttons' own label text all stay a fixed size
+across the whole range.
 
 ## 2.1.0 — AnkiApp deck import for vocab drill lists
 
