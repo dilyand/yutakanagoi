@@ -5,6 +5,33 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 2.1.1 — Font-size control now scales the whole card, not just the word
+
+The A-/A+ text-size control only ever grew the main word: `--font-size-small`
+and `--font-size-tiny` (used by readings, meanings, target-form/translation
+text, and badges) were defined in `rem`, which always resolves against the
+root `<html>` element — and nothing sets that element's font-size, so it
+stayed pinned at the browser default regardless of the control. Only
+`--font-size-word` happened to work, since it's in `em` and inherits from
+`body`, which the control does drive. Switched both tokens to `em` so
+reading/meaning/target-form/translation text now scales together with the
+word. Card padding/gaps/border-radius are untouched by design — scaling
+those too risked pushing un-wrapped control rows off a narrow phone's
+viewport at the largest setting.
+
+Chrome that isn't drill content stays deliberately static instead, via new
+`--font-size-small-static`/`--font-size-tiny-static` tokens (same default
+pixel values as their scaling counterparts, just anchored to the untouched
+root so they never move): the passphrase gate's "Lock" button, the card's
+prompt/cell number (top-left) and attempt tracker (top-right) badges, the
+app footer, and the A-/A+ buttons' own label text all stay a fixed size
+across the whole range.
+
+Also moved the default (`DEFAULT_FONT_SIZE_PX`,
+`src/lib/client/font-size.ts`) from `18` to `28` — the middle of the
+11-step `FONT_SIZES_PX` range, not the near-bottom step it was sitting at.
+A first-time visitor now has equal headroom to size text up or down.
+
 ## 2.1.0 — AnkiApp deck import for vocab drill lists
 
 Word list uploads previously only accepted one-word-per-line `.txt`/`.md`

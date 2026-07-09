@@ -3,7 +3,9 @@
 // iOS zoom-on-input-focus threshold (see app.css); ceiling is high enough
 // for real low-vision use, not just a cosmetic bump.
 export const FONT_SIZES_PX = [16, 18, 20, 22, 24, 28, 32, 36, 40, 44, 48] as const;
-export const DEFAULT_FONT_SIZE_PX = 18;
+// The middle step (6th of 11), not the floor — so a first-time visitor starts
+// with headroom to go either direction rather than defaulting near the bottom.
+export const DEFAULT_FONT_SIZE_PX = 28;
 
 const FONT_SIZE_STORAGE_KEY = 'yutakanagoi:font-size-px';
 
