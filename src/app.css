@@ -42,11 +42,15 @@
 	--space-6: 2rem;
 	--space-8: 3rem;
 
-	/* Relative units so these keep composing with --app-font-size, not fixed px */
+	/* em, not rem: these need to scale with --app-font-size (set on body),
+	   and rem would instead anchor to the root <html> element, which never
+	   moves. --font-size-footer stays on rem deliberately below, since the
+	   footer is the one thing that must NOT scale with this control. */
 	--font-size-word: 2.5em;
 	--font-size-word-weight: 700;
-	--font-size-small: 0.9rem;
-	--font-size-tiny: 0.8rem;
+	--font-size-small: 0.9em;
+	--font-size-tiny: 0.8em;
+	--font-size-footer: 0.8rem;
 
 	--radius-md: 0.5rem;
 	--radius-lg: 0.75rem;
@@ -522,6 +526,10 @@ input[type='password'] {
 .font-size-control button {
 	min-width: var(--tap-target-min);
 	font-weight: 600;
+	/* Pinned, not inherited: this is the control that changes text size,
+	   not drill content, so its own footprint must stay constant like
+	   .theme-toggle's — otherwise it grows along with everything else. */
+	font-size: 16px;
 }
 
 .theme-toggle {
@@ -536,7 +544,7 @@ input[type='password'] {
 	margin-top: auto;
 	padding-top: var(--space-4);
 	text-align: center;
-	font-size: var(--font-size-tiny);
+	font-size: var(--font-size-footer);
 	color: var(--color-text-secondary);
 }
 

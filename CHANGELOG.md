@@ -5,6 +5,24 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 2.1.1 — Font-size control now scales the whole card, not just the word
+
+The A-/A+ text-size control only ever grew the main word: `--font-size-small`
+and `--font-size-tiny` (used by readings, meanings, target-form/translation
+text, and badges) were defined in `rem`, which always resolves against the
+root `<html>` element — and nothing sets that element's font-size, so it
+stayed pinned at the browser default regardless of the control. Only
+`--font-size-word` happened to work, since it's in `em` and inherits from
+`body`, which the control does drive. Switched both tokens to `em` so all of
+that text now scales together with the word. Card padding/gaps/border-radius
+are untouched by design — scaling those too risked pushing un-wrapped
+control rows off a narrow phone's viewport at the largest setting. Gave the
+footer its own fixed `--font-size-footer` token so it keeps not resizing
+(intentional, per `CLAUDE.md`) instead of only coincidentally not resizing
+because it shared a token with now-scaling badges. Also pinned the A-/A+
+buttons' own font-size so the control itself stays a constant size (matching
+the theme toggle) instead of ballooning along with the text it controls.
+
 ## 2.1.0 — AnkiApp deck import for vocab drill lists
 
 Word list uploads previously only accepted one-word-per-line `.txt`/`.md`
