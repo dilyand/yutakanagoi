@@ -98,3 +98,62 @@ export async function createWordList(
 
 	return listRow.id;
 }
+
+/**
+ * Merges new words into an existing list, found by (userId, name) — the
+ * client only has the filename at this point, not the listId. Additive
+ * only: words already in the list (by exact text match) are left
+ * completely untouched (word, frequency_rank, word_state,
+ * vocab_session_attempts), so re-uploading an expanded version of a list
+ * never disturbs progress already made on it. New words are appended after
+ * the current highest frequency_rank — derived from the real max, not
+ * assumed to be a contiguous count(), so this can't collide with an
+ * existing row. Throws ListNotFoundError if no list matches.
+ */
+export async function updateWordList(
+	supabase: SupabaseClient,
+	userId: number,
+	name: string,
+	words: string[]
+): Promise<{ listId: number; addedCount: number }> {
+	const { data: listRow, error: listError } = await withRetry(() =>
+		supabase.from('word_lists').select('id').eq('user_id', userId).eq('name', name).maybeSingle()
+	);
+	if (listError) throw listError;
+	if (!listRow) throw new ListNotFoundError();
+
+	const listId = listRow.id;
+
+	const { data: existingRows, error: existingError } = await withRetry(() =>
+		supabase.from('list_words').select('word, frequency_rank').eq('list_id', listId)
+	);
+	if (existingError) throw existingError;
+
+	const existingWords = new Set(existingRows.map((row) => row.word));
+	const maxRank = existingRows.reduce((max, row) => Math.max(max, row.frequency_rank), 0);
+
+	const seen = new Set<string>();
+	const newWords: string[] = [];
+	for (const word of words) {
+		if (existingWords.has(word) || seen.has(word)) continue;
+		seen.add(word);
+		newWords.push(word);
+	}
+
+	if (newWords.length === 0) {
+		return { listId, addedCount: 0 };
+	}
+
+	const { error: insertError } = await withRetry(() =>
+		supabase.from('list_words').insert(
+			newWords.map((word, index) => ({
+				list_id: listId,
+				word,
+				frequency_rank: maxRank + index + 1
+			}))
+		)
+	);
+	if (insertError) throw insertError;
+
+	return { listId, addedCount: newWords.length };
+}

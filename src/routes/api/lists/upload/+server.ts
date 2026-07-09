@@ -3,7 +3,12 @@ import type { RequestHandler } from './$types';
 import { z } from 'zod';
 import { requireAppSecret } from '$lib/server/require-app-secret';
 import { createServiceClient } from '$lib/server/supabase';
-import { createWordList, ListNameConflictError } from '$lib/server/user-list-repository';
+import {
+	createWordList,
+	updateWordList,
+	ListNameConflictError,
+	ListNotFoundError
+} from '$lib/server/user-list-repository';
 import { checkRateLimit } from '$lib/server/rate-limit';
 
 // Uploads are rare/deliberate (new word list), so 5/hour per IP is generous
@@ -17,12 +22,15 @@ const WINDOW_MS = 60 * 60 * 1000;
 const RequestSchema = z.object({
 	userId: z.number().int(),
 	name: z.string().min(1).max(200),
-	words: z.array(z.string().max(50)).max(3000)
+	words: z.array(z.string().max(50)).max(3000),
+	update: z.boolean().optional().default(false)
 });
 
 // List name = the uploaded filename, per the app's convention. Re-uploading a
-// name this user already has is rejected (409) rather than silently
-// overwriting that list's progress.
+// name this user already has is rejected (409) unless `update` is set, in
+// which case new words are merged into that existing list instead (see
+// updateWordList — additive only, existing words/progress are never
+// touched).
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	requireAppSecret(request);
 	if (!checkRateLimit(`lists-upload:${getClientAddress()}`, LIMIT, WINDOW_MS)) {
@@ -33,7 +41,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	if (!parsedBody.success) {
 		error(400, 'Invalid request body');
 	}
-	const { userId, name, words } = parsedBody.data;
+	const { userId, name, words, update } = parsedBody.data;
 
 	const cleanedWords = words.map((w) => w.trim()).filter((w) => w.length > 0);
 	if (cleanedWords.length === 0) {
@@ -42,11 +50,18 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
 	const supabase = createServiceClient();
 	try {
+		if (update) {
+			const { listId, addedCount } = await updateWordList(supabase, userId, name, cleanedWords);
+			return json({ listId, addedCount, updated: true });
+		}
 		const listId = await createWordList(supabase, userId, name, cleanedWords);
 		return json({ listId });
 	} catch (e) {
 		if (e instanceof ListNameConflictError) {
 			error(409, e.message);
+		}
+		if (e instanceof ListNotFoundError) {
+			error(404, e.message);
 		}
 		throw e;
 	}
