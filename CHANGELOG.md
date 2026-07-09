@@ -5,6 +5,20 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 2.0.3 — support updating an existing word list
+
+Third of the cleanup patch series (issue #28). Re-uploading a filename that
+matched an existing list used to be rejected outright (409), to protect
+that list's Leitner progress — but that also blocked the common case of
+re-uploading a maintained frequency list that's grown since it was first
+uploaded. Added `updateWordList` (`user-list-repository.ts`): additive
+only, new words are appended past the list's current max `frequency_rank`,
+existing words/progress are never touched, removal/reordering are
+out of scope. The upload endpoint takes an `update` flag to opt into this
+path; the UI surfaces the previous silent 409 as an explicit "update this
+list instead?" confirmation (`ListSelector.svelte`) rather than silently
+upserting, so a wrong-file re-upload can still be caught before it merges.
+
 ## 2.0.2 — conjugation word list cleanup + downsizing
 
 Second of the cleanup patch series. `conjugation-word-list.ts` inherited the

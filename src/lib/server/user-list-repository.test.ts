@@ -5,6 +5,7 @@ import {
 	listWordListsForUser,
 	verifyListOwnership,
 	createWordList,
+	updateWordList,
 	ListNameConflictError,
 	ListNotFoundError
 } from './user-list-repository';
@@ -128,6 +129,123 @@ describe('createWordList', () => {
 
 		await expect(createWordList(supabase, 1, 'x.txt', ['a'])).rejects.toThrow(
 			'words insert failed'
+		);
+	});
+});
+
+describe('updateWordList', () => {
+	it('appends only the words not already in the list, past the current max rank', async () => {
+		const listWordsSelectBuilder = queryBuilder({
+			data: [
+				{ word: '一', frequency_rank: 1 },
+				{ word: '二', frequency_rank: 5 }
+			]
+		});
+		const listWordsInsertBuilder = queryBuilder({ error: null });
+		let listWordsCall = 0;
+		const supabase = {
+			from: vi.fn((table: string) => {
+				if (table === 'word_lists') return queryBuilder({ data: { id: 42 } });
+				if (table === 'list_words') {
+					listWordsCall += 1;
+					return listWordsCall === 1 ? listWordsSelectBuilder : listWordsInsertBuilder;
+				}
+				throw new Error(`unexpected table ${table}`);
+			})
+		} as unknown as SupabaseClient;
+
+		const result = await updateWordList(supabase, 1, 'my-list.txt', ['一', '三', '四']);
+
+		expect(result).toEqual({ listId: 42, addedCount: 2 });
+		expect(listWordsInsertBuilder.insert).toHaveBeenCalledWith([
+			{ list_id: 42, word: '三', frequency_rank: 6 },
+			{ list_id: 42, word: '四', frequency_rank: 7 }
+		]);
+	});
+
+	it('de-duplicates repeated words within the uploaded list itself', async () => {
+		const listWordsSelectBuilder = queryBuilder({ data: [{ word: '一', frequency_rank: 1 }] });
+		const listWordsInsertBuilder = queryBuilder({ error: null });
+		let listWordsCall = 0;
+		const supabase = {
+			from: vi.fn((table: string) => {
+				if (table === 'word_lists') return queryBuilder({ data: { id: 42 } });
+				if (table === 'list_words') {
+					listWordsCall += 1;
+					return listWordsCall === 1 ? listWordsSelectBuilder : listWordsInsertBuilder;
+				}
+				throw new Error(`unexpected table ${table}`);
+			})
+		} as unknown as SupabaseClient;
+
+		const result = await updateWordList(supabase, 1, 'my-list.txt', ['三', '三']);
+
+		expect(result).toEqual({ listId: 42, addedCount: 1 });
+		expect(listWordsInsertBuilder.insert).toHaveBeenCalledWith([
+			{ list_id: 42, word: '三', frequency_rank: 2 }
+		]);
+	});
+
+	it('returns addedCount 0 without inserting when every word is already present', async () => {
+		const listWordsSelectBuilder = queryBuilder({ data: [{ word: '一', frequency_rank: 1 }] });
+		const supabase = {
+			from: vi.fn((table: string) => {
+				if (table === 'word_lists') return queryBuilder({ data: { id: 42 } });
+				if (table === 'list_words') return listWordsSelectBuilder;
+				throw new Error(`unexpected table ${table}`);
+			})
+		} as unknown as SupabaseClient;
+
+		const result = await updateWordList(supabase, 1, 'my-list.txt', ['一']);
+
+		expect(result).toEqual({ listId: 42, addedCount: 0 });
+		expect(listWordsSelectBuilder.insert).not.toHaveBeenCalled();
+	});
+
+	it('throws ListNotFoundError when no list matches (userId, name)', async () => {
+		const supabase = fakeSupabase({ word_lists: { data: null } });
+		await expect(updateWordList(supabase, 1, 'missing.txt', ['a'])).rejects.toThrow(
+			ListNotFoundError
+		);
+	});
+
+	it('rethrows a Supabase error from the word_lists lookup', async () => {
+		const supabase = fakeSupabase({ word_lists: { error: new Error('db down') } });
+		await expect(updateWordList(supabase, 1, 'my-list.txt', ['a'])).rejects.toThrow('db down');
+	});
+
+	it('rethrows a Supabase error from the list_words select', async () => {
+		const listWordsSelectBuilder = queryBuilder({ error: new Error('select failed') });
+		const supabase = {
+			from: vi.fn((table: string) => {
+				if (table === 'word_lists') return queryBuilder({ data: { id: 42 } });
+				if (table === 'list_words') return listWordsSelectBuilder;
+				throw new Error(`unexpected table ${table}`);
+			})
+		} as unknown as SupabaseClient;
+
+		await expect(updateWordList(supabase, 1, 'my-list.txt', ['a'])).rejects.toThrow(
+			'select failed'
+		);
+	});
+
+	it('rethrows a Supabase error from the list_words insert', async () => {
+		const listWordsSelectBuilder = queryBuilder({ data: [] });
+		const listWordsInsertBuilder = queryBuilder({ error: new Error('insert failed') });
+		let listWordsCall = 0;
+		const supabase = {
+			from: vi.fn((table: string) => {
+				if (table === 'word_lists') return queryBuilder({ data: { id: 42 } });
+				if (table === 'list_words') {
+					listWordsCall += 1;
+					return listWordsCall === 1 ? listWordsSelectBuilder : listWordsInsertBuilder;
+				}
+				throw new Error(`unexpected table ${table}`);
+			})
+		} as unknown as SupabaseClient;
+
+		await expect(updateWordList(supabase, 1, 'my-list.txt', ['a'])).rejects.toThrow(
+			'insert failed'
 		);
 	});
 });

@@ -1,7 +1,7 @@
 {
 	"name": "yutakanagoi",
 	"private": true,
-	"version": "2.0.2",
+	"version": "2.0.3",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -16,7 +16,8 @@
 		"test:watch": "vitest",
 		"add-user": "tsx --env-file=.env scripts/add-user.ts",
 		"logs:errors": "tsx --env-file=.env scripts/read-error-log.ts",
-		"scrub-master-list-cleanup": "tsx --env-file=.env scripts/scrub-master-list-cleanup.ts"
+		"scrub-master-list-cleanup": "tsx --env-file=.env scripts/scrub-master-list-cleanup.ts",
+		"strip-list-name-extensions": "tsx --env-file=.env scripts/strip-list-name-extensions.ts"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",

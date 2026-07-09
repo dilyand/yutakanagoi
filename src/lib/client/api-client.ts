@@ -20,6 +20,20 @@ async function fetchWithRetry(path: string, init: RequestInit): Promise<Response
 	}
 }
 
+// Carries the HTTP status alongside the friendly message so callers that
+// need to branch on a specific status (e.g. a 409 name conflict offering an
+// "update instead?" flow) can, while every existing `instanceof Error`
+// call site keeps working unchanged.
+export class HttpError extends Error {
+	constructor(
+		message: string,
+		public readonly status: number
+	) {
+		super(message);
+		this.name = 'HttpError';
+	}
+}
+
 // Users only ever see the friendly message below — the raw response (which
 // can contain a Postgres/stack-ish string) is only ever console.error'd, for
 // debugging, mirroring the friendly-message-plus-logged-detail pattern
@@ -36,7 +50,7 @@ async function throwFriendlyError(path: string, response: Response): Promise<nev
 				: response.status === 429
 					? 'Too many requests — please wait a moment and try again.'
 					: 'Something went wrong. Please try again.';
-	throw new Error(message);
+	throw new HttpError(message, response.status);
 }
 
 export async function authorizedGet<T>(path: string): Promise<T> {
