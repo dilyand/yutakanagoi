@@ -19,6 +19,13 @@ path; the UI surfaces the previous silent 409 as an explicit "update this
 list instead?" confirmation (`ListSelector.svelte`) rather than silently
 upserting, so a wrong-file re-upload can still be caught before it merges.
 
+Also stripped the file extension from list names — it's an artifact of the
+upload mechanism (nothing is ever stored as a file; the browser parses it
+client-side into a word array), not part of a list's identity, and would
+only get more misleading once other file types are supported. Stripped
+client-side for new uploads/updates; `scripts/strip-list-name-extensions.ts`
+backfilled the 3 existing rows on staging and production.
+
 ## 2.0.2 — conjugation word list cleanup + downsizing
 
 Second of the cleanup patch series. `conjugation-word-list.ts` inherited the
