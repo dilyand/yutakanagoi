@@ -5,6 +5,21 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 2.1.3 — Fix ambiguous English gloss producing an ungrammatical example sentence
+
+Follow-up to 2.1.2's meaning-grounding fix, found while spot-checking that
+fix against every other reading-collision pair in `conjugation-word-list.ts`.
+撃つ ("to shoot," a gun) was glossed simply as `'to shoot'` — ambiguous in
+English between the weapon and photography senses — so the now-meaning-
+grounded prompt correctly avoided confusing it with 打つ ("to hit") but, in
+most runs, took the English word's photography idiom instead and generated
+sentences like カメラでその景色をうった ("I shot that scenery with a
+camera"), which isn't actually valid Japanese (the real verb for taking a
+photo is 撮る, not 打つ/撃つ). Fixed by narrowing 撃つ's gloss to
+`'to shoot (a gun)'` — the grounding mechanism itself was working correctly;
+the underlying English gloss was the ambiguous part. Verified live: 5/5 runs
+after the fix produced correct weapon-related sentences.
+
 ## 2.1.2 — Fix conjugation-example sentences generated for the wrong word
 
 Reported via a screenshot: drilling まう (舞う, "to dance") produced the
