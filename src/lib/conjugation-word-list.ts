@@ -1670,7 +1670,7 @@ export const CONJUGATION_WORDS: ConjugationWord[] = [
 		frequencyRank: 1622,
 		wordClass: 'godan_tsu',
 		reading: 'うつ',
-		meaning: 'to shoot'
+		meaning: 'to shoot (a gun)'
 	},
 	{ word: '素直', frequencyRank: 1636, wordClass: 'copula', reading: 'すなお', meaning: 'honest' },
 	{
