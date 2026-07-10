@@ -67,9 +67,9 @@ schema, not just inferred from reading `.sql` files.
 - `users` — one row per person using the app (`username`, unique).
   Created out-of-band via `scripts/add-user.ts`, never through the app
   itself. `password_hash` (scrypt, set via `scripts/set-password.ts`) is
-  currently nullable — additive step of the 2.2.0 auth cutover, backfilled
-  per-user before a later migration makes it `NOT NULL` (see CLAUDE.md's
-  Operating conventions on staged production migrations).
+  `NOT NULL` — added nullable as the additive step of the 2.2.0 auth
+  cutover, backfilled per-user, then finalized once every row had a value
+  (see CLAUDE.md's Operating conventions on staged production migrations).
 - `sessions` — one row per active login (`user_id`, `token_hash` unique,
   `expires_at`). Only a SHA-256 hash of the session token is ever stored —
   see `src/lib/server/session.ts`. No `ON DELETE CASCADE` on `user_id`
