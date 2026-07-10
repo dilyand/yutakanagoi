@@ -1,7 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
-import { requireAppSecret } from '$lib/server/require-app-secret';
 import { createServiceClient } from '$lib/server/supabase';
 import {
 	createWordList,
@@ -10,6 +9,7 @@ import {
 	ListNotFoundError
 } from '$lib/server/user-list-repository';
 import { checkRateLimit } from '$lib/server/rate-limit';
+import { requireUserId } from '$lib/server/require-session';
 
 // Uploads are rare/deliberate (new word list), so 5/hour per IP is generous
 // headroom while bounding spam.
@@ -20,7 +20,6 @@ const WINDOW_MS = 60 * 60 * 1000;
 // generous headroom while still bounding what ends up in every drill prompt
 // for this list (see claude-evaluate.ts).
 const RequestSchema = z.object({
-	userId: z.number().int(),
 	name: z.string().min(1).max(200),
 	words: z.array(z.string().max(50)).max(3000),
 	update: z.boolean().optional().default(false)
@@ -33,8 +32,8 @@ const RequestSchema = z.object({
 // case new words are merged into that existing list instead (see
 // updateWordList — additive only, existing words/progress are never
 // touched).
-export const POST: RequestHandler = async ({ request, getClientAddress }) => {
-	requireAppSecret(request);
+export const POST: RequestHandler = async ({ request, getClientAddress, locals }) => {
+	const userId = requireUserId(locals);
 	if (!checkRateLimit(`lists-upload:${getClientAddress()}`, LIMIT, WINDOW_MS)) {
 		error(429, 'Too many uploads — please wait and try again.');
 	}
@@ -43,7 +42,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	if (!parsedBody.success) {
 		error(400, 'Invalid request body');
 	}
-	const { userId, name, words, update } = parsedBody.data;
+	const { name, words, update } = parsedBody.data;
 
 	const cleanedWords = words.map((w) => w.trim()).filter((w) => w.length > 0);
 	if (cleanedWords.length === 0) {

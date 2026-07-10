@@ -1,7 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
-import { requireAppSecret } from '$lib/server/require-app-secret';
 import { createServiceClient } from '$lib/server/supabase';
 import {
 	upsertCellStates,
@@ -10,6 +9,7 @@ import {
 } from '$lib/server/conjugation-repository';
 import { verifyUserExists, UserNotFoundError } from '$lib/server/conjugation-auth';
 import { checkRateLimit } from '$lib/server/rate-limit';
+import { requireUserId } from '$lib/server/require-session';
 
 // Paired with conjugation session/start's limit — separate bucket from
 // vocab's, same 20/5min shape.
@@ -19,7 +19,6 @@ const WINDOW_MS = 5 * 60 * 1000;
 // A session is at most 10 cells (see drill-algorithm.ts, reused as-is), so
 // 50 leaves generous headroom while still bounding the payload size.
 const RequestSchema = z.object({
-	userId: z.number().int(),
 	sessionIndex: z.number().int(),
 	cellStates: z
 		.array(
@@ -48,8 +47,8 @@ const RequestSchema = z.object({
 
 // Persists the whole session's outcome in one call once every cell has been
 // drilled, same rationale as vocab's session/complete.
-export const POST: RequestHandler = async ({ request, getClientAddress }) => {
-	requireAppSecret(request);
+export const POST: RequestHandler = async ({ request, getClientAddress, locals }) => {
+	const userId = requireUserId(locals);
 	if (!checkRateLimit(`conjugation-session-complete:${getClientAddress()}`, LIMIT, WINDOW_MS)) {
 		error(429, 'Too many requests — please wait and try again.');
 	}
@@ -58,7 +57,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	if (!parsedBody.success) {
 		error(400, 'Invalid request body');
 	}
-	const { userId, sessionIndex, cellStates, attempts } = parsedBody.data;
+	const { sessionIndex, cellStates, attempts } = parsedBody.data;
 
 	const supabase = createServiceClient();
 	try {

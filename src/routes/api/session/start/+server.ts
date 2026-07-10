@@ -1,14 +1,14 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
-import { requireAppSecret } from '$lib/server/require-app-secret';
 import { createServiceClient } from '$lib/server/supabase';
 import { fetchDrillContext, startSession } from '$lib/server/drill-repository';
 import { verifyListOwnership, ListNotFoundError } from '$lib/server/user-list-repository';
 import { selectDrillWords } from '$lib/drill-algorithm';
 import { checkRateLimit } from '$lib/server/rate-limit';
+import { requireUserId } from '$lib/server/require-session';
 
-const RequestSchema = z.object({ listId: z.number().int(), userId: z.number().int() });
+const RequestSchema = z.object({ listId: z.number().int() });
 
 // Starting a session a few times in a row (start, cancel, restart) is normal
 // use; 20/5min per IP just bounds a runaway client-side retry loop from
@@ -19,8 +19,8 @@ const WINDOW_MS = 5 * 60 * 1000;
 
 // Starting a session is a deliberate action (not tied to page load) so that
 // refreshing the drill page never accidentally increments session_index.
-export const POST: RequestHandler = async ({ request, getClientAddress }) => {
-	requireAppSecret(request);
+export const POST: RequestHandler = async ({ request, getClientAddress, locals }) => {
+	const userId = requireUserId(locals);
 	if (!checkRateLimit(`session-start:${getClientAddress()}`, LIMIT, WINDOW_MS)) {
 		error(429, 'Too many requests — please wait and try again.');
 	}
@@ -29,7 +29,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	if (!parsedBody.success) {
 		error(400, 'Invalid request body');
 	}
-	const { listId, userId } = parsedBody.data;
+	const { listId } = parsedBody.data;
 
 	const supabase = createServiceClient();
 	try {

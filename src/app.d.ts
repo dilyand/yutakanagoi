@@ -4,7 +4,13 @@
 declare global {
 	namespace App {
 		// interface Error {}
-		// interface Locals {}
+		interface Locals {
+			// Populated by hooks.server.ts from a verified session cookie —
+			// undefined means no valid session (route handlers should call
+			// requireUserId, which throws 401).
+			userId?: number;
+			username?: string;
+		}
 		// interface PageData {}
 		// interface PageState {}
 		// interface Platform {}

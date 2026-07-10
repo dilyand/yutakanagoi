@@ -1,9 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { isHttpError } from '@sveltejs/kit';
 
-const mockEnv = vi.hoisted(() => ({ APP_SHARED_SECRET: 'correct-secret' as string | undefined }));
-vi.mock('$env/dynamic/private', () => ({ env: mockEnv }));
-
 vi.mock('$lib/server/supabase', () => ({
 	createServiceClient: vi.fn(() => ({}))
 }));
@@ -31,7 +28,6 @@ import { ListNotFoundError } from '$lib/server/user-list-repository';
 
 const validBody = {
 	listId: 1,
-	userId: 2,
 	sessionIndex: 5,
 	wordStates: [{ word: '一', box: 1, lastSession: 5 }],
 	attempts: [{ word: '一', wasNewWord: false, correct: true, boxBefore: 0, boxAfter: 1 }]
@@ -39,29 +35,28 @@ const validBody = {
 
 function makeEvent(
 	body: unknown,
-	{ authHeader, ip = '203.0.113.1' }: { authHeader?: string; ip?: string } = {
-		authHeader: 'Bearer correct-secret'
-	}
+	{ userId, ip = '203.0.113.1' }: { userId?: number; ip?: string } = { userId: 2 }
 ) {
-	const headers: Record<string, string> = { 'content-type': 'application/json' };
-	if (authHeader !== undefined) headers.Authorization = authHeader;
 	const request = new Request('http://localhost/api/session/complete', {
 		method: 'POST',
-		headers,
+		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(body)
 	});
-	return { request, getClientAddress: () => ip } as unknown as Parameters<typeof POST>[0];
+	return {
+		request,
+		getClientAddress: () => ip,
+		locals: { userId }
+	} as unknown as Parameters<typeof POST>[0];
 }
 
 describe('POST /api/session/complete', () => {
 	afterEach(() => {
-		mockEnv.APP_SHARED_SECRET = 'correct-secret';
 		vi.clearAllMocks();
 	});
 
 	it('rejects with 401 and never calls verifyListOwnership when unauthenticated', async () => {
 		try {
-			await POST(makeEvent(validBody, { authHeader: undefined }));
+			await POST(makeEvent(validBody, { userId: undefined }));
 			expect.unreachable();
 		} catch (e) {
 			expect(isHttpError(e, 401)).toBe(true);
@@ -111,10 +106,10 @@ describe('POST /api/session/complete', () => {
 
 		const ip = `198.51.100.${Math.floor(Math.random() * 255)}`;
 		for (let i = 0; i < 20; i++) {
-			await POST(makeEvent(validBody, { authHeader: 'Bearer correct-secret', ip }));
+			await POST(makeEvent(validBody, { userId: 2, ip }));
 		}
 		try {
-			await POST(makeEvent(validBody, { authHeader: 'Bearer correct-secret', ip }));
+			await POST(makeEvent(validBody, { userId: 2, ip }));
 			expect.unreachable();
 		} catch (e) {
 			expect(isHttpError(e, 429)).toBe(true);

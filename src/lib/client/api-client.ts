@@ -1,5 +1,3 @@
-import { getStoredAppSecret } from './app-secret';
-
 // Only retries when fetch() itself throws (offline, DNS failure, connection
 // dropped before any response) — never on a real HTTP response, even a 5xx.
 // A 5xx means the server received and processed the request, and several
@@ -44,7 +42,7 @@ async function throwFriendlyError(path: string, response: Response): Promise<nev
 
 	const message =
 		response.status === 401
-			? 'Session expired — please unlock again.'
+			? 'Please sign in again.'
 			: response.status === 403
 				? "You don't have access to this list."
 				: response.status === 429
@@ -53,27 +51,20 @@ async function throwFriendlyError(path: string, response: Response): Promise<nev
 	throw new HttpError(message, response.status);
 }
 
-export async function authorizedGet<T>(path: string): Promise<T> {
-	const secret = getStoredAppSecret();
-	const response = await fetchWithRetry(path, {
-		headers: {
-			...(secret ? { Authorization: `Bearer ${secret}` } : {})
-		}
-	});
+// Same-origin fetch sends the httpOnly session cookie automatically — no
+// Authorization header to attach here (see src/hooks.server.ts).
+export async function apiGet<T>(path: string): Promise<T> {
+	const response = await fetchWithRetry(path, {});
 	if (!response.ok) {
 		await throwFriendlyError(path, response);
 	}
 	return response.json();
 }
 
-export async function authorizedPost<T>(path: string, body: unknown): Promise<T> {
-	const secret = getStoredAppSecret();
+export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 	const response = await fetchWithRetry(path, {
 		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			...(secret ? { Authorization: `Bearer ${secret}` } : {})
-		},
+		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(body)
 	});
 	if (!response.ok) {

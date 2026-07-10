@@ -15,6 +15,31 @@ export async function listUsers(supabase: SupabaseClient): Promise<AppUser[]> {
 	return data;
 }
 
+export interface UserWithPasswordHash {
+	id: number;
+	username: string;
+	passwordHash: string | null;
+}
+
+/** Looks up a user by username for login — includes password_hash (null if
+ * scripts/set-password.ts hasn't been run for this user yet), unlike
+ * listUsers which deliberately never returns it. */
+export async function findUserByUsername(
+	supabase: SupabaseClient,
+	username: string
+): Promise<UserWithPasswordHash | null> {
+	const { data, error } = await withRetry(() =>
+		supabase
+			.from('users')
+			.select('id, username, password_hash')
+			.eq('username', username)
+			.maybeSingle()
+	);
+	if (error) throw error;
+	if (!data) return null;
+	return { id: data.id, username: data.username, passwordHash: data.password_hash };
+}
+
 export interface WordListSummary {
 	id: number;
 	name: string;
@@ -47,10 +72,10 @@ export class ListNotFoundError extends Error {
 }
 
 /**
- * Throws ListNotFoundError unless listId belongs to userId. listId/userId
- * are client-supplied integers with no other identity binding (the app has
- * one shared passphrase, not per-user auth — see CLAUDE.md), so every route
- * that accepts both must call this before touching that list's data.
+ * Throws ListNotFoundError unless listId belongs to userId. userId here
+ * should always be the session-derived id from requireUserId, not a
+ * client-supplied one — this only guards a bug/typo passing the wrong
+ * listId, it isn't the identity check itself (see CLAUDE.md).
  */
 export async function verifyListOwnership(
 	supabase: SupabaseClient,

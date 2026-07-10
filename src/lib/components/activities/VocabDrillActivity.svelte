@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { applyOutcome, type DrillItem, type WordState } from '$lib/drill-algorithm';
 	import { gradeAnswer, explainWord, evaluateSentence } from '$lib/client/evaluate-client';
-	import { authorizedPost } from '$lib/client/api-client';
+	import { apiPost } from '$lib/client/api-client';
 	import ListSelector from '$lib/components/ListSelector.svelte';
 
 	type Phase =
@@ -25,8 +25,7 @@
 		userAnswer?: string;
 	}
 
-	let { userId, username, onExit }: { userId: number; username: string; onExit: () => void } =
-		$props();
+	let { username, onExit }: { username: string; onExit: () => void } = $props();
 
 	let selectedListId = $state<number | null>(null);
 	let selectedListName = $state('');
@@ -70,9 +69,9 @@
 		wordStateUpdates = [];
 		attempts = [];
 		try {
-			const data = await authorizedPost<{ sessionIndex: number; drillItems: DrillItem[] }>(
+			const data = await apiPost<{ sessionIndex: number; drillItems: DrillItem[] }>(
 				'/api/session/start',
-				{ listId: selectedListId, userId }
+				{ listId: selectedListId }
 			);
 			sessionIndex = data.sessionIndex;
 			drillItems = data.drillItems;
@@ -155,9 +154,8 @@
 		phase = 'completing';
 		errorMessage = '';
 		try {
-			await authorizedPost('/api/session/complete', {
+			await apiPost('/api/session/complete', {
 				listId: selectedListId,
-				userId,
 				sessionIndex,
 				wordStates: wordStateUpdates,
 				attempts
@@ -193,7 +191,6 @@
 
 {#if selectedListId === null}
 	<ListSelector
-		{userId}
 		onSelect={(id, name) => {
 			selectedListId = id;
 			selectedListName = name;

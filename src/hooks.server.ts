@@ -1,5 +1,7 @@
 import type { Handle, HandleServerError } from '@sveltejs/kit';
 import { logError } from '$lib/server/logger';
+import { createServiceClient } from '$lib/server/supabase';
+import { SESSION_COOKIE_NAME, verifySession } from '$lib/server/session';
 
 // Only fires for genuinely unexpected exceptions — routes that call
 // SvelteKit's error() (400/401/403/409/429/502) are "expected" errors and
@@ -13,6 +15,19 @@ export const handleError: HandleServerError = ({ error: err, event }) => {
 // needs to own that header so it can inject a per-request nonce into its own
 // inline hydration bootstrap script.
 export const handle: Handle = async ({ event, resolve }) => {
+	const token = event.cookies.get(SESSION_COOKIE_NAME);
+	if (token) {
+		const supabase = createServiceClient();
+		const session = await verifySession(supabase, token);
+		if (session) {
+			event.locals.userId = session.userId;
+			event.locals.username = session.username;
+		} else {
+			// Unknown/expired token — clear it so the client stops sending it.
+			event.cookies.delete(SESSION_COOKIE_NAME, { path: '/' });
+		}
+	}
+
 	const response = await resolve(event);
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');

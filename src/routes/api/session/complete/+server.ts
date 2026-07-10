@@ -1,7 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
-import { requireAppSecret } from '$lib/server/require-app-secret';
 import { createServiceClient } from '$lib/server/supabase';
 import {
 	upsertWordStates,
@@ -10,6 +9,7 @@ import {
 } from '$lib/server/drill-repository';
 import { verifyListOwnership, ListNotFoundError } from '$lib/server/user-list-repository';
 import { checkRateLimit } from '$lib/server/rate-limit';
+import { requireUserId } from '$lib/server/require-session';
 
 // Paired with session/start's limit — completing a session a few times in a
 // row (e.g. cancelling early) is normal use; 20/5min per IP just bounds a
@@ -21,7 +21,6 @@ const WINDOW_MS = 5 * 60 * 1000;
 // generous headroom while still bounding the payload size.
 const RequestSchema = z.object({
 	listId: z.number().int(),
-	userId: z.number().int(),
 	sessionIndex: z.number().int(),
 	wordStates: z
 		.array(
@@ -49,8 +48,8 @@ const RequestSchema = z.object({
 // Persists the whole session's outcome in one call once every word has been
 // drilled, rather than writing after each word — one round trip, and a
 // mid-session network failure never leaves partially-written state.
-export const POST: RequestHandler = async ({ request, getClientAddress }) => {
-	requireAppSecret(request);
+export const POST: RequestHandler = async ({ request, getClientAddress, locals }) => {
+	const userId = requireUserId(locals);
 	if (!checkRateLimit(`session-complete:${getClientAddress()}`, LIMIT, WINDOW_MS)) {
 		error(429, 'Too many requests — please wait and try again.');
 	}
@@ -59,7 +58,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	if (!parsedBody.success) {
 		error(400, 'Invalid request body');
 	}
-	const { listId, userId, sessionIndex, wordStates, attempts } = parsedBody.data;
+	const { listId, sessionIndex, wordStates, attempts } = parsedBody.data;
 
 	const supabase = createServiceClient();
 	try {

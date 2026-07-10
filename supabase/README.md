@@ -64,8 +64,18 @@ schema, not just inferred from reading `.sql` files.
 
 ## Schema
 
-- `users` — one row per person using the app (`username`, unique). Created
-  out-of-band via `scripts/add-user.ts`, never through the app itself.
+- `users` — one row per person using the app (`username`, unique).
+  Created out-of-band via `scripts/add-user.ts`, never through the app
+  itself. `password_hash` (scrypt, set via `scripts/set-password.ts`) is
+  currently nullable — additive step of the 2.2.0 auth cutover, backfilled
+  per-user before a later migration makes it `NOT NULL` (see CLAUDE.md's
+  Operating conventions on staged production migrations).
+- `sessions` — one row per active login (`user_id`, `token_hash` unique,
+  `expires_at`). Only a SHA-256 hash of the session token is ever stored —
+  see `src/lib/server/session.ts`. No `ON DELETE CASCADE` on `user_id`
+  (matches every other FK in this schema), but the app has no user-delete
+  path anyway. Nothing currently prunes expired rows; the table is small
+  enough (2 users) that this hasn't mattered yet.
 - `word_lists` — one row per uploaded/migrated word list (`user_id`, `name`).
   Private per user; `name` is the uploaded filename with its extension
   stripped (stripped client-side at upload time — the extension is an

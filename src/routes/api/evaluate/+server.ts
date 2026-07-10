@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
 import { evaluate } from '$lib/server/claude-evaluate';
-import { requireAppSecret } from '$lib/server/require-app-secret';
+import { requireUserId } from '$lib/server/require-session';
 import { checkRateLimit } from '$lib/server/rate-limit';
 
 // Every call here costs a Claude API request. Originally 30/5min sized for
@@ -46,11 +46,10 @@ const RequestSchema = z.discriminatedUnion('mode', [
 	})
 ]);
 
-// The only server-side gate on Claude API spend: a shared secret checked before
-// any Anthropic call is made. The passphrase UI (PassphraseGate.svelte) is what
-// obtains this secret from the user and attaches it as the Authorization header.
-export const POST: RequestHandler = async ({ request, getClientAddress }) => {
-	requireAppSecret(request);
+// The only server-side gate on Claude API spend: the caller must hold a
+// valid session (see require-session.ts) before any Anthropic call is made.
+export const POST: RequestHandler = async ({ request, getClientAddress, locals }) => {
+	requireUserId(locals);
 	if (!checkRateLimit(`evaluate:${getClientAddress()}`, LIMIT, WINDOW_MS)) {
 		error(429, 'Too many requests — please wait and try again.');
 	}

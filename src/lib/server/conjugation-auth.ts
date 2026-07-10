@@ -12,9 +12,9 @@ export class UserNotFoundError extends Error {
  * Throws UserNotFoundError unless userId exists. Conjugation drills have no
  * listId to check ownership against (see user-list-repository.ts's
  * verifyListOwnership) — this is the lighter equivalent for a domain with
- * one shared registry instead of per-user lists. Still guards against a
- * typo'd/guessed userId writing to another user's conjugation_state, same
- * single-shared-secret trust model as the rest of the app (see CLAUDE.md).
+ * one shared registry instead of per-user lists. userId here should always
+ * be the session-derived id from requireUserId (see CLAUDE.md) — this just
+ * guards a bug/typo, it isn't the identity check itself.
  */
 export async function verifyUserExists(supabase: SupabaseClient, userId: number): Promise<void> {
 	const { data, error } = await withRetry(() =>
