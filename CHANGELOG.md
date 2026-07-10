@@ -5,6 +5,20 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 2.2.0 — Per-user authentication, replacing the shared passphrase
+
+Previously every user unlocked the app with the same `APP_SHARED_SECRET`
+passphrase, then picked which of the 2 accounts they were from an
+unauthenticated dropdown — any holder of that one passphrase could act as
+either user by passing a different id. Replaced with real per-user login:
+each user now has their own username + password (set out-of-band via the
+new `npm run set-password`, same manual-provisioning model as
+`npm run add-user`), verified server-side and backed by an httpOnly
+session cookie. Every route that needs identity now derives it from that
+verified session instead of trusting a client-supplied `userId`, closing
+the gap the old model left open. See CLAUDE.md's Architecture and
+Operating conventions sections for the new design.
+
 ## 2.1.3 — Fix ambiguous English gloss producing an ungrammatical example sentence
 
 Follow-up to 2.1.2's meaning-grounding fix, found while spot-checking that

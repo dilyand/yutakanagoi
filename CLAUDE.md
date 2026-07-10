@@ -28,10 +28,15 @@ it shouldn't become one again. When something changes:
 ## Architecture
 
 Yutakanagoi is a SvelteKit PWA, deployed on Vercel, with all state in
-Supabase. One shared `APP_SHARED_SECRET` passphrase gates the whole app —
-there is no per-user authentication; the ownership checks described below
-exist to stop a typo'd or guessed ID from touching another user's data,
-not to model real per-user auth.
+Supabase. Each of the app's (manually-created, never self-registered)
+users has their own username + password, verified server-side and backed
+by an httpOnly session cookie (`sessions` table, keyed by a hashed opaque
+token — see `src/lib/server/session.ts`). Every mutating/data route
+derives `userId` from that session (`requireUserId`, populated by
+`hooks.server.ts`) rather than trusting a client-supplied id, so the
+ownership checks described below are a real second layer (guarding against
+a bug passing the wrong id) rather than the *only* thing standing between
+one user's data and another's.
 
 ### Data model
 
@@ -74,16 +79,19 @@ constraints (don't duplicate that detail here):
 `src/lib/activities.ts` holds a plain-data `ACTIVITIES` registry
 (`{ id, label, description }`, no component references) with a
 `getActivity(id)` lookup. `src/routes/+page.svelte` is a thin shell:
-`UserSelector` → `ActivityPicker` (renders one button per registry entry)
-→ the chosen activity's component, via an `{:else if}` chain. Each
-activity owns its own setup steps and state — e.g. `ListSelector` renders
-from inside `VocabDrillActivity.svelte`, not the shell, since which list to
-drill is vocab-drill's own concern, not something every activity shares.
+`ActivityPicker` (renders one button per registry entry) → the chosen
+activity's component, via an `{:else if}` chain — identity is already
+resolved by the time this page renders (see `+layout.server.ts`/
+`LoginForm.svelte` below), so the shell no longer has its own user-picking
+step. Each activity owns its own setup steps and state — e.g.
+`ListSelector` renders from inside `VocabDrillActivity.svelte`, not the
+shell, since which list to drill is vocab-drill's own concern, not
+something every activity shares.
 
 To add a new activity: append one entry to `ACTIVITIES`, add one new
 component under `src/lib/components/activities/`, add one `{:else if}`
-branch in `+page.svelte`. No changes needed to `ActivityPicker.svelte`,
-`UserSelector.svelte`, or any DB table.
+branch in `+page.svelte`. No changes needed to `ActivityPicker.svelte` or
+any DB table.
 
 ### Key files
 
@@ -125,10 +133,15 @@ branch in `+page.svelte`. No changes needed to `ActivityPicker.svelte`,
   against `vite dev` — verify any CSP change against a real Preview
   deployment). Kit's own `csp` option generates a per-request nonce and
   injects it into both the header and that inline script automatically.
-- `src/lib/components/PassphraseGate.svelte` — the passphrase gate. Its
-  "Lock" button clears the stored secret and re-locks; no separate cleanup
-  needed elsewhere since re-locking unmounts the whole app tree, which
-  resets `+page.svelte`'s in-memory state naturally on next unlock.
+- `src/lib/components/LoginForm.svelte` — username + password login,
+  rendered by `+layout.svelte` whenever `+layout.server.ts`'s `data.user`
+  is null. On success it calls SvelteKit's `invalidateAll()` to re-run
+  that load function, which picks up the newly-set session cookie and
+  flips the layout to the logged-in app tree — no separate client-side
+  "am I logged in" state to keep in sync. The "Log out" button (also in
+  `+layout.svelte`) calls `/api/logout` then `invalidateAll()` the same
+  way; no separate cleanup needed elsewhere since it unmounts the whole
+  app tree, resetting `+page.svelte`'s in-memory state naturally.
 - The footer (rendered last inside `<main>` in `+page.svelte`) is
   self-maintaining: version comes from `__APP_VERSION__` (package.json,
   bumped every release), copyright range from `FOUNDING_YEAR` (2026 — the
@@ -155,16 +168,24 @@ branch in `+page.svelte`. No changes needed to `ActivityPicker.svelte`,
   the local Supabase stack (`npx supabase start`), not just unit tests —
   unit tests catch logic regressions, not integration issues like a wrong
   query shape or a schema assumption that's since drifted.
-- **Security/stability pattern**: `requireAppSecret`
-  (`src/lib/server/require-app-secret.ts`) compares the passphrase in
-  constant time (`src/lib/server/secrets-match.ts`), never with `===`.
-  Every mutating route is rate limited per-IP (`src/lib/server/rate-limit.ts`)
-  — in-memory, per-instance, resets on cold start and isn't shared across
-  concurrent serverless instances/regions; this raises the bar against
-  casual abuse, it isn't a hard guarantee. Every route that accepts both a
-  `listId` and `userId` calls `verifyListOwnership` first. Supabase calls
-  are wrapped in `withRetry` (`src/lib/server/retry.ts`) to ride out
-  transient network blips.
+- **Security/stability pattern**: passwords are hashed with scrypt
+  (`src/lib/server/password.ts`), compared in constant time
+  (`timingSafeEqual`), never with `===`. Sessions are an opaque random
+  token whose SHA-256 hash (not the token itself) is stored in `sessions`
+  (`src/lib/server/session.ts`) — `hooks.server.ts` verifies the cookie on
+  every request and populates `locals.userId`, and every route that needs
+  identity calls `requireUserId(locals)` (`src/lib/server/require-session.ts`)
+  rather than trusting a client-supplied `userId`. Every mutating route is
+  rate limited per-IP (`src/lib/server/rate-limit.ts`) — in-memory,
+  per-instance, resets on cold start and isn't shared across concurrent
+  serverless instances/regions; this raises the bar against casual abuse,
+  it isn't a hard guarantee (`/api/login` is additionally rate-limited
+  per-username, to bound credential stuffing against one account from many
+  IPs). Every route that accepts a `listId` still calls
+  `verifyListOwnership(supabase, listId, userId)` with the session-derived
+  `userId` before touching that list's data. Supabase calls are wrapped in
+  `withRetry` (`src/lib/server/retry.ts`) to ride out transient network
+  blips.
 - **One-time enrichment/data-generation work** (translating word lists,
   classifying data, writing example content, proofreading) uses Claude
   Code itself — parallel subagents reviewing/generating content in the

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { authorizedGet, authorizedPost, HttpError } from '$lib/client/api-client';
+	import { apiGet, apiPost, HttpError } from '$lib/client/api-client';
 	import { deriveListName } from '$lib/list-naming';
 	import { parseAnkiAppDeck } from '$lib/ankiapp-deck-parser';
 
@@ -9,10 +9,7 @@
 		name: string;
 	}
 
-	let {
-		userId,
-		onSelect
-	}: { userId: number; onSelect: (listId: number, listName: string) => void } = $props();
+	let { onSelect }: { onSelect: (listId: number, listName: string) => void } = $props();
 
 	type Status = 'loading' | 'ready' | 'error';
 	let status = $state<Status>('loading');
@@ -27,7 +24,7 @@
 		status = 'loading';
 		errorMessage = '';
 		try {
-			const data = await authorizedGet<{ lists: WordListSummary[] }>(`/api/lists?userId=${userId}`);
+			const data = await apiGet<{ lists: WordListSummary[] }>('/api/lists');
 			lists = data.lists;
 			status = 'ready';
 		} catch (e) {
@@ -72,8 +69,7 @@
 			return;
 		}
 		try {
-			const result = await authorizedPost<{ listId: number }>('/api/lists/upload', {
-				userId,
+			const result = await apiPost<{ listId: number }>('/api/lists/upload', {
 				name,
 				words
 			});
@@ -97,15 +93,11 @@
 		uploading = true;
 		uploadError = '';
 		try {
-			const result = await authorizedPost<{ listId: number; addedCount: number }>(
-				'/api/lists/upload',
-				{
-					userId,
-					name,
-					words,
-					update: true
-				}
-			);
+			const result = await apiPost<{ listId: number; addedCount: number }>('/api/lists/upload', {
+				name,
+				words,
+				update: true
+			});
 			pendingUpdate = null;
 			updateResult = { listId: result.listId, name, addedCount: result.addedCount };
 		} catch (e) {

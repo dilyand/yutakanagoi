@@ -1,18 +1,12 @@
-import { json, error } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { requireAppSecret } from '$lib/server/require-app-secret';
 import { createServiceClient } from '$lib/server/supabase';
 import { listWordListsForUser } from '$lib/server/user-list-repository';
+import { requireUserId } from '$lib/server/require-session';
 
-// Lists are private per user — this only ever returns the requested user's own lists.
-export const GET: RequestHandler = async ({ request, url }) => {
-	requireAppSecret(request);
-
-	const userIdParam = url.searchParams.get('userId');
-	const userId = userIdParam ? Number(userIdParam) : NaN;
-	if (!Number.isInteger(userId)) {
-		error(400, 'userId query parameter is required');
-	}
+// Lists are private per user — this only ever returns the logged-in user's own lists.
+export const GET: RequestHandler = async ({ locals }) => {
+	const userId = requireUserId(locals);
 
 	const supabase = createServiceClient();
 	const lists = await listWordListsForUser(supabase, userId);

@@ -1,11 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { z } from 'zod';
-import { requireAppSecret } from '$lib/server/require-app-secret';
 import { createServiceClient } from '$lib/server/supabase';
 import { fetchConjugationContext, startSession } from '$lib/server/conjugation-repository';
 import { verifyUserExists, UserNotFoundError } from '$lib/server/conjugation-auth';
 import { checkRateLimit } from '$lib/server/rate-limit';
+import { requireUserId } from '$lib/server/require-session';
 import { evaluate, type ConjugationPromptGlossesResult } from '$lib/server/claude-evaluate';
 import { selectDrillWords } from '$lib/drill-algorithm';
 import { buildConjugationRegistry, pickWordForCell } from '$lib/conjugation-engine';
@@ -19,8 +18,6 @@ function partOfSpeechFor(wordClass: WordClass): 'verb' | 'i_adjective' | 'copula
 	return 'verb';
 }
 
-const RequestSchema = z.object({ userId: z.number().int() });
-
 // Separate bucket from vocab's session-start limit (not shared) so the two
 // activities can't starve each other's rate-limit budget. Same 20/5min
 // shape for the same reason vocab's has it: bounds a runaway client-side
@@ -28,17 +25,11 @@ const RequestSchema = z.object({ userId: z.number().int() });
 const LIMIT = 20;
 const WINDOW_MS = 5 * 60 * 1000;
 
-export const POST: RequestHandler = async ({ request, getClientAddress }) => {
-	requireAppSecret(request);
+export const POST: RequestHandler = async ({ getClientAddress, locals }) => {
+	const userId = requireUserId(locals);
 	if (!checkRateLimit(`conjugation-session-start:${getClientAddress()}`, LIMIT, WINDOW_MS)) {
 		error(429, 'Too many requests — please wait and try again.');
 	}
-
-	const parsedBody = RequestSchema.safeParse(await request.json());
-	if (!parsedBody.success) {
-		error(400, 'Invalid request body');
-	}
-	const { userId } = parsedBody.data;
 
 	const supabase = createServiceClient();
 	try {

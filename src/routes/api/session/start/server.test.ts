@@ -1,9 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { isHttpError } from '@sveltejs/kit';
 
-const mockEnv = vi.hoisted(() => ({ APP_SHARED_SECRET: 'correct-secret' as string | undefined }));
-vi.mock('$env/dynamic/private', () => ({ env: mockEnv }));
-
 vi.mock('$lib/server/supabase', () => ({
 	createServiceClient: vi.fn(() => ({}))
 }));
@@ -29,29 +26,28 @@ import { ListNotFoundError } from '$lib/server/user-list-repository';
 
 function makeEvent(
 	body: unknown,
-	{ authHeader, ip = '203.0.113.1' }: { authHeader?: string; ip?: string } = {
-		authHeader: 'Bearer correct-secret'
-	}
+	{ userId, ip = '203.0.113.1' }: { userId?: number; ip?: string } = { userId: 1 }
 ) {
-	const headers: Record<string, string> = { 'content-type': 'application/json' };
-	if (authHeader !== undefined) headers.Authorization = authHeader;
 	const request = new Request('http://localhost/api/session/start', {
 		method: 'POST',
-		headers,
+		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(body)
 	});
-	return { request, getClientAddress: () => ip } as unknown as Parameters<typeof POST>[0];
+	return {
+		request,
+		getClientAddress: () => ip,
+		locals: { userId }
+	} as unknown as Parameters<typeof POST>[0];
 }
 
 describe('POST /api/session/start', () => {
 	afterEach(() => {
-		mockEnv.APP_SHARED_SECRET = 'correct-secret';
 		vi.clearAllMocks();
 	});
 
 	it('rejects with 401 and never calls verifyListOwnership when unauthenticated', async () => {
 		try {
-			await POST(makeEvent({ listId: 1, userId: 1 }, { authHeader: undefined }));
+			await POST(makeEvent({ listId: 1 }, { userId: undefined }));
 			expect.unreachable();
 		} catch (e) {
 			expect(isHttpError(e, 401)).toBe(true);
@@ -62,7 +58,7 @@ describe('POST /api/session/start', () => {
 	it('rejects with 403 when the list does not belong to the user', async () => {
 		mocks.verifyListOwnership.mockRejectedValueOnce(new ListNotFoundError());
 		try {
-			await POST(makeEvent({ listId: 1, userId: 1 }));
+			await POST(makeEvent({ listId: 1 }));
 			expect.unreachable();
 		} catch (e) {
 			expect(isHttpError(e, 403)).toBe(true);
@@ -83,7 +79,7 @@ describe('POST /api/session/start', () => {
 			return 5;
 		});
 
-		const response = await POST(makeEvent({ listId: 1, userId: 2 }));
+		const response = await POST(makeEvent({ listId: 1 }, { userId: 2 }));
 		const body = await response.json();
 
 		expect(body).toEqual({ sessionIndex: 5, drillItems: [] });
@@ -102,10 +98,10 @@ describe('POST /api/session/start', () => {
 
 		const ip = `198.51.100.${Math.floor(Math.random() * 255)}`;
 		for (let i = 0; i < 20; i++) {
-			await POST(makeEvent({ listId: 1, userId: 1 }, { authHeader: 'Bearer correct-secret', ip }));
+			await POST(makeEvent({ listId: 1 }, { userId: 1, ip }));
 		}
 		try {
-			await POST(makeEvent({ listId: 1, userId: 1 }, { authHeader: 'Bearer correct-secret', ip }));
+			await POST(makeEvent({ listId: 1 }, { userId: 1, ip }));
 			expect.unreachable();
 		} catch (e) {
 			expect(isHttpError(e, 429)).toBe(true);

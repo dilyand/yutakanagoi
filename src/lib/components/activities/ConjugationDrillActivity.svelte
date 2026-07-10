@@ -7,7 +7,7 @@
 		getConjugationExample,
 		getConjugationHint
 	} from '$lib/client/evaluate-client';
-	import { authorizedPost } from '$lib/client/api-client';
+	import { apiPost } from '$lib/client/api-client';
 
 	type Phase =
 		| 'idle'
@@ -44,8 +44,7 @@
 		attemptsUsed: number;
 	}
 
-	let { userId, username, onExit }: { userId: number; username: string; onExit: () => void } =
-		$props();
+	let { username, onExit }: { username: string; onExit: () => void } = $props();
 
 	let phase = $state<Phase>('idle');
 	let errorMessage = $state('');
@@ -100,10 +99,10 @@
 		cellStateUpdates = [];
 		attempts = [];
 		try {
-			const data = await authorizedPost<{
+			const data = await apiPost<{
 				sessionIndex: number;
 				drillItems: ConjugationDrillItem[];
-			}>('/api/conjugation/session/start', { userId });
+			}>('/api/conjugation/session/start', {});
 			sessionIndex = data.sessionIndex;
 			drillItems = data.drillItems;
 			currentIndex = 0;
@@ -202,8 +201,7 @@
 		phase = 'completing';
 		errorMessage = '';
 		try {
-			await authorizedPost('/api/conjugation/session/complete', {
-				userId,
+			await apiPost('/api/conjugation/session/complete', {
 				sessionIndex,
 				cellStates: cellStateUpdates.map((s) => ({
 					cellId: s.word,

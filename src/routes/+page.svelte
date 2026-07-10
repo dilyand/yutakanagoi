@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
-	import UserSelector from '$lib/components/UserSelector.svelte';
 	import ActivityPicker from '$lib/components/ActivityPicker.svelte';
 	import VocabDrillActivity from '$lib/components/activities/VocabDrillActivity.svelte';
 	import ConjugationDrillActivity from '$lib/components/activities/ConjugationDrillActivity.svelte';
 	import FontSizeControl from '$lib/components/FontSizeControl.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import { transitionDuration } from '$lib/client/motion';
+	import type { PageProps } from './$types';
 
 	// The year of the project's first commit — never changes. See CLAUDE.md:
 	// the footer's copyright range is self-maintaining (this constant plus the
@@ -16,8 +16,11 @@
 	const copyrightYears =
 		currentYear > FOUNDING_YEAR ? `${FOUNDING_YEAR}–${currentYear}` : `${FOUNDING_YEAR}`;
 
-	let selectedUserId = $state<number | null>(null);
-	let selectedUsername = $state('');
+	// data.user is guaranteed non-null here — +layout.svelte only renders this
+	// page once a session is confirmed (see +layout.server.ts).
+	let { data }: PageProps = $props();
+	let username = $derived(data.user!.username);
+
 	let selectedActivityId = $state<string | null>(null);
 </script>
 
@@ -30,16 +33,7 @@
 	</div>
 
 	<div class="content-area">
-		{#if selectedUserId === null}
-			<div transition:fade={{ duration: transitionDuration(150) }}>
-				<UserSelector
-					onSelect={(id, username) => {
-						selectedUserId = id;
-						selectedUsername = username;
-					}}
-				/>
-			</div>
-		{:else if selectedActivityId === null}
+		{#if selectedActivityId === null}
 			<div transition:fade={{ duration: transitionDuration(150) }}>
 				<ActivityPicker
 					onSelect={(id) => {
@@ -50,8 +44,7 @@
 		{:else if selectedActivityId === 'vocab-drill'}
 			<div class="activity-screen" transition:fade={{ duration: transitionDuration(150) }}>
 				<VocabDrillActivity
-					userId={selectedUserId}
-					username={selectedUsername}
+					{username}
 					onExit={() => {
 						selectedActivityId = null;
 					}}
@@ -60,8 +53,7 @@
 		{:else if selectedActivityId === 'conjugation-drill'}
 			<div class="activity-screen" transition:fade={{ duration: transitionDuration(150) }}>
 				<ConjugationDrillActivity
-					userId={selectedUserId}
-					username={selectedUsername}
+					{username}
 					onExit={() => {
 						selectedActivityId = null;
 					}}
