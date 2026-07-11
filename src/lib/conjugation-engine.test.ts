@@ -7,8 +7,56 @@ import {
 	conjugateIAdjective,
 	pickWordForCell
 } from './conjugation-engine';
+import { MIN_NEW_SLOTS_PER_SESSION, selectDrillWords, type WordState } from './drill-algorithm';
 import type { CopulaFormId, IAdjectiveFormId } from './conjugation-forms';
 import type { ConjugationWord, VerbClass } from './conjugation-word-list';
+
+/**
+ * Drives `selectDrillWords` + `applyConjugationOutcome` over synthetic
+ * sessions for a user who always answers correctly, exactly the way
+ * `/api/conjugation/session/start` does — pure in-memory, no Supabase, no
+ * Claude call. Returns how many distinct cells were ever introduced
+ * (isNew: true at least once) within `maxSessions`.
+ */
+function simulateIntroducedCellCount(
+	registry: { id: string }[],
+	minNewSlots: number,
+	maxSessions: number
+): number {
+	const registryAsVocab = registry.map((cell, index) => ({ word: cell.id, frequencyRank: index }));
+	const cellStates = new Map<string, WordState>();
+	const introduced = new Set<string>();
+
+	for (let sessionIndex = 1; sessionIndex <= maxSessions; sessionIndex++) {
+		const drillItems = selectDrillWords(
+			registryAsVocab,
+			[...cellStates.values()],
+			sessionIndex,
+			10,
+			minNewSlots
+		);
+		for (const item of drillItems) {
+			introduced.add(item.word);
+			const priorBox = item.isNew ? undefined : item.box;
+			const priorBox4Streak = item.isNew ? undefined : item.box4Streak;
+			const result = applyConjugationOutcome({
+				box: priorBox,
+				box4Streak: priorBox4Streak,
+				correct: true,
+				sessionIndex
+			});
+			cellStates.set(item.word, {
+				word: item.word,
+				box: result.box,
+				lastSession: result.lastSession,
+				box4Streak: result.box4Streak
+			});
+		}
+		if (introduced.size === registry.length) break;
+	}
+
+	return introduced.size;
+}
 
 describe('conjugateVerb: one representative word per class, core forms', () => {
 	it.each([
@@ -273,36 +321,81 @@ describe('applyConjugationOutcome', () => {
 	it('starts a new cell at box 1 on a correct answer, NOT box 4 like vocab drill', () => {
 		expect(applyConjugationOutcome({ box: undefined, correct: true, sessionIndex: 1 })).toEqual({
 			box: 1,
-			lastSession: 1
+			lastSession: 1,
+			box4Streak: 0
 		});
 	});
 
 	it('starts a new cell at box 0 on an incorrect answer', () => {
 		expect(applyConjugationOutcome({ box: undefined, correct: false, sessionIndex: 1 })).toEqual({
 			box: 0,
-			lastSession: 1
+			lastSession: 1,
+			box4Streak: 0
 		});
 	});
 
 	it('increments an existing cell by one on a correct answer, capped at 4', () => {
 		expect(applyConjugationOutcome({ box: 2, correct: true, sessionIndex: 3 })).toEqual({
 			box: 3,
-			lastSession: 3
+			lastSession: 3,
+			box4Streak: 0
 		});
-		expect(applyConjugationOutcome({ box: 4, correct: true, sessionIndex: 3 })).toEqual({
+		expect(
+			applyConjugationOutcome({ box: 4, box4Streak: 0, correct: true, sessionIndex: 3 })
+		).toEqual({
 			box: 4,
-			lastSession: 3
+			lastSession: 3,
+			box4Streak: 1
 		});
 	});
 
 	it('decrements an existing cell by one on an incorrect answer, floored at 0', () => {
 		expect(applyConjugationOutcome({ box: 2, correct: false, sessionIndex: 3 })).toEqual({
 			box: 1,
-			lastSession: 3
+			lastSession: 3,
+			box4Streak: 0
 		});
 		expect(applyConjugationOutcome({ box: 0, correct: false, sessionIndex: 3 })).toEqual({
 			box: 0,
-			lastSession: 3
+			lastSession: 3,
+			box4Streak: 0
 		});
+	});
+
+	it('grows box4Streak on repeated correct answers at box 4, resetting if it ever drops out', () => {
+		const grown = applyConjugationOutcome({
+			box: 4,
+			box4Streak: 3,
+			correct: true,
+			sessionIndex: 10
+		});
+		expect(grown.box4Streak).toBe(4);
+
+		const dropped = applyConjugationOutcome({
+			box: 4,
+			box4Streak: 3,
+			correct: false,
+			sessionIndex: 10
+		});
+		expect(dropped).toEqual({ box: 3, lastSession: 10, box4Streak: 0 });
+	});
+});
+
+describe('conjugation registry reachability (2.2.1 fix)', () => {
+	it('introduces every cell within a bounded number of sessions when minNewSlots reserves new-cell room', () => {
+		const registry = buildConjugationRegistry();
+		expect(registry.length).toBe(319);
+
+		const introduced = simulateIntroducedCellCount(registry, MIN_NEW_SLOTS_PER_SESSION, 150);
+
+		expect(introduced).toBe(registry.length);
+	});
+
+	it('without minNewSlots, a best-case user stalls well short of the full registry within a realistic session count', () => {
+		const registry = buildConjugationRegistry();
+
+		const introduced = simulateIntroducedCellCount(registry, 0, 300);
+
+		expect(introduced).toBeLessThan(registry.length);
 	});
 });

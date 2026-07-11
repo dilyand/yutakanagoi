@@ -5,6 +5,33 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 2.2.1 — Fix conjugation drill permanently capping which forms are ever introduced
+
+Investigating why polite forms (ます/です) never appeared in testing turned
+up a structural bug, not a filter or exclusion: `selectDrillWords` only
+introduces new cells once due-review count drops below the 10-item session
+limit, and box 4's interval was flat at 16 sessions — so once `N` cells are
+introduced, steady-state review demand alone (`N/16`/session) saturates the
+limit at exactly `N = 160`. Conjugation's registry has 319 cells, and
+masu/desu/polite-family forms sit at indices 91–282 in the introduction
+order, so a well-performing user's new-cell introduction permanently
+plateaus at 160/319 and never reaches the back half — confirmed by
+simulation, not just theory. Fixed with two complementary changes to
+`src/lib/drill-algorithm.ts`, both shared by vocab and conjugation drill
+(vocab's bundled master list is ~2000 words, well past the same `limit * 16`
+ceiling, so it was equally exposed even though it hadn't been the one
+reported): an opt-in `minNewSlots` parameter on `selectDrillWords` reserves
+session slots for never-before-seen items regardless of due-review backlog
+— but only as many as actually remain untracked, so the reservation drops
+away once a list/registry is fully introduced instead of wasting capacity
+forever — and box 4's interval now grows by one session per additional
+correct review while a word stays at box 4 (16, 17, 18, ...; resets to 16
+if it ever drops out), easing long-run review pressure instead of staying
+flat forever. Both session-start endpoints now pass the same
+`MIN_NEW_SLOTS_PER_SESSION` (3), and both `word_state` and
+`conjugation_state` gained a `box4_streak` column (additive migration,
+defaults existing rows to 0 — no retroactive change to current due dates).
+
 ## 2.2.0 — Per-user authentication, replacing the shared passphrase
 
 Previously every user unlocked the app with the same `APP_SHARED_SECRET`

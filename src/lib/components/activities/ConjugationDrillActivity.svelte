@@ -31,6 +31,7 @@
 		targetMeaning: string;
 		isNew: boolean;
 		box?: number;
+		box4Streak?: number;
 	}
 
 	interface ConjugationSessionAttempt {
@@ -119,13 +120,15 @@
 		const boxBefore = item.isNew ? 0 : (item.box ?? 0);
 		const outcome = applyConjugationOutcome({
 			box: item.isNew ? undefined : item.box,
+			box4Streak: item.isNew ? undefined : item.box4Streak,
 			correct,
 			sessionIndex
 		});
 		cellStateUpdates.push({
 			word: item.cellId,
 			box: outcome.box,
-			lastSession: outcome.lastSession
+			lastSession: outcome.lastSession,
+			box4Streak: outcome.box4Streak
 		});
 		attempts.push({
 			cellId: item.cellId,
@@ -206,7 +209,8 @@
 				cellStates: cellStateUpdates.map((s) => ({
 					cellId: s.word,
 					box: s.box,
-					lastSession: s.lastSession
+					lastSession: s.lastSession,
+					box4Streak: s.box4Streak
 				})),
 				attempts
 			});

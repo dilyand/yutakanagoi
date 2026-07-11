@@ -18,6 +18,7 @@ interface WordStateRow {
 	word: string;
 	box: number;
 	last_session: number;
+	box4_streak: number;
 }
 
 /** Everything selectDrillWords() needs for one list, plus its current (latest) session_index. */
@@ -32,7 +33,7 @@ export async function fetchDrillContext(
 		fetchAllRows<ListWordRow>(supabase, 'list_words', 'word, frequency_rank', {
 			list_id: listId
 		}),
-		fetchAllRows<WordStateRow>(supabase, 'word_state', 'word, box, last_session', {
+		fetchAllRows<WordStateRow>(supabase, 'word_state', 'word, box, last_session, box4_streak', {
 			list_id: listId
 		}),
 		getLatestSessionIndex(supabase, listId)
@@ -46,7 +47,8 @@ export async function fetchDrillContext(
 		wordStates: wordStatesRows.map((row) => ({
 			word: row.word,
 			box: row.box,
-			lastSession: row.last_session
+			lastSession: row.last_session,
+			box4Streak: row.box4_streak
 		})),
 		sessionIndex
 	};
@@ -106,7 +108,8 @@ export async function upsertWordStates(
 				list_id: listId,
 				word: row.word,
 				box: row.box,
-				last_session: row.lastSession
+				last_session: row.lastSession,
+				box4_streak: row.box4Streak
 			})),
 			{ onConflict: 'list_id,word' }
 		)

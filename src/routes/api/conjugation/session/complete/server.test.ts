@@ -28,7 +28,7 @@ import { UserNotFoundError } from '$lib/server/conjugation-auth';
 
 const VALID_BODY = {
 	sessionIndex: 5,
-	cellStates: [{ cellId: 'godan_ru:nai', box: 1, lastSession: 5 }],
+	cellStates: [{ cellId: 'godan_ru:nai', box: 1, lastSession: 5, box4Streak: 0 }],
 	attempts: [
 		{
 			cellId: 'godan_ru:nai',
@@ -113,7 +113,7 @@ describe('POST /api/conjugation/session/complete', () => {
 		expect(body).toEqual({ ok: true });
 		expect(mocks.verifyUserExists).toHaveBeenCalledWith(expect.anything(), 2);
 		expect(mocks.upsertCellStates).toHaveBeenCalledWith(expect.anything(), 2, [
-			{ word: 'godan_ru:nai', box: 1, lastSession: 5 }
+			{ word: 'godan_ru:nai', box: 1, lastSession: 5, box4Streak: 0 }
 		]);
 		expect(mocks.completeSession).toHaveBeenCalledWith(expect.anything(), 2, 5, 1);
 		expect(callOrder).toEqual([

@@ -6,7 +6,7 @@ import { verifyUserExists, UserNotFoundError } from '$lib/server/conjugation-aut
 import { checkRateLimit } from '$lib/server/rate-limit';
 import { requireUserId } from '$lib/server/require-session';
 import { evaluate, type ConjugationPromptGlossesResult } from '$lib/server/claude-evaluate';
-import { selectDrillWords } from '$lib/drill-algorithm';
+import { MIN_NEW_SLOTS_PER_SESSION, selectDrillWords } from '$lib/drill-algorithm';
 import { buildConjugationRegistry, pickWordForCell } from '$lib/conjugation-engine';
 import { getFormLabel } from '$lib/conjugation-forms';
 import { CONJUGATION_WORDS } from '$lib/conjugation-word-list';
@@ -49,26 +49,30 @@ export const POST: RequestHandler = async ({ getClientAddress, locals }) => {
 	const cellById = new Map(registry.map((cell) => [cell.id, cell]));
 	const registryAsVocab = registry.map((cell, index) => ({ word: cell.id, frequencyRank: index }));
 
-	const drillItems = selectDrillWords(registryAsVocab, context.cellStates, sessionIndex).map(
-		(item) => {
-			const cell = cellById.get(item.word);
-			if (!cell) throw new Error(`Unknown cell id from selectDrillWords: ${item.word}`);
-			// The word actually shown is picked fresh each time — progress is
-			// tracked per (wordClass, formId) cell, not per word (see
-			// pickWordForCell's doc comment).
-			const picked = pickWordForCell(cell.wordClass, cell.formId, CONJUGATION_WORDS);
-			return {
-				...item,
-				cellId: cell.id,
-				wordClass: cell.wordClass,
-				formId: cell.formId,
-				word: picked.word,
-				reading: picked.reading,
-				meaning: picked.meaning,
-				formLabel: getFormLabel(cell.wordClass, cell.formId)
-			};
-		}
-	);
+	const drillItems = selectDrillWords(
+		registryAsVocab,
+		context.cellStates,
+		sessionIndex,
+		10,
+		MIN_NEW_SLOTS_PER_SESSION
+	).map((item) => {
+		const cell = cellById.get(item.word);
+		if (!cell) throw new Error(`Unknown cell id from selectDrillWords: ${item.word}`);
+		// The word actually shown is picked fresh each time — progress is
+		// tracked per (wordClass, formId) cell, not per word (see
+		// pickWordForCell's doc comment).
+		const picked = pickWordForCell(cell.wordClass, cell.formId, CONJUGATION_WORDS);
+		return {
+			...item,
+			cellId: cell.id,
+			wordClass: cell.wordClass,
+			formId: cell.formId,
+			word: picked.word,
+			reading: picked.reading,
+			meaning: picked.meaning,
+			formLabel: getFormLabel(cell.wordClass, cell.formId)
+		};
+	});
 
 	// One batched Claude call for the whole session (not one per cell) to
 	// compose each item's target-form meaning (e.g. "to wait" + negative ->

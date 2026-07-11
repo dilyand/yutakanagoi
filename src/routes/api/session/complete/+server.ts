@@ -27,7 +27,8 @@ const RequestSchema = z.object({
 			z.object({
 				word: z.string(),
 				box: z.number().int().min(0).max(4),
-				lastSession: z.number().int()
+				lastSession: z.number().int(),
+				box4Streak: z.number().int().min(0)
 			})
 		)
 		.max(50),
