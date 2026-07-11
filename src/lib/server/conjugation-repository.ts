@@ -14,6 +14,7 @@ interface CellStateRow {
 	cell_id: string;
 	box: number;
 	last_session: number;
+	box4_streak: number;
 }
 
 /** Everything selectDrillWords() needs for this user's conjugation progress, plus the latest session_index. */
@@ -22,9 +23,14 @@ export async function fetchConjugationContext(
 	userId: number
 ): Promise<ConjugationContext> {
 	const [cellStateRows, sessionIndex] = await Promise.all([
-		fetchAllRows<CellStateRow>(supabase, 'conjugation_state', 'cell_id, box, last_session', {
-			user_id: userId
-		}),
+		fetchAllRows<CellStateRow>(
+			supabase,
+			'conjugation_state',
+			'cell_id, box, last_session, box4_streak',
+			{
+				user_id: userId
+			}
+		),
 		getLatestSessionIndex(supabase, userId)
 	]);
 
@@ -32,7 +38,8 @@ export async function fetchConjugationContext(
 		cellStates: cellStateRows.map((row) => ({
 			word: row.cell_id,
 			box: row.box,
-			lastSession: row.last_session
+			lastSession: row.last_session,
+			box4Streak: row.box4_streak
 		})),
 		sessionIndex
 	};
@@ -94,7 +101,8 @@ export async function upsertCellStates(
 				user_id: userId,
 				cell_id: row.word,
 				box: row.box,
-				last_session: row.lastSession
+				last_session: row.lastSession,
+				box4_streak: row.box4Streak
 			})),
 			{ onConflict: 'user_id,cell_id' }
 		)

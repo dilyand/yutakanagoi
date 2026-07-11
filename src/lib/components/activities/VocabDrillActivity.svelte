@@ -88,10 +88,16 @@
 		const boxBefore = item.isNew ? 0 : item.box;
 		const outcome = applyOutcome({
 			box: item.isNew ? undefined : item.box,
+			box4Streak: item.isNew ? undefined : item.box4Streak,
 			correct,
 			sessionIndex
 		});
-		wordStateUpdates.push({ word: item.word, box: outcome.box, lastSession: outcome.lastSession });
+		wordStateUpdates.push({
+			word: item.word,
+			box: outcome.box,
+			lastSession: outcome.lastSession,
+			box4Streak: outcome.box4Streak
+		});
 		attempts.push({
 			word: item.word,
 			wasNewWord: item.isNew,

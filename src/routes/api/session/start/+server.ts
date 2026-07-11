@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { createServiceClient } from '$lib/server/supabase';
 import { fetchDrillContext, startSession } from '$lib/server/drill-repository';
 import { verifyListOwnership, ListNotFoundError } from '$lib/server/user-list-repository';
-import { selectDrillWords } from '$lib/drill-algorithm';
+import { MIN_NEW_SLOTS_PER_SESSION, selectDrillWords } from '$lib/drill-algorithm';
 import { checkRateLimit } from '$lib/server/rate-limit';
 import { requireUserId } from '$lib/server/require-session';
 
@@ -41,7 +41,13 @@ export const POST: RequestHandler = async ({ request, getClientAddress, locals }
 
 	const context = await fetchDrillContext(supabase, listId);
 	const sessionIndex = await startSession(supabase, listId);
-	const drillItems = selectDrillWords(context.vocabMaster, context.wordStates, sessionIndex);
+	const drillItems = selectDrillWords(
+		context.vocabMaster,
+		context.wordStates,
+		sessionIndex,
+		10,
+		MIN_NEW_SLOTS_PER_SESSION
+	);
 
 	return json({ sessionIndex, drillItems });
 };

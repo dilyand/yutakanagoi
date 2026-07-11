@@ -90,9 +90,14 @@ schema, not just inferred from reading `.sql` files.
   you can't insert a new spelling at a rank that's still occupied by the
   word it's replacing (see the migration gotchas below).
 - `word_state` — one row per word that's been drilled at least once within a
-  list (`list_id`, `word`, `box` 0-4, `last_session`). Progress is scoped to
-  `(list_id, word)`, not shared across lists or users.
-  **Constraints:** `list_id` → `word_lists(id)`; composite
+  list (`list_id`, `word`, `box` 0-4, `last_session`, `box4_streak`).
+  Progress is scoped to `(list_id, word)`, not shared across lists or users.
+  `box4_streak` (default 0, added in 2.2.1) counts consecutive correct
+  reviews since the word most recently entered box 4 — irrelevant/0 while
+  `box < 4`, reset to 0 the instant it drops back out — and grows box 4's
+  due interval by one session per review instead of it staying flat at 16
+  forever. See `src/lib/drill-algorithm.ts`'s `effectiveInterval`/
+  `nextBox4Streak`. **Constraints:** `list_id` → `word_lists(id)`; composite
   `(list_id, word)` → `list_words(list_id, word)` (not a plain FK on `word`
   alone — see below); unique `(list_id, word)`.
 - `vocab_sessions` — one row per drill session (`list_id`, `session_index`,
@@ -114,8 +119,9 @@ schema, not just inferred from reading `.sql` files.
   linked Vercel CLI session — read recent rows with `npm run logs:errors`
   (`scripts/read-error-log.ts`) instead of the Vercel dashboard. No FKs.
 - `conjugation_state` — for the conjugation-drills activity. One row per
-  `(user_id, cell_id)`, `box` 0-4, `last_session` — same box/interval shape
-  as `word_state`, but keyed by `cell_id` (the opaque `"wordClass:formId"`
+  `(user_id, cell_id)`, `box` 0-4, `last_session`, `box4_streak` — same
+  box/interval/streak shape as `word_state` (see above), but keyed by
+  `cell_id` (the opaque `"wordClass:formId"`
   string from `src/lib/conjugation-forms.ts`'s `cellId()`, e.g.
   `"godan_mu:causative_passive_past"`) instead of `word`, and with no
   `list_id` at all. Unlike vocab drill's per-user authored lists,

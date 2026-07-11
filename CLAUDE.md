@@ -72,7 +72,11 @@ constraints (don't duplicate that detail here):
   `"wordClass:formId"` string from `conjugation-forms.ts`'s `cellId()`
   (e.g. `"godan_mu:causative_passive_past"`) — all godan-む verbs share one
   box for a given form, since a frequency-ranked word list contains far
-  more words than distinct conjugation patterns.
+  more words than distinct conjugation patterns. New cells are introduced
+  with a guaranteed minimum per session (`MIN_NEW_SLOTS_PER_SESSION`, see
+  `drill-algorithm.ts` below — shared with vocab drill, not
+  conjugation-specific), so the full 319-cell registry stays reachable
+  regardless of review backlog.
 
 ### Activities
 
@@ -98,7 +102,22 @@ any DB table.
 - `src/lib/drill-algorithm.ts` — pure, list/cell-agnostic due-word
   selection and box-transition logic (see the spec below). Unit-tested in
   `drill-algorithm.test.ts`. Shared by both activities; if you're changing
-  drill behavior, this is the file to edit.
+  drill behavior, this is the file to edit. `selectDrillWords`'s
+  `minNewSlots` param (default 0, so a caller that omits it is unaffected)
+  reserves up to that many session slots for never-before-seen items
+  regardless of due-review backlog — but only as many as actually remain
+  untracked, so the reservation drops to 0 (not wasted capacity) once
+  every word/cell has been introduced. Without this, a master
+  list/registry bigger than `limit * 16` (box 4's base interval) can
+  permanently cap how many distinct items are ever introduced once
+  review-only demand saturates the session limit — both session-start
+  endpoints pass the shared `MIN_NEW_SLOTS_PER_SESSION` constant, since
+  vocab's ~2000-word bundled master list and conjugation's 319-cell
+  registry both exceed that ceiling. `nextBox4Streak`/`effectiveInterval`
+  are the other piece both activities share: box 4's due interval is no
+  longer flat — it grows by one session per additional correct review
+  while still at box 4 (16, 17, 18, ...), reset to 0 the instant a word
+  drops back out of box 4. See the spec below for both.
 - `src/lib/conjugation-engine.ts` — `conjugate()`, a pure deterministic
   function. Grading tries an exact match against it first (zero Claude
   calls for the common case).
@@ -220,11 +239,14 @@ repo, that means using the deployed app or `npm run dev` locally.
 
 State: for each `(list, word)` — or `(user, cell_id)` for conjugation
 drills — a `box` (integer 0–4, Leitner-style level: 0 = new/just failed, 4
-= mastered) and a `last_session` (the `session_index` value when the word
+= mastered), a `last_session` (the `session_index` value when the word
 was last drilled — not a date, since sessions are irregular and "sessions
-since last seen" is the only clock that matters). `session_index` is one
-counter per list (or per user, for conjugation drills), incremented once
-per session, not per word.
+since last seen" is the only clock that matters), and a `box4_streak`
+(count of consecutive correct reviews since the word most recently entered
+box 4 — irrelevant/0 while `box < 4`, reset to 0 the instant it drops back
+out — see box 4's interval below). `session_index` is one counter per list
+(or per user, for conjugation drills), incremented once per session, not
+per word.
 
 ### Session algorithm
 
@@ -239,7 +261,12 @@ word). At the start of a session:
    - box 1: due every 2 sessions
    - box 2: due every 4 sessions
    - box 3: due every 8 sessions
-   - box 4: due every 16 sessions (flat interval — doesn't keep growing)
+   - box 4: due every `16 + box4_streak` sessions — 16 the first time a
+     word reaches box 4 (or returns to it after a slip), then +1 session
+     for every additional correct review while it stays at box 4 (16, 17,
+     18, ...). Deliberately gentle linear growth, not exponential, so
+     long-mastered words space out further over time without effectively
+     vanishing from rotation.
    A word is due if `(session_index - last_session) >= interval(box)`.
 3. Take up to 10 due words round-robin across boxes 0-4: repeatedly cycle
    through the boxes in order, taking the single most-overdue due word

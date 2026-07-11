@@ -7,7 +7,7 @@
  * API call for the common case.
  */
 
-import type { DrillOutcome, DrillResult } from './drill-algorithm';
+import { nextBox4Streak, type DrillOutcome, type DrillResult } from './drill-algorithm';
 import type { ConjugationWord, VerbClass, WordClass } from './conjugation-word-list';
 import {
 	cellId,
@@ -32,14 +32,25 @@ const MAX_BOX = 4;
  * meaning does. A new cell answered correctly starts at box 1, like every
  * other correct answer.
  */
-export function applyConjugationOutcome({ box, correct, sessionIndex }: DrillOutcome): DrillResult {
-	if (box === undefined) {
-		return { box: correct ? 1 : 0, lastSession: sessionIndex };
-	}
-	if (correct) {
-		return { box: Math.min(box + 1, MAX_BOX), lastSession: sessionIndex };
-	}
-	return { box: Math.max(box - 1, 0), lastSession: sessionIndex };
+export function applyConjugationOutcome({
+	box,
+	box4Streak,
+	correct,
+	sessionIndex
+}: DrillOutcome): DrillResult {
+	const newBox =
+		box === undefined
+			? correct
+				? 1
+				: 0
+			: correct
+				? Math.min(box + 1, MAX_BOX)
+				: Math.max(box - 1, 0);
+	return {
+		box: newBox,
+		lastSession: sessionIndex,
+		box4Streak: nextBox4Streak(box, box4Streak, correct, newBox)
+	};
 }
 
 const GODAN_ROWS: Record<string, { a: string; i: string; e: string; o: string }> = {

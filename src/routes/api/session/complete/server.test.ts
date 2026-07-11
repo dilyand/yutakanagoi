@@ -29,7 +29,7 @@ import { ListNotFoundError } from '$lib/server/user-list-repository';
 const validBody = {
 	listId: 1,
 	sessionIndex: 5,
-	wordStates: [{ word: '一', box: 1, lastSession: 5 }],
+	wordStates: [{ word: '一', box: 1, lastSession: 5, box4Streak: 0 }],
 	attempts: [{ word: '一', wasNewWord: false, correct: true, boxBefore: 0, boxAfter: 1 }]
 };
 

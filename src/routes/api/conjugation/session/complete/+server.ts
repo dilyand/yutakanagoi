@@ -25,7 +25,8 @@ const RequestSchema = z.object({
 			z.object({
 				cellId: z.string(),
 				box: z.number().int().min(0).max(4),
-				lastSession: z.number().int()
+				lastSession: z.number().int(),
+				box4Streak: z.number().int().min(0)
 			})
 		)
 		.max(50),
@@ -70,7 +71,12 @@ export const POST: RequestHandler = async ({ request, getClientAddress, locals }
 	await upsertCellStates(
 		supabase,
 		userId,
-		cellStates.map((c) => ({ word: c.cellId, box: c.box, lastSession: c.lastSession }))
+		cellStates.map((c) => ({
+			word: c.cellId,
+			box: c.box,
+			lastSession: c.lastSession,
+			box4Streak: c.box4Streak
+		}))
 	);
 	await insertSessionAttempts(supabase, userId, sessionIndex, attempts);
 	await completeSession(supabase, userId, sessionIndex, cellStates.length);
