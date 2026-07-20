@@ -59,12 +59,22 @@ constraints (don't duplicate that detail here):
   file or an AnkiApp deck `.xml` export (parsed client-side by
   `src/lib/ankiapp-deck-parser.ts`'s `parseAnkiAppDeck`, which reads each
   `<card>`'s `<japanese>` field and discards the `Meaning` field — meanings
-  come from Claude at drill time, never from the source list). Both paths
-  converge on the same `words: string[]` sent to `/api/lists/upload`; the
-  database has no record of which format a list originated from. The list
-  name is always derived from the uploaded filename via
-  `src/lib/list-naming.ts`'s `deriveListName` — extension stripped,
-  kebab-cased (e.g. `HelloTalk.xml` → `hello-talk`).
+  come from Claude at drill time, never from the source list). AnkiApp lets
+  a card's Japanese field carry a furigana reading override using doubled
+  corner brackets appended to the word (e.g. `過ぎる「「すぎる」」`) —
+  `parseAnkiAppDeck` strips a trailing `「+...」+` run before returning the
+  word, so this never leaks into `word` text. Both paths converge on the
+  same `words: string[]` sent to `/api/lists/upload`; the database has no
+  record of which format a list originated from. The list name is always
+  derived from the uploaded filename via `src/lib/list-naming.ts`'s
+  `deriveListName` — extension stripped, kebab-cased (e.g. `HelloTalk.xml`
+  → `hello-talk`). A word already in a list can be corrected in place from
+  the drill card itself (an inconspicuous edit icon, available whenever the
+  word block is shown) via `renameListWord`
+  (`src/lib/server/user-list-repository.ts`) and
+  `POST /api/lists/words/edit` — same composite-FK-safe rename dance as
+  `scripts/scrub-master-list-cleanup.ts`'s `REPLACE_PAIRS` flow, generalized
+  to one arbitrary word (see `supabase/README.md`'s migration gotchas).
 - **Conjugation drill**: no per-user lists — one shared word-class/form
   registry (`src/lib/conjugation-word-list.ts` + `conjugation-forms.ts`,
   static code, not a table). Progress is tracked per `(user_id, cell_id)`

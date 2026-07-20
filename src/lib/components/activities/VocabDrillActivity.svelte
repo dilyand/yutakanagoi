@@ -47,10 +47,21 @@
 	let attempts: SessionAttempt[] = [];
 	let wasCancelled = $state(false);
 
+	let editingWord = $state(false);
+	let editWordInput = $state('');
+	let editWordSaving = $state(false);
+
 	let currentItem = $derived<DrillItem | undefined>(drillItems[currentIndex]);
 	let promptNumber = $derived(currentIndex + 1);
 	let showWordBlock = $derived(
 		currentItem !== undefined && phase !== 'idle' && phase !== 'starting' && phase !== 'done'
+	);
+	// Available through the feedback phases too (not just while guessing) —
+	// the explanation/grading shown there is often exactly what reveals a
+	// word was wrong in the first place. Excluded only during the in-flight
+	// async phases, to avoid overlapping mutations.
+	let canEditWord = $derived(
+		showWordBlock && phase !== 'grading' && phase !== 'sentence-grading' && phase !== 'completing'
 	);
 
 	function resetPerWordState() {
@@ -59,6 +70,55 @@
 		gradeExplanation = '';
 		wordMeaning = '';
 		sentenceFeedback = '';
+		editingWord = false;
+		editWordInput = '';
+	}
+
+	function startEditWord() {
+		if (!currentItem) return;
+		editWordInput = currentItem.word;
+		editingWord = true;
+	}
+
+	function cancelEditWord() {
+		editingWord = false;
+	}
+
+	async function saveEditWord() {
+		if (!currentItem || selectedListId === null) return;
+		const oldWord = currentItem.word;
+		const newWord = editWordInput.trim();
+		if (newWord.length === 0 || newWord === oldWord) {
+			editingWord = false;
+			return;
+		}
+
+		editWordSaving = true;
+		errorMessage = '';
+		try {
+			await apiPost('/api/lists/words/edit', { listId: selectedListId, oldWord, newWord });
+
+			drillItems[currentIndex] = { ...currentItem, word: newWord };
+
+			// The current session's own not-yet-persisted bookkeeping may already
+			// carry an attempt recorded against the old word text (editing after
+			// seeing correct/incorrect feedback) — rewrite it to match what the
+			// DB now has, so /api/session/complete doesn't try to write a
+			// word_state/vocab_session_attempts row for a word list_words no
+			// longer has.
+			for (const update of wordStateUpdates) {
+				if (update.word === oldWord) update.word = newWord;
+			}
+			for (const attempt of attempts) {
+				if (attempt.word === oldWord) attempt.word = newWord;
+			}
+
+			editingWord = false;
+		} catch (e) {
+			errorMessage = e instanceof Error ? e.message : String(e);
+		} finally {
+			editWordSaving = false;
+		}
 	}
 
 	async function start() {
@@ -191,7 +251,43 @@
 {#if showWordBlock && currentItem}
 	<div class="word-block">
 		<p class="prompt-number">{promptNumber}.</p>
-		<p class="word">{currentItem.word}</p>
+		{#if canEditWord && !editingWord}
+			<button class="edit-word-button" onclick={startEditWord} aria-label="Edit word">
+				<svg
+					viewBox="0 0 24 24"
+					width="14"
+					height="14"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M12 20h9" />
+					<path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+				</svg>
+			</button>
+		{/if}
+		{#if editingWord}
+			<div class="edit-word-form">
+				<input
+					type="text"
+					bind:value={editWordInput}
+					disabled={editWordSaving}
+					onkeydown={(e) => e.key === 'Enter' && saveEditWord()}
+				/>
+				<div class="edit-word-actions">
+					<button class="button-primary" onclick={saveEditWord} disabled={editWordSaving}>
+						{#if editWordSaving}<span class="spinner" aria-hidden="true"></span>{/if}
+						{editWordSaving ? 'Saving…' : 'Save'}
+					</button>
+					<button onclick={cancelEditWord} disabled={editWordSaving}>Cancel</button>
+				</div>
+			</div>
+		{:else}
+			<p class="word">{currentItem.word}</p>
+		{/if}
 	</div>
 {/if}
 
