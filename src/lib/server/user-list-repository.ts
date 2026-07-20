@@ -182,3 +182,93 @@ export async function updateWordList(
 
 	return { listId, addedCount: newWords.length };
 }
+
+export class WordNotFoundError extends Error {
+	constructor() {
+		super('Word not found in this list.');
+		this.name = 'WordNotFoundError';
+	}
+}
+
+export class WordConflictError extends Error {
+	constructor(word: string) {
+		super(`"${word}" is already in this list.`);
+		this.name = 'WordConflictError';
+	}
+}
+
+/**
+ * Renames a single word in place — used by the drill card's inline edit
+ * control (e.g. fixing a typo or a wrong entry from an imported list) as
+ * well as scripts/fix-hellotalk-words-corrections.ts's one-off cleanups.
+ * word_state and vocab_session_attempts both have a real composite FK to
+ * list_words(list_id, word) with no ON UPDATE CASCADE, so this can't be a
+ * plain UPDATE — same insert-at-placeholder-rank -> repoint history ->
+ * delete old -> restore rank dance as scrub-master-list-cleanup.ts's
+ * REPLACE flow (see supabase/README.md's migration gotchas), generalized
+ * to one arbitrary word instead of a hardcoded pair list. Throws
+ * WordNotFoundError if oldWord isn't in the list, WordConflictError if
+ * newWord already is (merging progress into an existing word is out of
+ * scope here).
+ */
+export async function renameListWord(
+	supabase: SupabaseClient,
+	listId: number,
+	oldWord: string,
+	newWord: string
+): Promise<void> {
+	const { data: oldRow, error: oldRowError } = await withRetry(() =>
+		supabase
+			.from('list_words')
+			.select('frequency_rank')
+			.eq('list_id', listId)
+			.eq('word', oldWord)
+			.maybeSingle()
+	);
+	if (oldRowError) throw oldRowError;
+	if (!oldRow) throw new WordNotFoundError();
+
+	const { data: conflictRow, error: conflictError } = await withRetry(() =>
+		supabase.from('list_words').select('id').eq('list_id', listId).eq('word', newWord).maybeSingle()
+	);
+	if (conflictError) throw conflictError;
+	if (conflictRow) throw new WordConflictError(newWord);
+
+	const { error: insertError } = await withRetry(() =>
+		supabase
+			.from('list_words')
+			.upsert(
+				{ list_id: listId, word: newWord, frequency_rank: -oldRow.frequency_rank },
+				{ onConflict: 'list_id,word' }
+			)
+	);
+	if (insertError) throw insertError;
+
+	const { error: wordStateError } = await withRetry(() =>
+		supabase.from('word_state').update({ word: newWord }).eq('list_id', listId).eq('word', oldWord)
+	);
+	if (wordStateError) throw wordStateError;
+
+	const { error: attemptsError } = await withRetry(() =>
+		supabase
+			.from('vocab_session_attempts')
+			.update({ word: newWord })
+			.eq('list_id', listId)
+			.eq('word', oldWord)
+	);
+	if (attemptsError) throw attemptsError;
+
+	const { error: deleteOldError } = await withRetry(() =>
+		supabase.from('list_words').delete().eq('list_id', listId).eq('word', oldWord)
+	);
+	if (deleteOldError) throw deleteOldError;
+
+	const { error: restoreRankError } = await withRetry(() =>
+		supabase
+			.from('list_words')
+			.update({ frequency_rank: oldRow.frequency_rank })
+			.eq('list_id', listId)
+			.eq('word', newWord)
+	);
+	if (restoreRankError) throw restoreRankError;
+}

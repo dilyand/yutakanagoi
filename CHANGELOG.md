@@ -5,6 +5,41 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 2.2.2 — Fix hellotalk-words corruption, add inline word editing
+
+Two bugs found in the `hellotalk-words` list: AnkiApp lets a card's
+Japanese field carry a furigana reading override using doubled corner
+brackets (e.g. `過ぎる「「すぎる」」`), which `parseAnkiAppDeck`
+(`src/lib/ankiapp-deck-parser.ts`) was taking verbatim instead of
+stripping — fixed going forward, plus a one-off DB correction
+(`scripts/fix-hellotalk-words-corrections.ts`) for the 3 already-corrupted
+rows in both the QA and production databases. Separately, `連れて` was a
+genuine mis-entry in the source deck and should have been `につれて` —
+corrected by the same script.
+
+Since a DB script is a heavier fix than a rare mistake like this deserves,
+also added a lighter-weight path for next time: an inconspicuous edit icon
+on the vocab drill card itself (available whenever the word block is
+shown, including through the correct/incorrect/sentence-feedback phases —
+the explanation shown there is often exactly what reveals a word was
+wrong) lets a word be corrected in place mid-session. Backed by a new
+`renameListWord` (`src/lib/server/user-list-repository.ts`) and
+`POST /api/lists/words/edit`, reusing the same composite-FK-safe rename
+dance `scrub-master-list-cleanup.ts` already established (`word_state`/
+`vocab_session_attempts` have no `ON UPDATE CASCADE`, so a rename can't be
+a plain `UPDATE`). If the edit happens after an attempt was already
+recorded this session (editing off the feedback, not just before
+guessing), the session's own not-yet-persisted bookkeeping is rewritten
+too, so `/api/session/complete` doesn't try to write history for a word
+`list_words` no longer has.
+
+Also fixes an unrelated bug found while testing: `scripts/add-user.ts`
+inserted a `users` row with only a username, but `password_hash` has been
+`NOT NULL` since the 2.2.0 auth cutover — every invocation failed. Now
+requires a password argument up front (hashed the same way
+`set-password.ts` already does), so there's no window where a freshly
+created user exists but can't log in.
+
 ## 2.2.1 — Fix conjugation drill permanently capping which forms are ever introduced
 
 Investigating why polite forms (ます/です) never appeared in testing turned

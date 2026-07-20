@@ -19,8 +19,8 @@ fill in `ANTHROPIC_API_KEY` — `npx supabase start` prints the local
 ```sh
 npm install
 npx supabase start                        # starts the local Supabase stack
-npm run add-user -- <name>                # users are created out-of-band, never via the UI
-npm run set-password -- <name> <password> # likewise for their login password
+npm run add-user -- <name> <password>     # users are created out-of-band, never via the UI
+npm run set-password -- <name> <password> # to change an existing user's password later
 npm run dev -- --open
 ```
 

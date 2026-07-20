@@ -25,6 +25,24 @@ describe('parseAnkiAppDeck', () => {
 		expect(parseAnkiAppDeck(xml)).toEqual(['味方でいる']);
 	});
 
+	it('strips a trailing doubled-corner-bracket reading override', () => {
+		const xml =
+			DECK_HEADER +
+			'<card><japanese name="Japanese">過ぎる「「すぎる」」</japanese><text name="Meaning">pass</text></card>' +
+			DECK_FOOTER;
+
+		expect(parseAnkiAppDeck(xml)).toEqual(['過ぎる']);
+	});
+
+	it('strips a trailing single-corner-bracket reading override too', () => {
+		const xml =
+			DECK_HEADER +
+			'<card><japanese name="Japanese">宝物「たからもの」</japanese><text name="Meaning">treasure</text></card>' +
+			DECK_FOOTER;
+
+		expect(parseAnkiAppDeck(xml)).toEqual(['宝物']);
+	});
+
 	it('trims incidental whitespace/newlines around a word', () => {
 		const xml =
 			DECK_HEADER +

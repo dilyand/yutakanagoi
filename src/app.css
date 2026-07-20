@@ -309,6 +309,44 @@ input[type='password'] {
 	word-break: break-word;
 }
 
+/* Deliberately inconspicuous, mirroring .prompt-number's badge treatment
+   but on the opposite corner and unlabeled — a typo fix is a rare,
+   secondary action, not something that should compete with the word
+   itself for attention. */
+.edit-word-button {
+	position: absolute;
+	top: var(--space-3);
+	right: var(--space-3);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: 999px;
+	color: var(--color-text-secondary);
+	width: 28px;
+	height: 28px;
+	padding: 0;
+}
+
+.edit-word-form {
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
+}
+
+.edit-word-form input {
+	text-align: center;
+	font-size: var(--font-size-word);
+}
+
+.edit-word-actions {
+	display: flex;
+	justify-content: center;
+	gap: var(--space-3);
+}
+
 /* Conjugation drill's word-block header: a two-badge in-flow row (cell
    number left, live attempt count right), not vocab drill's single
    absolutely-positioned .prompt-number — kept as its own class so the two

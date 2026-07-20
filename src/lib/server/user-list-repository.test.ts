@@ -6,8 +6,11 @@ import {
 	verifyListOwnership,
 	createWordList,
 	updateWordList,
+	renameListWord,
 	ListNameConflictError,
-	ListNotFoundError
+	ListNotFoundError,
+	WordNotFoundError,
+	WordConflictError
 } from './user-list-repository';
 
 interface QueryResult {
@@ -26,6 +29,9 @@ function queryBuilder(result: QueryResult) {
 		eq: vi.fn(() => builder),
 		order: vi.fn(() => builder),
 		insert: vi.fn(() => builder),
+		upsert: vi.fn(() => builder),
+		update: vi.fn(() => builder),
+		delete: vi.fn(() => builder),
 		maybeSingle: vi.fn(() => Promise.resolve(result)),
 		single: vi.fn(() => Promise.resolve(result)),
 		then: (
@@ -39,6 +45,22 @@ function queryBuilder(result: QueryResult) {
 function fakeSupabase(responsesByTable: Record<string, QueryResult>): SupabaseClient {
 	return {
 		from: vi.fn((table: string) => queryBuilder(responsesByTable[table]))
+	} as unknown as SupabaseClient;
+}
+
+// renameListWord hits list_words multiple times in sequence (oldRow lookup,
+// conflict lookup, upsert, delete, restore-rank), each needing a different
+// canned result — a per-table queue consumed in call order, rather than one
+// static result per table.
+function sequencedSupabase(queuesByTable: Record<string, QueryResult[]>): SupabaseClient {
+	const cursors: Record<string, number> = {};
+	return {
+		from: vi.fn((table: string) => {
+			const queue = queuesByTable[table] ?? [];
+			const index = cursors[table] ?? 0;
+			cursors[table] = index + 1;
+			return queryBuilder(queue[index] ?? { data: null, error: null });
+		})
 	} as unknown as SupabaseClient;
 }
 
@@ -247,5 +269,63 @@ describe('updateWordList', () => {
 		await expect(updateWordList(supabase, 1, 'my-list.txt', ['a'])).rejects.toThrow(
 			'insert failed'
 		);
+	});
+});
+
+describe('renameListWord', () => {
+	it('runs the full insert -> repoint -> delete -> restore-rank dance in order', async () => {
+		const supabase = sequencedSupabase({
+			list_words: [
+				{ data: { frequency_rank: 5 } }, // oldRow lookup
+				{ data: null }, // conflict check: newWord not present
+				{ error: null }, // upsert at negative placeholder rank
+				{ error: null }, // delete old row
+				{ error: null } // restore real rank
+			],
+			word_state: [{ error: null }],
+			vocab_session_attempts: [{ error: null }]
+		});
+
+		await expect(renameListWord(supabase, 1, '連れて', 'につれて')).resolves.toBeUndefined();
+
+		// Call order: list_words(oldRow select) -> list_words(conflict select) ->
+		// list_words(upsert) -> word_state(update) -> vocab_session_attempts(update)
+		// -> list_words(delete) -> list_words(restore-rank update).
+		const fromMock = supabase.from as ReturnType<typeof vi.fn>;
+		expect(fromMock.mock.results[2].value.upsert).toHaveBeenCalledWith(
+			{ list_id: 1, word: 'につれて', frequency_rank: -5 },
+			{ onConflict: 'list_id,word' }
+		);
+		expect(fromMock.mock.results[3].value.update).toHaveBeenCalledWith({ word: 'につれて' });
+		expect(fromMock.mock.results[4].value.update).toHaveBeenCalledWith({ word: 'につれて' });
+		expect(fromMock.mock.results[6].value.update).toHaveBeenCalledWith({ frequency_rank: 5 });
+	});
+
+	it('throws WordNotFoundError when oldWord is not in the list', async () => {
+		const supabase = sequencedSupabase({
+			list_words: [{ data: null }]
+		});
+
+		await expect(renameListWord(supabase, 1, '存在しない', '新しい')).rejects.toThrow(
+			WordNotFoundError
+		);
+	});
+
+	it('throws WordConflictError when newWord already exists in the list', async () => {
+		const supabase = sequencedSupabase({
+			list_words: [{ data: { frequency_rank: 5 } }, { data: { id: 99 } }]
+		});
+
+		await expect(renameListWord(supabase, 1, '連れて', '既存の単語')).rejects.toThrow(
+			WordConflictError
+		);
+	});
+
+	it('rethrows a Supabase error from the initial lookup', async () => {
+		const supabase = sequencedSupabase({
+			list_words: [{ error: new Error('db down') }]
+		});
+
+		await expect(renameListWord(supabase, 1, '連れて', 'につれて')).rejects.toThrow('db down');
 	});
 });
