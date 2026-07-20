@@ -33,6 +33,13 @@ guessing), the session's own not-yet-persisted bookkeeping is rewritten
 too, so `/api/session/complete` doesn't try to write history for a word
 `list_words` no longer has.
 
+Also fixes an unrelated bug found while testing: `scripts/add-user.ts`
+inserted a `users` row with only a username, but `password_hash` has been
+`NOT NULL` since the 2.2.0 auth cutover — every invocation failed. Now
+requires a password argument up front (hashed the same way
+`set-password.ts` already does), so there's no window where a freshly
+created user exists but can't log in.
+
 ## 2.2.1 — Fix conjugation drill permanently capping which forms are ever introduced
 
 Investigating why polite forms (ます/です) never appeared in testing turned
