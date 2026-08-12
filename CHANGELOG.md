@@ -5,6 +5,29 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 2.2.3 — Fix vocab drill sessions shrinking well below 10 cards on small lists
+
+Reported as sessions ending after 5-9 cards instead of 10, only on the
+`hellotalk-words` list, never on the ~2000-word frequency list. Root cause:
+`selectDrillWords` (`src/lib/drill-algorithm.ts`) fills a session with due
+review words, then pads remaining slots with never-before-seen words —
+but once a list is fully introduced (no untracked words left) and its due
+count drops because words have matured into sparsely-due high boxes,
+there was no further fallback, so the session just came back short.
+Confirmed against production: `hellotalk-words` (97 words) has 0
+untracked words left and 85 of 97 (87%) already in box 4, whose 16+
+session interval means only a handful are due on any given day — the
+2000-word list never hits this in practice because it always has enough
+untracked words to pad every session for a very long time.
+
+Fixed by adding a third fallback tier: once due review and new-word
+introduction both run dry, remaining slots are filled with not-yet-due
+words, closest-to-due first (including box 4, previously never pulled in
+early — see CLAUDE.md's session algorithm spec, step 5). This trades a
+small amount of early review for never landing on a session shorter than
+the requested size once the reason is "nothing left to review yet," which
+is a better trade than silently truncating.
+
 ## 2.2.2 — Fix hellotalk-words corruption, add inline word editing
 
 Two bugs found in the `hellotalk-words` list: AnkiApp lets a card's

@@ -16,10 +16,15 @@ describe('selectDrillWords: due-interval boundaries', () => {
 		[2, 4],
 		[3, 8]
 	])('box %i is due exactly at the %i-session interval, not before', (box, interval) => {
-		const notYetDue = selectDrillWords(vocab('a'), [state('a', box, 10)], 10 + interval - 1);
-		expect(notYetDue).toEqual([]);
+		// 'filler' is a permanently-available new word occupying the
+		// session's only slot whenever 'a' isn't due — otherwise early-fill
+		// would pull in not-yet-due 'a' anyway (by design, see below) and
+		// mask what this test is actually checking: the isDue boundary.
+		const vocabMaster = vocab('a', 'filler');
+		const notYetDue = selectDrillWords(vocabMaster, [state('a', box, 10)], 10 + interval - 1, 1);
+		expect(notYetDue).toEqual([{ word: 'filler', isNew: true }]);
 
-		const due = selectDrillWords(vocab('a'), [state('a', box, 10)], 10 + interval);
+		const due = selectDrillWords(vocabMaster, [state('a', box, 10)], 10 + interval, 1);
 		expect(due).toEqual([{ word: 'a', isNew: false, box, box4Streak: 0 }]);
 	});
 });
@@ -33,14 +38,16 @@ describe('selectDrillWords: box 4 interval grows with box4Streak', () => {
 	])(
 		'with box4Streak %i, due exactly at the %i-session interval, not before',
 		(box4Streak, interval) => {
+			const vocabMaster = vocab('a', 'filler');
 			const notYetDue = selectDrillWords(
-				vocab('a'),
+				vocabMaster,
 				[state('a', 4, 10, box4Streak)],
-				10 + interval - 1
+				10 + interval - 1,
+				1
 			);
-			expect(notYetDue).toEqual([]);
+			expect(notYetDue).toEqual([{ word: 'filler', isNew: true }]);
 
-			const due = selectDrillWords(vocab('a'), [state('a', 4, 10, box4Streak)], 10 + interval);
+			const due = selectDrillWords(vocabMaster, [state('a', 4, 10, box4Streak)], 10 + interval, 1);
 			expect(due).toEqual([{ word: 'a', isNew: false, box: 4, box4Streak }]);
 		}
 	);
@@ -92,9 +99,11 @@ describe('selectDrillWords: fill with new words', () => {
 
 	it('excludes already-tracked words from the new-word fill', () => {
 		const vocabMaster = vocab('tracked', 'untracked');
-		// tracked word is box4, not due (interval 16, only 1 session elapsed) — should not appear
+		// tracked word is box4, not due (interval 16, only 1 session elapsed) —
+		// should not appear as a *new* word. limit=1 keeps this test focused on
+		// new-word exclusion rather than early-fill (a separate concern below).
 		const wordStates = [state('tracked', 4, 0)];
-		const result = selectDrillWords(vocabMaster, wordStates, 1, 10);
+		const result = selectDrillWords(vocabMaster, wordStates, 1, 1);
 		expect(result).toEqual([{ word: 'untracked', isNew: true }]);
 	});
 
@@ -151,14 +160,31 @@ describe('selectDrillWords: minNewSlots guarantee', () => {
 	});
 });
 
-describe('selectDrillWords: box 4 is never forced in early', () => {
-	it('omits a not-yet-due box4 word even when slots need filling', () => {
+describe('selectDrillWords: fills remaining slots with not-yet-due words once due+new are exhausted', () => {
+	it('pulls a not-yet-due box4 word in rather than ending the session short', () => {
 		const vocabMaster = vocab('box4word');
-		// box4 interval is 16; only 1 session has elapsed, so not due
+		// box4 interval is 16; only 1 session has elapsed, so not due. It's
+		// also the only vocab entry and already tracked, so no new words
+		// either — without early-fill this session would be empty.
 		const wordStates = [state('box4word', 4, 0)];
 		const result = selectDrillWords(vocabMaster, wordStates, 1, 10);
-		// box4word is also the only vocab entry and is already tracked, so no new words either
-		expect(result).toEqual([]);
+		expect(result).toEqual([{ word: 'box4word', isNew: false, box: 4, box4Streak: 0 }]);
+	});
+
+	it('does not early-fill when due + new already reach the limit', () => {
+		const wordStates = ['a', 'b', 'c'].map((w) => state(w, 0, 0));
+		const notYetDue = state('notYetDue', 4, 0);
+		const result = selectDrillWords(vocab(), [...wordStates, notYetDue], 1, 3);
+		expect(result).toHaveLength(3);
+		expect(result.map((d) => d.word)).not.toContain('notYetDue');
+	});
+
+	it('prioritizes the closest-to-due word first among early fills', () => {
+		// sessionIndex 10: box3 (interval 8, lastSession 5) is 3 sessions from due;
+		// box4 (interval 16, lastSession 0) is 6 sessions from due — box3 wins.
+		const wordStates = [state('farFromDue', 4, 0), state('closeToDue', 3, 5)];
+		const result = selectDrillWords(vocab(), wordStates, 10, 10);
+		expect(result.map((d) => d.word)).toEqual(['closeToDue', 'farFromDue']);
 	});
 });
 
