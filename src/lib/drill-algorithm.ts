@@ -93,8 +93,11 @@ export const MIN_NEW_SLOTS_PER_SESSION = 3;
 /**
  * Selects this session's drill words: due review words (weakest box first,
  * capped at `limit`), then new words from vocabMaster to fill any remaining
- * slots. Box 4 words are never pulled in early just to fill a slot — they
- * only appear here when genuinely due.
+ * slots. If due + new still can't fill `limit` (a fully-introduced list
+ * where mastery has pushed most words into sparsely-due high boxes — see
+ * CHANGELOG), the remaining slots are filled with not-yet-due words,
+ * closest-to-due first, rather than leaving the session short. This is the
+ * only case a not-yet-due word (including box 4) is pulled in early.
  *
  * `minNewSlots` (default 0, so callers that omit it are unaffected) reserves
  * up to that many of `limit`'s slots for never-before-seen items regardless
@@ -117,10 +120,11 @@ export function selectDrillWords(
 		.sort((a, b) => a.frequencyRank - b.frequencyRank);
 
 	const reservedNewSlots = Math.min(minNewSlots, availableNewWords.length);
-	const dueWords = pickDueWordsRoundRobin(
+	const dueWordStates = pickDueWordsRoundRobin(
 		wordStates.filter((ws) => isDue(ws, sessionIndex)),
 		Math.max(limit - reservedNewSlots, 0)
-	).map((ws): DrillItem => ({
+	);
+	const dueWords = dueWordStates.map((ws): DrillItem => ({
 		word: ws.word,
 		isNew: false,
 		box: ws.box,
@@ -131,7 +135,45 @@ export function selectDrillWords(
 		.slice(0, limit - dueWords.length)
 		.map((entry): DrillItem => ({ word: entry.word, isNew: true }));
 
-	return [...dueWords, ...newWords];
+	const selected = [...dueWords, ...newWords];
+	const remainingSlots = limit - selected.length;
+	const earlyWords =
+		remainingSlots > 0
+			? pickEarliestNotYetDue(wordStates, dueWordStates, sessionIndex, remainingSlots)
+			: [];
+
+	return [...selected, ...earlyWords];
+}
+
+/**
+ * Fills leftover slots (due + new both exhausted) with not-yet-due words,
+ * closest-to-due first — "closest" meaning smallest gap until their
+ * interval would make them due (`sessionIndex - lastSession - interval`,
+ * always negative here since these aren't due yet; closest to 0 sorts
+ * first). Only reached once there's nothing left to select honestly, so
+ * pulling a word early here is preferable to ending the session short.
+ */
+function pickEarliestNotYetDue(
+	wordStates: WordState[],
+	alreadySelected: WordState[],
+	sessionIndex: number,
+	limit: number
+): DrillItem[] {
+	const selectedWords = new Set(alreadySelected.map((ws) => ws.word));
+	return wordStates
+		.filter((ws) => !selectedWords.has(ws.word))
+		.map((ws) => ({
+			ws,
+			overdueness: sessionIndex - ws.lastSession - effectiveInterval(ws.box, ws.box4Streak)
+		}))
+		.sort((a, b) => b.overdueness - a.overdueness)
+		.slice(0, limit)
+		.map(({ ws }): DrillItem => ({
+			word: ws.word,
+			isNew: false,
+			box: ws.box,
+			box4Streak: ws.box4Streak
+		}));
 }
 
 export interface DrillOutcome {

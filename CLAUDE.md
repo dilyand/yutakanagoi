@@ -128,6 +128,14 @@ any DB table.
   longer flat — it grows by one session per additional correct review
   while still at box 4 (16, 17, 18, ...), reset to 0 the instant a word
   drops back out of box 4. See the spec below for both.
+  `pickEarliestNotYetDue` is the fallback for a small, fully-introduced
+  list where mastery has concentrated words in high boxes: once due
+  review and new-word introduction both run dry, it fills any remaining
+  session slots with not-yet-due words (closest-to-due first, box 4
+  included) rather than returning a short session. A ~2000-word master
+  list never introduces enough mastery pressure to hit this in practice —
+  it took a 97-word list (`hellotalk-words`) 87% mastered into box 4 to
+  surface it. See the spec below and CHANGELOG 2.2.3.
 - `src/lib/conjugation-engine.ts` — `conjugate()`, a pure deterministic
   function. Grading tries an exact match against it first (zero Claude
   calls for the common case).
@@ -288,7 +296,13 @@ word). At the start of a session:
    (most-overdue/oldest `last_session` first).
 4. If fewer than 10 due words exist, fill remaining slots with new words
    not yet introduced.
-5. Don't force box 4 words back in early just to fill a slot.
+5. If due words and new words together still don't fill the session (a
+   fully-introduced list where mastery has pushed most words into
+   sparsely-due high boxes — see CHANGELOG 2.2.3), fill the remaining slots
+   with not-yet-due words, closest-to-due first (including box 4). This is
+   the only case a not-yet-due word is pulled in early — it only kicks in
+   once there's nothing left to select honestly, rather than leaving a
+   session short.
 
 ### Vocab drill loop (per word, within a session)
 
