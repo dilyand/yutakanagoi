@@ -28,6 +28,14 @@ export default defineConfig({
 					'default-src': ['self'],
 					'style-src': ['self', 'unsafe-inline'],
 					'img-src': ['self', 'data:'],
+					// Shadowing drill's <audio> plays signed Supabase Storage URLs.
+					// media-src falls back to default-src ('self') when unset, so
+					// without this directive the audio element is blocked outright.
+					// The wildcard covers both the staging and production Supabase
+					// projects (see supabase/README.md) without per-environment
+					// config; the 127.0.0.1 origin is for local dev against
+					// `npx supabase start`.
+					'media-src': ['self', 'https://*.supabase.co', 'http://127.0.0.1:54321'],
 					'connect-src': ['self'],
 					'worker-src': ['self'],
 					'manifest-src': ['self'],

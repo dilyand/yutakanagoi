@@ -5,6 +5,49 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 2.3.0 — Add shadowing drill, yutakanagoi's third activity
+
+Plays a short chunk of real Japanese speech, the user repeats it back, no
+speech recognition or grading — repetition practice on authentic audio
+rather than generic listening material. Ships as two separate pieces:
+
+- `ingest/` — a local command-line tool (not part of the app; no version
+  bump or CHANGELOG entry of its own going forward) that turns an audio
+  recording into verified, chunked, transcribed, translated rows in the
+  database: convert → whisper transcription → transcript-guided automatic
+  chunk boundaries → cut/fade/verify every chunk (content-match
+  cross-correlation, no-cut-on-an-attack, fades-applied, distinctness,
+  coverage — five checks, any failure aborts before anything publishes) →
+  upload. See `ingest/README.md` for the command reference and
+  `ingest/PROMPT.md` for the agent-driven runbook that ties the pipeline's
+  two manual editing steps (punctuation restoration, kana/translation)
+  together with the mechanical commands.
+- The drill itself — per-user chunk library (like vocab's word lists, not
+  shared like conjugation's registry), reusing `drill-algorithm.ts`'s
+  `selectDrillWords`/`applyOutcome` machinery unmodified by treating
+  `chunk_id` as an opaque word, same pattern conjugation's `cell_id`
+  already established. No rating question to answer — the Leitner rating
+  is derived from how far up the in-app hint ladder (Japanese text → kana
+  → English) the user climbed before advancing (`src/lib/shadowing/rating.ts`),
+  since there's no correct/incorrect signal to grade shadowing against.
+  Playback is always user-initiated, never automatic. A chunk can be
+  flagged in-app as broken/unusable; flagging excludes it from future
+  sessions without affecting other progress, and `ingest:flagged` lists
+  flagged chunks for later triage.
+
+Found and fixed one real bug during implementation, worth recording since
+it's a subtle interaction rather than an obvious mistake:
+`selectDrillWords`'s not-yet-due fallback (`pickEarliestNotYetDue`) reads
+straight from the progress list with no cross-check against the current
+master list — correct for vocab and conjugation, where a tracked word
+never leaves the list it came from, but not for shadowing, where flagging
+removes a chunk from the library without touching its `shadowing_state`
+row. Unfiltered, a flagged chunk's old progress kept resurfacing through
+that fallback path indefinitely. Fixed in `session/start` by filtering the
+progress list down to current library membership before calling
+`selectDrillWords`, rather than teaching the shared function about list
+membership.
+
 ## 2.2.3 — Fix vocab drill sessions shrinking well below 10 cards on small lists
 
 Reported as sessions ending after 5-9 cards instead of 10, only on the

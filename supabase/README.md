@@ -147,6 +147,53 @@ schema, not just inferred from reading `.sql` files.
   was actually shown for that attempt, not tied to any registry table (see
   the migration-gotchas note below for why this matters).
 
+- `shadowing_recordings` — one row per ingested source audio file
+  (`user_id`, `slug`, `duration_ms`, `source_audio_path`, `transcript`,
+  `transcript_source` — `'supplied'` or `'asr'`, see below —
+  `chunking_version`). Content is per-user (like `word_lists`), ingested
+  out-of-band by the `ingest/` tool at the repo root — **not part of this
+  app**, never deployed, no version bump on its own (see repo root
+  CLAUDE.md). `unique (user_id, slug)`.
+- `shadowing_chunks` — the drill unit (`recording_id`, `user_id`
+  denormalized — see below, `chunk_index`, `chunk_id`, `audio_path`,
+  `start_ms`/`duration_ms`, `transcript`/`kana`/`translation`,
+  `verified_at`, `flagged_at`/`flag_note`). `chunk_id` is
+  `'<slug>:<chunking_version>:<NN>'` — the app only ever selects rows where
+  `verified_at is not null and flagged_at is null`, so nothing that failed
+  the ingest tool's verification checks (content-match cross-correlation,
+  fade-applied, distinctness, no-cut-on-attack, coverage) can reach a
+  session even if its row somehow got inserted. **Constraints:**
+  `recording_id` → `shadowing_recordings(id)`; `user_id` → `users(id)`;
+  unique `(recording_id, chunk_index)` and unique `(user_id, chunk_id)`.
+- `shadowing_state` — for the shadowing-drill activity. One row per
+  `(user_id, chunk_id)`, same box/interval/streak shape as `word_state` and
+  `conjugation_state` above. **No FK on `chunk_id`** — see "Shadowing
+  tables: the one deliberate exception" below.
+- `shadowing_sessions` / `shadowing_session_attempts` — same shape as the
+  conjugation pair. Attempts additionally carry `hint_level` (0-3) and
+  `rating` (`'easy'|'good'|'hard'|'very_hard'`) — the rating is derived from
+  how far up the in-app hint ladder the user climbed before advancing (see
+  `src/lib/shadowing/rating.ts`), not self-reported — plus `replays`, which
+  doesn't affect grading but is recorded as a behavioral signal.
+
+### Shadowing Storage bucket
+
+`shadowing-audio` — private, no RLS policies (same reasoning as every table:
+this app has no Supabase Auth, so `auth.uid()`-based policies don't apply;
+access is service-role only, gated server-side after the session cookie is
+verified, same as DB access). Path scheme:
+
+```
+shadowing-audio/
+  users/<user_id>/<slug>/source.m4a                   # full recording, kept for re-chunking
+  users/<user_id>/<slug>/v<chunking_version>/chunk-NN.m4a
+```
+
+The chunking version is in the _path_, not just `chunk_id`, so a re-chunk
+never overwrites audio a live `shadowing_chunks` row still points at. The app
+never streams audio itself — it mints short-lived signed URLs
+(`createSignedUrl`, ~2h TTL) server-side and hands those to the client.
+
 ### Migration gotchas: no FK here cascades
 
 **None of the foreign keys above have `ON DELETE`/`ON UPDATE CASCADE`** —
@@ -198,6 +245,28 @@ static list. Historical `conjugation_session_attempts.word` values for a
 since-removed word just sit there as an accurate record of what was shown
 at the time — no FK forces a decision the way `vocab_session_attempts` did
 for the vocab list.
+
+### Shadowing tables: the one deliberate exception
+
+`shadowing_state.chunk_id` has **no FK to `shadowing_chunks`**, even though
+(unlike conjugation's static code registry) `shadowing_chunks` _is_ a real
+table here. This is a conscious tradeoff, not an oversight: the
+merge/split heuristic in `ingest/chunk-planner.ts` that decides chunk
+boundaries is an explicit, untested guess (see its file header), so
+re-chunking a recording is expected to happen more than once as the
+heuristic gets tuned against real data. An FK would turn every re-chunk
+into the same four-step placeholder-rank dance `list_words` renames need
+(above) — and unlike a vocab word rename, a re-chunk changes _every_ chunk
+in a recording at once, not one row.
+
+Instead, `chunk_id` embeds the chunking version
+(`'<slug>:<chunking_version>:<NN>'`), so a re-chunk mints entirely new ids.
+**Accepted downside: progress for a recording's chunks resets when it's
+re-chunked** — old `shadowing_state` rows for the previous version's ids
+simply become unreachable (never deleted, just orphaned data with no FK to
+complain about). This is considered honest rather than lossy: the
+boundaries changed, so the item the progress was tracked against no longer
+exists.
 
 ## One-time data migrations, historical
 
