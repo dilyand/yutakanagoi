@@ -55,9 +55,14 @@ Japanese. Do **not**:
   where a sentence ends, use your best judgment on where a natural pause
   would fall, but don't add or remove words.
 
-If `transcriptSource` is `"supplied"`, this step is a no-op — the supplied
-transcript already went through `ingest:transcribe`'s cross-check gate and
-has real punctuation. Skip straight to step 3.
+Check the actual `transcript` field for sentence-final marks (`。！？`),
+regardless of `transcriptSource` — `ingest:transcribe`'s cross-check gate
+only compares supplied text against whisper's own pass for divergence, it
+never validates or requires punctuation, so a supplied transcript can
+arrive just as unpunctuated as raw ASR output. If it already has real
+punctuation, this step is a no-op — skip straight to step 3. If it
+doesn't, restore it the same way you would for ASR output, following the
+rules above.
 
 ## Step 4: filling kana and translation
 

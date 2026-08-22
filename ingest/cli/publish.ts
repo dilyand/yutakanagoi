@@ -50,6 +50,17 @@ interface ChunkManifest {
 
 const manifest: ChunkManifest = JSON.parse(readFileSync(chunksPath, 'utf8'));
 
+if (manifest.chunks.length === 0) {
+	// An empty chunks array passes every per-chunk/recording-wide filter
+	// below vacuously (nothing to fail on) — on a re-publish, that would
+	// reach the RPC and delete the currently-live, working chunk set while
+	// inserting nothing in its place. Reject outright before anything else
+	// runs, regardless of how chunks.json ended up empty (a stray hand
+	// edit, an upstream bug).
+	console.error('chunks.json has zero chunks — refusing to publish. Re-run ingest:cut.');
+	process.exit(1);
+}
+
 if (manifest.recordingVerifyFailures?.length > 0) {
 	console.error(
 		`This recording failed a recording-wide check during ingest:cut (distinctness or coverage across all chunks) — re-run ingest:cut, don't edit chunks.json's "recordingVerifyFailures" field by hand. Affected: ${manifest.recordingVerifyFailures.join('; ')}`

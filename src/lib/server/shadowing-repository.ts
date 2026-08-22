@@ -132,14 +132,27 @@ async function getLatestSessionIndex(supabase: SupabaseClient, userId: number): 
 	return data?.session_index ?? 0;
 }
 
-/** Increments this user's shadowing session counter and inserts the new shadowing_sessions row. */
-export async function startSession(supabase: SupabaseClient, userId: number): Promise<number> {
-	const nextSessionIndex = (await getLatestSessionIndex(supabase, userId)) + 1;
+/**
+ * Inserts the shadowing_sessions row for a session whose response is
+ * already fully built — deliberately separate from computing the next
+ * session_index (that's ShadowingContext.sessionIndex + 1, already
+ * available from fetchShadowingContext at the top of session/start; no
+ * second read needed). Session-start used to read-then-insert this row
+ * before fetching/signing chunk details, so a failure in that later step
+ * (Storage signing, a missing detail row) still left an orphaned,
+ * never-completed session behind. Call this only once the response is
+ * ready to return, so a failure before that point never reserves a
+ * session_index it can't deliver.
+ */
+export async function insertSessionRow(
+	supabase: SupabaseClient,
+	userId: number,
+	sessionIndex: number
+): Promise<void> {
 	const { error } = await withRetry(() =>
-		supabase.from('shadowing_sessions').insert({ user_id: userId, session_index: nextSessionIndex })
+		supabase.from('shadowing_sessions').insert({ user_id: userId, session_index: sessionIndex })
 	);
 	if (error) throw error;
-	return nextSessionIndex;
 }
 
 /** Marks a shadowing session complete once every chunk has been drilled. */

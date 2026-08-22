@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 	fetchChunkLibrary: vi.fn(),
 	fetchShadowingContext: vi.fn(),
 	fetchChunkDetailsWithSignedUrls: vi.fn(),
-	startSession: vi.fn()
+	insertSessionRow: vi.fn()
 }));
 
 vi.mock('$lib/server/conjugation-auth', async (importOriginal) => {
@@ -22,7 +22,7 @@ vi.mock('$lib/server/shadowing-repository', () => ({
 	fetchChunkLibrary: mocks.fetchChunkLibrary,
 	fetchShadowingContext: mocks.fetchShadowingContext,
 	fetchChunkDetailsWithSignedUrls: mocks.fetchChunkDetailsWithSignedUrls,
-	startSession: mocks.startSession
+	insertSessionRow: mocks.insertSessionRow
 }));
 
 import { POST } from './+server';
@@ -88,7 +88,7 @@ describe('POST /api/shadowing/session/start', () => {
 		const body = await response.json();
 
 		expect(body.drillItems).toEqual([]);
-		expect(mocks.startSession).not.toHaveBeenCalled();
+		expect(mocks.insertSessionRow).not.toHaveBeenCalled();
 		expect(mocks.fetchChunkDetailsWithSignedUrls).not.toHaveBeenCalled();
 	});
 
@@ -96,7 +96,6 @@ describe('POST /api/shadowing/session/start', () => {
 		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
 		mocks.fetchChunkLibrary.mockResolvedValueOnce(fakeLibrary(15));
 		mocks.fetchShadowingContext.mockResolvedValueOnce({ chunkStates: [], sessionIndex: 0 });
-		mocks.startSession.mockResolvedValueOnce(1);
 		mocks.fetchChunkDetailsWithSignedUrls.mockImplementationOnce(
 			async (_s, _u, chunkIds: string[]) => fakeDetails(chunkIds)
 		);
@@ -117,6 +116,7 @@ describe('POST /api/shadowing/session/start', () => {
 			expect(item.translation).toBe('translation');
 		}
 		expect(mocks.verifyUserExists).toHaveBeenCalledWith(expect.anything(), 2);
+		expect(mocks.insertSessionRow).toHaveBeenCalledWith(expect.anything(), 2, 1);
 	});
 
 	it('returns existing box/box4Streak for a due (non-new) chunk', async () => {
@@ -126,7 +126,6 @@ describe('POST /api/shadowing/session/start', () => {
 			chunkStates: [{ word: 'rec:1:00', box: 2, lastSession: 0, box4Streak: 0 }],
 			sessionIndex: 1
 		});
-		mocks.startSession.mockResolvedValueOnce(2);
 		mocks.fetchChunkDetailsWithSignedUrls.mockImplementationOnce(
 			async (_s, _u, chunkIds: string[]) => fakeDetails(chunkIds)
 		);
@@ -162,7 +161,6 @@ describe('POST /api/shadowing/session/start', () => {
 			],
 			sessionIndex: 1
 		});
-		mocks.startSession.mockResolvedValueOnce(2);
 		mocks.fetchChunkDetailsWithSignedUrls.mockImplementationOnce(
 			async (_s, _u, chunkIds: string[]) => fakeDetails(chunkIds)
 		);
@@ -175,21 +173,20 @@ describe('POST /api/shadowing/session/start', () => {
 		expect(chunkIds.every((id: string) => ['rec:1:00', 'rec:1:01'].includes(id))).toBe(true);
 	});
 
-	it('throws if a selected chunk has no matching detail row (should be unreachable in practice)', async () => {
+	it('throws if a selected chunk has no matching detail row, and never inserts a session row — regression: the session row used to be inserted before this step, leaving an orphaned incomplete session behind on any failure here (Storage signing, a missing detail row) instead of just failing cleanly', async () => {
 		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
 		mocks.fetchChunkLibrary.mockResolvedValueOnce(fakeLibrary(1));
 		mocks.fetchShadowingContext.mockResolvedValueOnce({ chunkStates: [], sessionIndex: 0 });
-		mocks.startSession.mockResolvedValueOnce(1);
 		mocks.fetchChunkDetailsWithSignedUrls.mockResolvedValueOnce([]);
 
 		await expect(POST(makeEvent({ userId: 1 }))).rejects.toThrow(/No chunk detail found/);
+		expect(mocks.insertSessionRow).not.toHaveBeenCalled();
 	});
 
 	it('rejects with 429 once the per-IP rate limit is exceeded', async () => {
 		mocks.verifyUserExists.mockResolvedValue(undefined);
 		mocks.fetchChunkLibrary.mockResolvedValue(fakeLibrary(1));
 		mocks.fetchShadowingContext.mockResolvedValue({ chunkStates: [], sessionIndex: 0 });
-		mocks.startSession.mockResolvedValue(1);
 		mocks.fetchChunkDetailsWithSignedUrls.mockImplementation(async (_s, _u, chunkIds: string[]) =>
 			fakeDetails(chunkIds)
 		);

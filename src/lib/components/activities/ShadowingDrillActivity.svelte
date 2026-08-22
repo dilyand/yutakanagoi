@@ -264,7 +264,8 @@
 		isSubmitting = false;
 	}
 
-	async function finishSession() {
+	/** Returns whether the save actually succeeded — cancelSession needs to know before it can claim the session as cancelled. */
+	async function finishSession(): Promise<boolean> {
 		phase = 'completing';
 		errorMessage = '';
 		try {
@@ -279,9 +280,11 @@
 				attempts
 			});
 			phase = 'done';
+			return true;
 		} catch (e) {
 			errorMessage = e instanceof Error ? e.message : String(e);
 			phase = phase === 'completing' ? 'listening' : phase;
+			return false;
 		}
 	}
 
@@ -291,9 +294,15 @@
 	async function cancelSession() {
 		if (isSubmitting) return;
 		isSubmitting = true;
-		wasCancelled = true;
 		try {
-			await finishSession();
+			// Only claim the session as cancelled once finishSession's save
+			// actually succeeds — it catches its own errors and returns
+			// normally rather than throwing, so setting this beforehand (or
+			// unconditionally after) left it true even when nothing was
+			// saved. If the user later completes a session normally after a
+			// failed cancel attempt, the done screen must say "complete,"
+			// not "cancelled."
+			wasCancelled = await finishSession();
 		} finally {
 			isSubmitting = false;
 		}

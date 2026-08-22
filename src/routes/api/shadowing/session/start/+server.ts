@@ -5,7 +5,7 @@ import {
 	fetchChunkLibrary,
 	fetchShadowingContext,
 	fetchChunkDetailsWithSignedUrls,
-	startSession
+	insertSessionRow
 } from '$lib/server/shadowing-repository';
 import { verifyUserExists, UserNotFoundError } from '$lib/server/conjugation-auth';
 import { checkRateLimit } from '$lib/server/rate-limit';
@@ -69,7 +69,11 @@ export const POST: RequestHandler = async ({ getClientAddress, locals }) => {
 		libraryChunkIds.has(state.word)
 	);
 
-	const sessionIndex = await startSession(supabase, userId);
+	// Deliberately not persisted yet — see insertSessionRow's doc comment.
+	// The value is the same one startSession used to compute (read then
+	// insert); context.sessionIndex already came from that same read via
+	// fetchShadowingContext above, so no second query is needed.
+	const sessionIndex = context.sessionIndex + 1;
 
 	const drillItems = selectDrillWords(
 		library.map((entry) => ({ word: entry.chunkId, frequencyRank: entry.frequencyRank })),
@@ -106,6 +110,10 @@ export const POST: RequestHandler = async ({ getClientAddress, locals }) => {
 			durationMs: detail.durationMs
 		};
 	});
+
+	// Only persist the session row once the response is fully built and
+	// nothing above has thrown — see insertSessionRow's doc comment.
+	await insertSessionRow(supabase, userId, sessionIndex);
 
 	return json({ sessionIndex, drillItems: items });
 };

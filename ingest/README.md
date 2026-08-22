@@ -94,11 +94,17 @@ whisper, and writes `transcript.json`.
 ### 2. Restore punctuation (manual/agent step)
 
 Edit `transcript.json`'s `transcript` field to add sentence-final marks
-(`。！？`) and clause commas (`、`). **Required on the ASR path** — the next
-step's chunk planner aligns cuts on exactly those marks, so an unpunctuated
-transcript produces one giant, unusably long chunk (and `ingest:cut`
-refuses to proceed past that). A no-op on the supplied-transcript path,
-since real punctuation is already there.
+(`。！？`) and clause commas (`、`). **Required whenever the transcript
+lacks sentence-final marks** — the next step's chunk planner aligns cuts on
+exactly those marks, so an unpunctuated transcript produces one giant,
+unusably long chunk, and `ingest:cut` now refuses to proceed past that
+regardless of `transcriptSource`. Not necessarily a no-op on the
+supplied-transcript path: `ingest:transcribe --transcript` only trims the
+supplied text and cross-checks it against whisper's own pass for
+divergence — it never validates or requires punctuation, so a supplied
+transcript can arrive just as unpunctuated as raw ASR output. If it
+already has real punctuation, there's nothing to do here; check the actual
+text rather than assuming from the source.
 
 Preserve disfluencies, false starts, and repeated words as spoken — the
 point of shadowing practice is how someone actually talks, not a
