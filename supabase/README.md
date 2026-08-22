@@ -191,7 +191,7 @@ verified, same as DB access). Path scheme:
 
 ```
 shadowing-audio/
-  users/<user_id>/<slug>/v<chunking_version>/source.m4a   # full recording, kept for re-chunking
+  users/<user_id>/<slug>/v<chunking_version>/source.<ext>   # full recording, kept for re-chunking (extension matches the ingested file — m4a/mp3/wav/ogg)
   users/<user_id>/<slug>/v<chunking_version>/chunk-NN.m4a
 ```
 

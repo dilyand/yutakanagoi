@@ -43,8 +43,10 @@ export interface ChunkPlannerInput {
 // automatic means accepting that cost in exchange for never needing a
 // human review step per recording. If real usage shows chunks consistently
 // too long, too short, or too choppy, retune the constants here and
-// re-chunk — `chunking_version` in the DB schema makes a re-chunk
-// non-destructive to progress on already-cut audio (see
+// re-chunk — `chunking_version` in the DB schema is what makes a
+// re-chunk safe to run at all (new chunk ids never collide with the
+// previous version's), NOT progress-preserving: re-chunking still resets
+// a user's progress on that recording's chunks, an accepted downside (see
 // supabase/README.md's "Shadowing tables" section for why).
 export const TARGET_MS = 8_000;
 export const MAX_MS = 14_000;
