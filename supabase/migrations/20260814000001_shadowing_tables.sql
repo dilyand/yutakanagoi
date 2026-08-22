@@ -121,10 +121,12 @@ alter table shadowing_session_attempts enable row level security;
 -- policies — this app has no Supabase Auth, so auth.uid()-based policies
 -- don't apply; access control happens server-side the same way DB access
 -- does, via signed URLs minted after the session cookie is verified).
--- Path scheme: users/<user_id>/<slug>/source.m4a (full recording, kept for
--- re-chunking) and users/<user_id>/<slug>/v<chunking_version>/chunk-NN.m4a
--- (version in the path, not just the id, so a re-chunk never overwrites
--- audio a live shadowing_chunks row still points at).
+-- Path scheme: users/<user_id>/<slug>/v<chunking_version>/source.m4a (full
+-- recording, kept for re-chunking) and
+-- users/<user_id>/<slug>/v<chunking_version>/chunk-NN.m4a (version in the
+-- path for both, not just the chunk_id, so a re-chunk's uploads — source
+-- included — never touch audio a live shadowing_chunks row or the live
+-- recording row's source_audio_path still points at).
 insert into storage.buckets (id, name, public, file_size_limit)
 values ('shadowing-audio', 'shadowing-audio', false, 52428800)
 on conflict (id) do nothing;

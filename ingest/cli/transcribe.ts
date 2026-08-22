@@ -109,12 +109,20 @@ const manifest: TranscriptManifest = {
 writeFileSync(path.join(workDir, 'transcript.json'), JSON.stringify(manifest, null, 2));
 
 console.log(`\nWrote ${path.join(workDir, 'transcript.json')}`);
-if (transcriptSource === 'asr') {
+// Whether transcriptSource is 'asr' or 'supplied', what actually matters
+// for the next step is whether the transcript text itself has
+// sentence-final punctuation — a supplied file is only trimmed and
+// similarity-checked above, never validated for this, so it can just as
+// easily arrive unpunctuated as ASR output can. ingest:cut's own guard
+// (see cut.ts) checks this regardless of source; this message just
+// reports accurately which case applies instead of assuming "supplied"
+// always means "already punctuated."
+if (/[。！？]/.test(transcript)) {
 	console.log(
-		'\nNext: restore sentence/clause punctuation (。、！？) in the "transcript" field — raw whisper output has none, and the chunk planner cuts on exactly those marks. See PROMPT.md.'
+		'\nNext: the transcript already has sentence-final punctuation — no editing needed. Run ingest:cut.'
 	);
 } else {
 	console.log(
-		'\nNext: the supplied transcript already has real punctuation — no editing needed. Run ingest:cut.'
+		'\nNext: restore sentence/clause punctuation (。、！？) in the "transcript" field — the chunk planner cuts on exactly those marks. See PROMPT.md.'
 	);
 }

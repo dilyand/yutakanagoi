@@ -40,9 +40,15 @@ interface TranscriptManifest {
 
 const manifest: TranscriptManifest = JSON.parse(readFileSync(transcriptPath, 'utf8'));
 
-if (manifest.transcriptSource === 'asr' && !/[。！？]/.test(manifest.transcript)) {
+// Source-independent: a *supplied* transcript is only trimmed and
+// similarity-checked in ingest:transcribe, never validated for
+// punctuation — it can arrive unpunctuated just as easily as raw ASR
+// output can, and hits exactly the same failure (one giant unplanned
+// chunk) if it does. This used to only check transcriptSource === 'asr',
+// letting an unpunctuated supplied transcript bypass the guard entirely.
+if (!/[。！？]/.test(manifest.transcript)) {
 	console.error(
-		'transcript.json has no sentence-final punctuation (。！？) — this looks like raw, unedited whisper output. Restore punctuation in the "transcript" field before cutting (see PROMPT.md); cutting an unpunctuated transcript produces one giant unplanned chunk at best.'
+		'transcript.json has no sentence-final punctuation (。！？). Restore punctuation in the "transcript" field before cutting (see PROMPT.md); cutting an unpunctuated transcript produces one giant unplanned chunk at best.'
 	);
 	process.exit(1);
 }
