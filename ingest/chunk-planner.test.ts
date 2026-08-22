@@ -3,6 +3,8 @@ import {
 	planChunks,
 	enforceMonotonicWindows,
 	jointBoundary,
+	findCandidates,
+	findBestSilence,
 	MAX_MS,
 	MIN_MS,
 	TARGET_MS,
@@ -299,6 +301,48 @@ describe('jointBoundary (code review regression)', () => {
 
 		expect(chunks).toHaveLength(2);
 		expect(chunks[0].startMs + chunks[0].durationMs).toBeLessThanOrEqual(chunks[1].startMs);
+	});
+});
+
+describe('findCandidates (code review regression)', () => {
+	it('advances a sentence-final boundary past a trailing closing quote, so the quote stays with the sentence it closes', () => {
+		// Without the fix, the 。 boundary lands right before 」, orphaning
+		// the closing quote into the start of the next chunk's transcript —
+		// one chunk ends with an unmatched 「, the next starts with a stray 」.
+		const text = '「こんにちは。」次に会いましょう。';
+		const candidates = findCandidates(text, new Set(['。', '！', '？']));
+		const boundaryChars = candidates.map((c) => Array.from(text.slice(0, c.charIndex)).join(''));
+		expect(boundaryChars).toEqual(['「こんにちは。」']);
+	});
+
+	it('advances past whitespace after a trailing closing quote too', () => {
+		const text = '「そうですね。」 それから帰りました。';
+		const candidates = findCandidates(text, new Set(['。', '！', '？']));
+		expect(Array.from(text.slice(0, candidates[0].charIndex)).join('')).toBe('「そうですね。」 ');
+	});
+
+	it('does not advance past an opening quote that starts the next sentence', () => {
+		// 文A。「文B」 — the 「 here belongs to the next sentence, not the one
+		// that just ended, so the boundary must stop right after the 。.
+		const text = '文A。「文B」';
+		const candidates = findCandidates(text, new Set(['。', '！', '？']));
+		expect(Array.from(text.slice(0, candidates[0].charIndex)).join('')).toBe('文A。');
+	});
+});
+
+describe('findBestSilence (code review regression)', () => {
+	it('rejects a window whose midpoint falls in range but whose full span extends outside it', () => {
+		// Midpoint (1450) is inside [1000, 1500], but the window itself runs
+		// to 1700 — past the requested range's own end.
+		const window: SilenceWindow = { startMs: 1200, endMs: 1700 };
+		const result = findBestSilence(1450, [window], 1000, 1500);
+		expect(result).toBeNull();
+	});
+
+	it('accepts a window whose full span lies within the range', () => {
+		const window: SilenceWindow = { startMs: 1200, endMs: 1400 };
+		const result = findBestSilence(1300, [window], 1000, 1500);
+		expect(result).toEqual(window);
 	});
 });
 

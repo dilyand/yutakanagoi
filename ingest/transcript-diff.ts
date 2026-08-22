@@ -29,21 +29,28 @@ function normalize(text: string): string {
 	return text.replace(/[\s。、！？「」『』・,.!?]/g, '');
 }
 
+/**
+ * Rolling two-row implementation — a full recording's transcript can run
+ * to several thousand characters, and the straightforward
+ * (a.length+1) x (b.length+1) matrix scales quadratically in memory, not
+ * just time. Distance only ever needs the previous row to compute the
+ * next one, so memory is linear in the shorter string (swapped to `b`).
+ */
 function levenshtein(a: string, b: string): number {
-	const rows = a.length + 1;
-	const cols = b.length + 1;
-	const dp: number[][] = Array.from({ length: rows }, () => new Array(cols).fill(0));
-	for (let i = 0; i < rows; i++) dp[i][0] = i;
-	for (let j = 0; j < cols; j++) dp[0][j] = j;
-	for (let i = 1; i < rows; i++) {
-		for (let j = 1; j < cols; j++) {
-			dp[i][j] =
+	if (a.length < b.length) [a, b] = [b, a];
+	let prevRow = Array.from({ length: b.length + 1 }, (_, j) => j);
+	for (let i = 1; i <= a.length; i++) {
+		const currRow = new Array<number>(b.length + 1);
+		currRow[0] = i;
+		for (let j = 1; j <= b.length; j++) {
+			currRow[j] =
 				a[i - 1] === b[j - 1]
-					? dp[i - 1][j - 1]
-					: 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+					? prevRow[j - 1]
+					: 1 + Math.min(prevRow[j], currRow[j - 1], prevRow[j - 1]);
 		}
+		prevRow = currRow;
 	}
-	return dp[a.length][b.length];
+	return prevRow[b.length];
 }
 
 function splitSentences(text: string): string[] {

@@ -201,6 +201,34 @@ if (existingRecording) {
 	console.log(
 		`\nPublished "${slug}" for ${username}: ${chunkRows.length} chunk(s) at chunking_version ${chunkingVersion}.`
 	);
+
+	// The old chunking_version's DB rows are already gone (the RPC deleted
+	// them), so nothing points at its Storage objects any more — safe to
+	// remove them now rather than letting every re-publish accumulate
+	// another orphaned version's worth of audio indefinitely. Best-effort:
+	// the DB swap already succeeded, so a cleanup failure here shouldn't
+	// fail the whole publish, just leave those objects for a later pass.
+	const oldVersionPrefix = `users/${userId}/${slug}/v${existingRecording.chunking_version}`;
+	const { data: oldObjects, error: listError } = await supabase.storage
+		.from('shadowing-audio')
+		.list(oldVersionPrefix);
+	if (listError) {
+		console.error(
+			`Could not list the previous chunking_version's storage objects to clean up: ${listError.message}`
+		);
+	} else if (oldObjects.length > 0) {
+		const oldPaths = oldObjects.map((o) => `${oldVersionPrefix}/${o.name}`);
+		const { error: removeError } = await supabase.storage.from('shadowing-audio').remove(oldPaths);
+		if (removeError) {
+			console.error(
+				`Could not remove the previous chunking_version's storage objects: ${removeError.message}`
+			);
+		} else {
+			console.log(
+				`Removed ${oldPaths.length} file(s) from the previous chunking_version (v${existingRecording.chunking_version}).`
+			);
+		}
+	}
 } else {
 	// No prior version to protect — a plain insert-then-insert is enough.
 	// If the chunk insert below fails, the orphaned empty recording row

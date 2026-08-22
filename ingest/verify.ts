@@ -259,15 +259,26 @@ export function verifyDistinct(finalAudioPaths: string[]): { ok: boolean; failur
 	return { ok: failures.length === 0, failures };
 }
 
-/** Check 5 (coverage) — run once across every planned chunk boundary in a recording. Catches dropped words: chunks must be monotonic, non-overlapping, and not leave large planned gaps. */
+/**
+ * Check 5 (coverage) — run once across every planned chunk boundary in a
+ * recording. Catches dropped words: chunks must be monotonic,
+ * non-overlapping, and not leave large planned gaps.
+ *
+ * Validates `chunks` in the exact order given — never sorted first. An
+ * earlier version sorted a copy before checking, which defeats the whole
+ * point of a monotonicity check: if the planner itself ever returned
+ * chunks out of order (the actual regression this check exists to catch),
+ * sorting would silently "fix" that for verification purposes while
+ * cut.ts still writes chunks.json's indices and transcripts in the
+ * original, wrong order.
+ */
 export function verifyCoverage(
 	chunks: { startMs: number; durationMs: number }[],
 	sourceDurationMs: number
 ): { ok: boolean; failures: string[] } {
 	const failures: string[] = [];
-	const sorted = [...chunks].sort((a, b) => a.startMs - b.startMs);
-	for (let i = 0; i < sorted.length; i++) {
-		const c = sorted[i];
+	for (let i = 0; i < chunks.length; i++) {
+		const c = chunks[i];
 		if (c.durationMs <= 0) failures.push(`chunk ${i} has non-positive duration`);
 		if (c.startMs < 0 || c.startMs + c.durationMs > sourceDurationMs + 1) {
 			failures.push(
@@ -275,7 +286,7 @@ export function verifyCoverage(
 			);
 		}
 		if (i > 0) {
-			const prev = sorted[i - 1];
+			const prev = chunks[i - 1];
 			const prevEnd = prev.startMs + prev.durationMs;
 			if (c.startMs < prevEnd - 1) {
 				failures.push(
@@ -288,14 +299,14 @@ export function verifyCoverage(
 			}
 		}
 	}
-	if (sorted.length > 0) {
-		const first = sorted[0];
+	if (chunks.length > 0) {
+		const first = chunks[0];
 		if (first.startMs > MAX_GAP_MS) {
 			failures.push(
 				`recording starts ${first.startMs.toFixed(0)}ms before the first chunk — gap exceeds ${MAX_GAP_MS}ms, possible dropped audio`
 			);
 		}
-		const last = sorted[sorted.length - 1];
+		const last = chunks[chunks.length - 1];
 		const lastEnd = last.startMs + last.durationMs;
 		const trailingGapMs = sourceDurationMs - lastEnd;
 		if (trailingGapMs > MAX_GAP_MS) {

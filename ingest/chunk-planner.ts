@@ -73,6 +73,7 @@ export const TAIL_MS = 200;
 const SENTENCE_FINAL_MARKS = new Set(['。', '！', '？']);
 const CLAUSE_COMMA_MARKS = new Set(['、']);
 const BRACKET_MARKS = new Set(['「', '」', '『', '』']);
+const CLOSING_BRACKET_MARKS = new Set(['」', '』']);
 
 // Forces a merge across the boundary regardless of whether a real pause
 // exists there — confirmed necessary in testing: whisper's own
@@ -95,13 +96,31 @@ interface CandidateBoundary {
 	charIndex: number; // index into the source text, right after the mark
 }
 
-/** Finds every occurrence of a mark set, as an index right after the mark. A mark as the very last character produces no boundary — there's nothing after it to cut off. */
-function findCandidates(text: string, marks: Set<string>): CandidateBoundary[] {
+/**
+ * Finds every occurrence of a mark set, as an index right after the mark —
+ * advanced past any immediately-following closing bracket (」/』) and
+ * whitespace first, so a boundary right before a closing quote (e.g. the
+ * 。 in 「こんにちは。」次に…) doesn't split the quote mark itself into the
+ * next chunk, leaving one chunk's hint text with an unmatched opening
+ * quote and the next's with a stray closing one. A mark as the very last
+ * character (after that advance) produces no boundary — there's nothing
+ * after it to cut off.
+ */
+export function findCandidates(text: string, marks: Set<string>): CandidateBoundary[] {
 	const boundaries: CandidateBoundary[] = [];
+	const chars = Array.from(text);
 	let idx = 0;
-	for (const ch of text) {
+	for (let i = 0; i < chars.length; i++) {
+		const ch = chars[i];
 		idx += ch.length;
-		if (marks.has(ch) && idx < text.length) boundaries.push({ charIndex: idx });
+		if (!marks.has(ch)) continue;
+		let boundaryIdx = idx;
+		let j = i + 1;
+		while (j < chars.length && (CLOSING_BRACKET_MARKS.has(chars[j]) || /\s/.test(chars[j]))) {
+			boundaryIdx += chars[j].length;
+			j++;
+		}
+		if (boundaryIdx < text.length) boundaries.push({ charIndex: boundaryIdx });
 	}
 	return boundaries;
 }
@@ -157,8 +176,21 @@ function estimateTimeMs(
 	return asrSpine[asrIndex].timeMs;
 }
 
-/** Longest silence window whose midpoint falls within the search margin of expectedMs and within [rangeStartMs, rangeEndMs], or null if none qualifies. */
-function findBestSilence(
+/**
+ * Longest silence window whose midpoint falls within the search margin of
+ * expectedMs and whose FULL span — not just its midpoint — lies within
+ * [rangeStartMs, rangeEndMs], or null if none qualifies.
+ *
+ * A midpoint-only containment check let a window straddle the boundary:
+ * for splitAtCommas, rangeStartMs/rangeEndMs is the fragment being split
+ * (not the whole recording), so a window whose midpoint fell just inside
+ * but whose startMs/endMs extended past the fragment's own edge could
+ * still get selected — producing a piece whose boundary doesn't
+ * correspond to silence actually contained within that fragment,
+ * potentially a negative or near-zero piece that Math.max(..., 1) later
+ * masks as a tiny "valid" chunk.
+ */
+export function findBestSilence(
 	expectedMs: number,
 	silences: SilenceWindow[],
 	rangeStartMs: number,
@@ -166,8 +198,8 @@ function findBestSilence(
 ): SilenceWindow | null {
 	let best: SilenceWindow | null = null;
 	for (const w of silences) {
+		if (w.startMs < rangeStartMs || w.endMs > rangeEndMs) continue;
 		const mid = (w.startMs + w.endMs) / 2;
-		if (mid < rangeStartMs || mid > rangeEndMs) continue;
 		if (Math.abs(mid - expectedMs) > BOUNDARY_SEARCH_MARGIN_MS) continue;
 		if (!best || w.endMs - w.startMs > best.endMs - best.startMs) best = w;
 	}
