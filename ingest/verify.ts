@@ -1,7 +1,11 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import {
 	contentHashOfFile,
 	crossCorrelate,
 	decodeF32,
+	encodeWithoutFade,
 	probeDurationMs,
 	rmsDbAt,
 	SAMPLE_RATE
@@ -35,10 +39,10 @@ export interface VerifyChunkResult {
 		correlationLagMs: number;
 		correlation: number;
 		attackRmsDb: number;
-		fadeInEarlyRmsDb: number;
-		fadeInLateRmsDb: number;
-		fadeOutEarlyRmsDb: number;
-		fadeOutLateRmsDb: number;
+		fadeInFinalRmsDb: number;
+		fadeInControlRmsDb: number;
+		fadeOutFinalRmsDb: number;
+		fadeOutControlRmsDb: number;
 	};
 }
 
@@ -51,45 +55,54 @@ export interface VerifyChunkResult {
 const MAX_LAG_MS = 250;
 const MIN_CORRELATION = 0.9;
 const QUIET_THRESHOLD_DB = -35;
-// How much the amplitude must rise (fade-in) or fall (fade-out) across the
-// fade window itself to count as a real ramp. Deliberately measured WITHIN
-// the fade window (first probe vs. last probe of the same fadeMs span),
-// not edge-vs-a-separate-interior-window — an edge-vs-interior comparison
-// was tried first and missed a real no-fade negative control: chunk
-// starts/ends already sit inside chunk-planner's pre-attack/tail quiet
-// buffer (see PRE_ATTACK_MS/TAIL_MS in chunk-planner.ts), so the fade edge
-// can already read quieter than the interior purely from where the cut
-// landed, with or without an actual fade. Comparing early-vs-late *inside*
-// the fade window instead asks the right question — did amplitude change
-// across this specific span — independent of how quiet the surrounding
-// audio already was.
-// Honest limitation, found empirically 2026-08-16 via a deliberate
-// negative control (re-encoding a real chunk's pre-fade wav straight to
-// m4a with no afade at all, then running this check against it): at a cut
-// point PRE_ATTACK_MS/TAIL_MS successfully landed in genuine near-silence
-// — which is the common case, since that's the whole point of those
-// buffers — a real fade's effect on already-very-quiet content is often
-// smaller than AAC encoding noise, at every probe window size tried (1ms
-// through 10ms). The negative control's fade-OUT was reliably caught; its
-// fade-IN was not, at a boundary quiet enough that faded and unfaded read
-// within ~1dB of each other. This check is kept as a best-effort signal —
-// it does catch a skipped fade at a louder boundary — but the reliable
-// catch for "fades silently didn't apply" is verifyDistinct below
-// (content-hash comparison), which is what caught the real historical bug
-// in the first place (a chunk that turned out byte-identical to a
-// no-fade test file).
+// How much quieter the finished (faded) chunk must read than a same-content
+// negative control — the identical trim, re-encoded with no afade at all
+// (audio-tools.ts's encodeWithoutFade) — at the same instant, to count as a
+// real fade.
+//
+// An earlier version of this check compared the fade window's own early
+// probe against its late probe, entirely within the finished file. Found
+// 2026-08-22 (code review) to be unsound in general, not just at quiet
+// boundaries: it can pass even when afade silently never ran, as long as
+// the underlying speech happens to have a naturally decaying envelope over
+// that span — exactly the kind of content a fade window is often placed
+// over. verifyDistinct's content-hash comparison below only catches a fade
+// that produced a byte-identical duplicate of another chunk; it says
+// nothing about any individual chunk's own fade. Comparing against a real
+// per-chunk negative control removes both gaps: at the same instant, a
+// genuinely faded file must read quieter than an unfaded rendering of the
+// exact same audio, regardless of what the underlying content does on its
+// own, and independent of any other chunk.
 const RAMP_MARGIN_DB = 3;
-// Below this, neither probe has real signal to check a ramp against at
-// all — found 2026-08-16 running this against a real recording whose
-// first chunk starts several seconds into genuine leading silence (real
-// dead air before speech, not a fade artifact): both probes read the same
-// silence floor, which no fade, working or not, can produce a measurable
-// rise out of. Same failure mode at a recording's trailing silence, for
-// the last chunk's fade-out. Only the first/last chunk's outer edge can
-// hit this — chunk-planner never applies the pre-attack/tail adjustment
-// there, so it's exactly the boundary that can legitimately sit in
-// extended real silence.
-const NO_SIGNAL_FLOOR_DB = -90;
+// Below this, the control has no real signal to attenuate in the first
+// place — a fade's effect on already-very-quiet content is often smaller
+// than AAC encoding noise, at every probe window size tried (1ms through
+// 10ms), so no comparison, self- or control-based, can reliably see an
+// attenuation that small. This is the expected common case, not an edge
+// case: chunk-planner's PRE_ATTACK_MS/TAIL_MS deliberately land every cut
+// in a quiet zone, so most real chunks' fade edges sit here.
+//
+// Re-verified 2026-08-22 against all 14 chunks from the three real
+// recordings this pipeline has actually ingested, after replacing the
+// old within-file ramp check with the negative-control comparison above:
+// every edge that read below -65.7dB on the unfaded control showed no
+// reliably measurable difference from its faded counterpart (both readings
+// landing within ~2dB of each other, encoding-noise territory) — even
+// though every one of these chunks went through the same unconditional
+// applyFades() call as every other chunk and has no reason to be missing
+// its fade. -90 (carried over from the old check, which measured a
+// different thing) was too permissive for this comparison and produced
+// false failures on real, correctly-faded content; -60 clears every edge
+// observed in that run with margin.
+const NO_SIGNAL_FLOOR_DB = -60;
+// Largest gap between (or before the first / after the last) planned chunk
+// that still counts as an ordinary pause rather than a dropped region.
+// chunk-planner doesn't merge across long, deliberate pauses, so a real
+// gap between two correctly-planned chunks can be a second or more — the
+// largest observed on real, already-verified data is ~1.65s
+// (hellotalk-260812-0944-2-chunk3, chunk 1→2). Set with real margin above
+// that; a dropped word or sentence is a much larger hole than this.
+const MAX_GAP_MS = 3000;
 
 function decodeChunkAndSourceRegion(
 	preFadeWav: string,
@@ -134,39 +147,50 @@ export function verifyChunk(input: VerifyChunkInput): VerifyChunkResult {
 		);
 	}
 
-	// 3. Fades applied — amplitude must measurably rise (fade-in) or fall
-	// (fade-out) across the fade window itself. Catches the silently-
-	// unapplied-fade bug (a chunk that turned out byte-identical to a
-	// no-fade test file).
+	// 3. Fades applied — the finished (faded) chunk must read measurably
+	// quieter than a same-content negative control at the most-attenuated
+	// point of each fade (t=0 for fade-in, the last probeMs for fade-out).
+	// See RAMP_MARGIN_DB's comment above for why this compares against a
+	// real control instead of checking for a rise/fall within the finished
+	// file alone.
 	const finalDurationMs = probeDurationMs(input.finalAudioPath);
 	const probeMs = Math.min(10, Math.max(2, Math.floor(input.fadeMs / 3)));
 
-	const fadeInEarlyRmsDb = rmsDbAt(input.finalAudioPath, 0, probeMs);
-	const fadeInLateRmsDb = rmsDbAt(
-		input.finalAudioPath,
-		Math.max(0, input.fadeMs - probeMs),
-		probeMs
-	);
-	if (fadeInLateRmsDb > NO_SIGNAL_FLOOR_DB && fadeInLateRmsDb < fadeInEarlyRmsDb + RAMP_MARGIN_DB) {
-		failures.push(
-			`fade-in not applied: start of ramp ${fadeInEarlyRmsDb.toFixed(1)}dB, end of ramp ${fadeInLateRmsDb.toFixed(1)}dB — no measurable rise`
-		);
-	}
+	const controlDir = mkdtempSync(path.join(tmpdir(), 'shadowing-fade-control-'));
+	let fadeInFinalRmsDb: number;
+	let fadeInControlRmsDb: number;
+	let fadeOutFinalRmsDb: number;
+	let fadeOutControlRmsDb: number;
+	try {
+		const controlPath = path.join(controlDir, 'control.m4a');
+		encodeWithoutFade(input.preFadeWav, controlPath);
+		const controlDurationMs = probeDurationMs(controlPath);
 
-	const fadeOutStartMs = Math.max(0, finalDurationMs - input.fadeMs);
-	const fadeOutEarlyRmsDb = rmsDbAt(input.finalAudioPath, fadeOutStartMs, probeMs);
-	const fadeOutLateRmsDb = rmsDbAt(
-		input.finalAudioPath,
-		Math.max(fadeOutStartMs, finalDurationMs - probeMs),
-		probeMs
-	);
-	if (
-		fadeOutEarlyRmsDb > NO_SIGNAL_FLOOR_DB &&
-		fadeOutLateRmsDb > fadeOutEarlyRmsDb - RAMP_MARGIN_DB
-	) {
-		failures.push(
-			`fade-out not applied: start of ramp ${fadeOutEarlyRmsDb.toFixed(1)}dB, end of ramp ${fadeOutLateRmsDb.toFixed(1)}dB — no measurable fall`
-		);
+		fadeInFinalRmsDb = rmsDbAt(input.finalAudioPath, 0, probeMs);
+		fadeInControlRmsDb = rmsDbAt(controlPath, 0, probeMs);
+		if (
+			fadeInControlRmsDb > NO_SIGNAL_FLOOR_DB &&
+			fadeInFinalRmsDb > fadeInControlRmsDb - RAMP_MARGIN_DB
+		) {
+			failures.push(
+				`fade-in not applied: faded ${fadeInFinalRmsDb.toFixed(1)}dB vs. unfaded control ${fadeInControlRmsDb.toFixed(1)}dB — no measurable attenuation`
+			);
+		}
+
+		const fadeOutStartMs = Math.max(0, finalDurationMs - probeMs);
+		const controlFadeOutStartMs = Math.max(0, controlDurationMs - probeMs);
+		fadeOutFinalRmsDb = rmsDbAt(input.finalAudioPath, fadeOutStartMs, probeMs);
+		fadeOutControlRmsDb = rmsDbAt(controlPath, controlFadeOutStartMs, probeMs);
+		if (
+			fadeOutControlRmsDb > NO_SIGNAL_FLOOR_DB &&
+			fadeOutFinalRmsDb > fadeOutControlRmsDb - RAMP_MARGIN_DB
+		) {
+			failures.push(
+				`fade-out not applied: faded ${fadeOutFinalRmsDb.toFixed(1)}dB vs. unfaded control ${fadeOutControlRmsDb.toFixed(1)}dB — no measurable attenuation`
+			);
+		}
+	} finally {
+		rmSync(controlDir, { recursive: true, force: true });
 	}
 
 	return {
@@ -176,10 +200,10 @@ export function verifyChunk(input: VerifyChunkInput): VerifyChunkResult {
 			correlationLagMs: lagMs,
 			correlation,
 			attackRmsDb,
-			fadeInEarlyRmsDb,
-			fadeInLateRmsDb,
-			fadeOutEarlyRmsDb,
-			fadeOutLateRmsDb
+			fadeInFinalRmsDb,
+			fadeInControlRmsDb,
+			fadeOutFinalRmsDb,
+			fadeOutControlRmsDb
 		}
 	};
 }
@@ -222,7 +246,27 @@ export function verifyCoverage(
 				failures.push(
 					`chunk ${i} starts at ${c.startMs}, before chunk ${i - 1} ends at ${prevEnd} — overlap`
 				);
+			} else if (c.startMs - prevEnd > MAX_GAP_MS) {
+				failures.push(
+					`chunk ${i} starts at ${c.startMs}, ${(c.startMs - prevEnd).toFixed(0)}ms after chunk ${i - 1} ends at ${prevEnd} — gap exceeds ${MAX_GAP_MS}ms, possible dropped audio`
+				);
 			}
+		}
+	}
+	if (sorted.length > 0) {
+		const first = sorted[0];
+		if (first.startMs > MAX_GAP_MS) {
+			failures.push(
+				`recording starts ${first.startMs.toFixed(0)}ms before the first chunk — gap exceeds ${MAX_GAP_MS}ms, possible dropped audio`
+			);
+		}
+		const last = sorted[sorted.length - 1];
+		const lastEnd = last.startMs + last.durationMs;
+		const trailingGapMs = sourceDurationMs - lastEnd;
+		if (trailingGapMs > MAX_GAP_MS) {
+			failures.push(
+				`recording continues ${trailingGapMs.toFixed(0)}ms after the last chunk ends at ${lastEnd} — gap exceeds ${MAX_GAP_MS}ms, possible dropped audio`
+			);
 		}
 	}
 	return { ok: failures.length === 0, failures };

@@ -121,6 +121,42 @@ if (dryRun) {
 	process.exit(0);
 }
 
+// Upload every new-version file BEFORE touching any DB row. On a
+// re-publish this matters: the new chunking_version's storage paths never
+// collide with the currently-live version's (the version number is in the
+// path), so nothing here can clobber what's currently served. Staging the
+// files first means a Storage failure (network, a bad file) leaves the
+// previous version's recording and chunk rows completely untouched — the
+// DB swap below only runs once every new file is safely uploaded.
+console.log(`Uploading source audio to ${sourceStoragePath}...`);
+const sourceBytes = readFileSync(manifest.sourceAudioPath);
+const { error: sourceUploadError } = await supabase.storage
+	.from('shadowing-audio')
+	.upload(sourceStoragePath, sourceBytes, { contentType: sourceContentType, upsert: true });
+if (sourceUploadError) {
+	console.error('Failed to upload source audio:', sourceUploadError.message);
+	process.exit(1);
+}
+
+const chunkUploads: { chunk: ChunkManifestEntry; storagePath: string }[] = [];
+for (const chunk of manifest.chunks) {
+	const n = String(chunk.index).padStart(2, '0');
+	const storagePath = `users/${userId}/${slug}/v${chunkingVersion}/${chunk.audioFile}`;
+	console.log(`Uploading chunk ${n} to ${storagePath}...`);
+	const bytes = readFileSync(path.join(workDir, chunk.audioFile));
+	const { error: uploadError } = await supabase.storage
+		.from('shadowing-audio')
+		.upload(storagePath, bytes, { contentType: 'audio/mp4', upsert: true });
+	if (uploadError) {
+		console.error(`Failed to upload ${chunk.audioFile}:`, uploadError.message);
+		process.exit(1);
+	}
+	chunkUploads.push({ chunk, storagePath });
+}
+
+// Now swap the DB rows — the only remaining step, and the smallest
+// possible window between "old version still fully live" and "new version
+// fully live," now that every file it references already exists.
 let recordingId: number;
 if (existingRecording) {
 	recordingId = existingRecording.id;
@@ -172,51 +208,32 @@ if (existingRecording) {
 	recordingId = inserted.id;
 }
 
-console.log(`Uploading source audio to ${sourceStoragePath}...`);
-const sourceBytes = readFileSync(manifest.sourceAudioPath);
-const { error: sourceUploadError } = await supabase.storage
-	.from('shadowing-audio')
-	.upload(sourceStoragePath, sourceBytes, { contentType: sourceContentType, upsert: true });
-if (sourceUploadError) {
-	console.error('Failed to upload source audio:', sourceUploadError.message);
-	process.exit(1);
-}
-
-const chunkRows = [];
-for (const chunk of manifest.chunks) {
-	const n = String(chunk.index).padStart(2, '0');
-	const storagePath = `users/${userId}/${slug}/v${chunkingVersion}/${chunk.audioFile}`;
-	console.log(`Uploading chunk ${n} to ${storagePath}...`);
-	const bytes = readFileSync(path.join(workDir, chunk.audioFile));
-	const { error: uploadError } = await supabase.storage
-		.from('shadowing-audio')
-		.upload(storagePath, bytes, { contentType: 'audio/mp4', upsert: true });
-	if (uploadError) {
-		console.error(`Failed to upload ${chunk.audioFile}:`, uploadError.message);
-		process.exit(1);
-	}
-	chunkRows.push({
-		recording_id: recordingId,
-		user_id: userId,
-		chunk_index: chunk.index,
-		chunk_id: `${slug}:${chunkingVersion}:${n}`,
-		audio_path: storagePath,
-		// start_ms/duration_ms are integer columns; chunk-planner's output
-		// carries fractional ms (ffmpeg's silencedetect reports fractional
-		// seconds) — round at this DB boundary rather than earlier, since
-		// fractional ms don't hurt any of the intermediate ffmpeg calls.
-		start_ms: Math.round(chunk.startMs),
-		duration_ms: Math.round(chunk.durationMs),
-		transcript: chunk.transcript,
-		kana: chunk.kana,
-		translation: chunk.translation,
-		verified_at: new Date().toISOString()
-	});
-}
+const chunkRows = chunkUploads.map(({ chunk, storagePath }) => ({
+	recording_id: recordingId,
+	user_id: userId,
+	chunk_index: chunk.index,
+	chunk_id: `${slug}:${chunkingVersion}:${String(chunk.index).padStart(2, '0')}`,
+	audio_path: storagePath,
+	// start_ms/duration_ms are integer columns; chunk-planner's output
+	// carries fractional ms (ffmpeg's silencedetect reports fractional
+	// seconds) — round at this DB boundary rather than earlier, since
+	// fractional ms don't hurt any of the intermediate ffmpeg calls.
+	start_ms: Math.round(chunk.startMs),
+	duration_ms: Math.round(chunk.durationMs),
+	transcript: chunk.transcript,
+	kana: chunk.kana,
+	translation: chunk.translation,
+	verified_at: new Date().toISOString()
+}));
 
 const { error: chunksInsertError } = await supabase.from('shadowing_chunks').insert(chunkRows);
 if (chunksInsertError) {
 	console.error('Failed to insert chunk rows:', chunksInsertError.message);
+	if (existingRecording) {
+		console.error(
+			`The previous chunking_version's chunk rows were already cleared. Re-run "npm run ingest:publish -- --slug ${slug} --user ${username}" to retry — all new-version audio is already uploaded, so the retry only needs to redo this insert.`
+		);
+	}
 	process.exit(1);
 }
 

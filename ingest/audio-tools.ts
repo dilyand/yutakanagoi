@@ -130,6 +130,31 @@ export function applyFades(inWav: string, outM4a: string, fadeMs: number): void 
 	]);
 }
 
+/**
+ * Same trim, same encoder settings as applyFades, but with no `-af` filter
+ * at all — a same-content negative control for verify.ts's fade-applied
+ * check. Comparing a finished chunk against this (rather than checking for
+ * a rise/fall within the finished chunk alone) is what makes that check a
+ * real per-chunk verification instead of one that can pass merely because
+ * the underlying speech happens to have a naturally decaying envelope at
+ * the boundary.
+ */
+export function encodeWithoutFade(inWav: string, outM4a: string): void {
+	run('ffmpeg', [
+		'-y',
+		'-hide_banner',
+		'-loglevel',
+		'error',
+		'-i',
+		inWav,
+		'-c:a',
+		'aac',
+		'-b:a',
+		'128k',
+		outM4a
+	]);
+}
+
 // -30dB / d=0.15: validated 2026-08-16 against all three real recordings
 // from the feasibility work (test-aya, hellotalk-260812-0944-{1,2}) —
 // every one of the 13 chunks these settings' silence windows produced

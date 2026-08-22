@@ -94,10 +94,11 @@ constraints (don't duplicate that detail here):
   progress per `(user_id, chunk_id)` in `shadowing_state`, sessions in
   `shadowing_sessions`/`shadowing_session_attempts`. `chunk_id`
   (`"<slug>:<chunking_version>:<NN>"`) is opaque to `drill-algorithm.ts`
-  exactly the way conjugation's `cell_id` already is, so
-  `selectDrillWords`/`applyOutcome` are reused unmodified. Content is
-  populated entirely by `ingest/`, a local command-line tool that is
-  **not part of this app** — see "The `ingest/` tool" below — never by
+  exactly the way conjugation's `cell_id` already is, so `selectDrillWords`
+  is reused unmodified (`applyOutcome` is not — shadowing's own box
+  transition rule is `applyShadowingOutcome`, see `rating.ts` below).
+  Content is populated entirely by `ingest/`, a local command-line tool that
+  is **not part of this app** — see "The `ingest/` tool" below — never by
   anything under `src/`. No speech recognition or grading: the Leitner
   rating is derived from how far up the in-app hint ladder the user
   climbed before advancing, not a correct/incorrect answer — see

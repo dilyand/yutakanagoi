@@ -48,6 +48,10 @@
 	let hasPlayedOnce = $state(false);
 	let playbackRate = $state(1);
 	let flagNote = $state('');
+	// Guards next()/confirmFlag()/cancelSession() against a double-click
+	// firing a second request (and, on the last chunk, a second
+	// session/complete write) while the first is still in flight.
+	let isSubmitting = $state(false);
 
 	let chunkStateUpdates: WordState[] = [];
 	let attempts: ShadowingSessionAttempt[] = [];
@@ -75,6 +79,12 @@
 		hasPlayedOnce = false;
 		playbackRate = 1;
 		flagNote = '';
+		// The audio element is reused across chunks (only its src changes),
+		// so its playbackRate is a live DOM property that outlives this
+		// reset unless cleared explicitly — otherwise a 0.75x chunk leaves
+		// the next chunk playing at 0.75x too, despite the toggle button
+		// showing inactive.
+		if (audioEl) audioEl.playbackRate = 1;
 	}
 
 	function prefetchNext() {
@@ -171,9 +181,14 @@
 	}
 
 	async function next() {
-		if (!currentItem) return;
-		recordFinalOutcome(currentItem);
-		await advance();
+		if (!currentItem || !hasPlayedOnce || isSubmitting) return;
+		isSubmitting = true;
+		try {
+			recordFinalOutcome(currentItem);
+			await advance();
+		} finally {
+			isSubmitting = false;
+		}
 	}
 
 	function startFlag() {
@@ -189,7 +204,8 @@
 	// update for a chunk the user says is broken, and it drops out of
 	// future session/start rotation server-side.
 	async function confirmFlag() {
-		if (!currentItem) return;
+		if (!currentItem || isSubmitting) return;
+		isSubmitting = true;
 		errorMessage = '';
 		try {
 			await apiPost('/api/shadowing/chunks/flag', {
@@ -199,9 +215,11 @@
 		} catch (e) {
 			errorMessage = e instanceof Error ? e.message : String(e);
 			phase = 'listening';
+			isSubmitting = false;
 			return;
 		}
 		await advance();
+		isSubmitting = false;
 	}
 
 	async function finishSession() {
@@ -229,8 +247,14 @@
 	// recorded in chunkStateUpdates/attempts, so this just persists what's
 	// been done and stops before drilling the remaining chunks.
 	async function cancelSession() {
+		if (isSubmitting) return;
+		isSubmitting = true;
 		wasCancelled = true;
-		await finishSession();
+		try {
+			await finishSession();
+		} finally {
+			isSubmitting = false;
+		}
 	}
 </script>
 
@@ -250,7 +274,7 @@
 			</button>
 			<div class="shadowing-secondary-controls">
 				<button class:active={playbackRate === 0.75} onclick={toggleSpeed}>0.75×</button>
-				<button onclick={startFlag} disabled={phase === 'flagging'}>⚑ Flag</button>
+				<button onclick={startFlag} disabled={phase === 'flagging' || isSubmitting}>⚑ Flag</button>
 			</div>
 		</div>
 
@@ -287,19 +311,28 @@
 	<div class="interaction">
 		<div class="interaction__actions">
 			{#if phase === 'flagging'}
-				<div class="field">
+				<label class="field">
 					<span>Note (optional):</span>
 					<input
 						type="text"
 						bind:value={flagNote}
+						disabled={isSubmitting}
 						onkeydown={(e) => e.key === 'Enter' && confirmFlag()}
 					/>
-				</div>
-				<button class="button-primary" onclick={confirmFlag}>Flag and continue</button>
-				<p class="cancel"><button onclick={cancelFlag}>Cancel</button></p>
+				</label>
+				<button class="button-primary" onclick={confirmFlag} disabled={isSubmitting}
+					>Flag and continue</button
+				>
+				<p class="cancel">
+					<button onclick={cancelFlag} disabled={isSubmitting}>Cancel</button>
+				</p>
 			{:else}
-				<button class="button-primary" onclick={next}>Next</button>
-				<p class="cancel"><button onclick={cancelSession}>Cancel session</button></p>
+				<button class="button-primary" onclick={next} disabled={!hasPlayedOnce || isSubmitting}
+					>Next</button
+				>
+				<p class="cancel">
+					<button onclick={cancelSession} disabled={isSubmitting}>Cancel session</button>
+				</p>
 			{/if}
 		</div>
 	</div>

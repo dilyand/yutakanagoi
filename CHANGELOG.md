@@ -24,9 +24,11 @@ rather than generic listening material. Ships as two separate pieces:
   together with the mechanical commands.
 - The drill itself — per-user chunk library (like vocab's word lists, not
   shared like conjugation's registry), reusing `drill-algorithm.ts`'s
-  `selectDrillWords`/`applyOutcome` machinery unmodified by treating
-  `chunk_id` as an opaque word, same pattern conjugation's `cell_id`
-  already established. No rating question to answer — the Leitner rating
+  `selectDrillWords` unmodified by treating `chunk_id` as an opaque word,
+  same pattern conjugation's `cell_id` already established (box transitions
+  are shadowing's own `applyShadowingOutcome`, not the shared binary
+  `applyOutcome` — it only reuses `drill-algorithm.ts`'s `nextBox4Streak`).
+  No rating question to answer — the Leitner rating
   is derived from how far up the in-app hint ladder (Japanese text → kana
   → English) the user climbed before advancing (`src/lib/shadowing/rating.ts`),
   since there's no correct/incorrect signal to grade shadowing against.
