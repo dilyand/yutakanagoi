@@ -6,18 +6,29 @@
  * direction alone isn't reliable; only comparing against an independent
  * transcription is.
  *
- * Two independent triggers decide `diverged`: a whole-text normalized
+ * Three independent triggers decide `diverged`: a whole-text normalized
  * similarity score (robust whether or not the ASR side has punctuation,
- * which it often doesn't — see transcribe.ts), and any single sentence
- * with no good match anywhere in the ASR text. The whole-text score alone
- * isn't enough on a long recording — one fully invented sentence only
- * moves the aggregate score by a small fraction of the total character
- * count, so it can hide well above DIVERGENCE_THRESHOLD even though it's
- * exactly the kind of localized hallucination this gate exists to catch.
- * Per-sentence matching is a best-effort approximation, not true
- * alignment: each of the supplied transcript's own sentences is checked
- * against every same-length window of the ASR text for the best fuzzy
- * match. Both triggers share the same --accept-transcript override.
+ * which it often doesn't — see transcribe.ts); any supplied sentence with
+ * no good match anywhere in the ASR text (a clause the human transcript
+ * invented); and any ASR segment with no good match anywhere in the
+ * supplied text (a clause Whisper invented — the "or vice versa" case).
+ * The whole-text score alone isn't enough on a long recording — one fully
+ * invented clause, in either direction, only moves the aggregate score by
+ * a small fraction of the total character count, so it can hide well
+ * above DIVERGENCE_THRESHOLD even though it's exactly the kind of
+ * localized hallucination this gate exists to catch.
+ *
+ * The two localized checks are asymmetric by necessity, not oversight:
+ * the supplied-side check splits on sentence-final punctuation (the
+ * supplied transcript is expected to have it), while the ASR-side check
+ * uses whisper's own segment boundaries instead of splitting asrText on
+ * punctuation — raw ASR output routinely has none at all (see
+ * transcribe.ts), so a punctuation split there would degrade to one giant
+ * "sentence" spanning the whole recording, which can't localize anything.
+ * Both checks are a best-effort approximation, not true alignment: each
+ * span on one side is checked against every same-length window of the
+ * other side's text for the best fuzzy match. All three triggers share
+ * the same --accept-transcript override.
  */
 
 const DIVERGENCE_THRESHOLD = 0.75;
@@ -27,6 +38,8 @@ export interface TranscriptDiffReport {
 	overallSimilarity: number;
 	/** Supplied-transcript sentences with no good match anywhere in the ASR text. */
 	divergentSentences: string[];
+	/** ASR segments with no good match anywhere in the supplied text. */
+	asrOnlySpans: string[];
 	diverged: boolean;
 }
 
@@ -59,8 +72,13 @@ function levenshtein(a: string, b: string): number {
 }
 
 function splitSentences(text: string): string[] {
+	// Both full-width (。！？) and ASCII (.!?) sentence-final marks — a
+	// supplied transcript using ordinary periods otherwise splits into one
+	// giant "sentence" spanning the whole text, which degrades the
+	// localized-divergence check back down to an aggregate comparison (the
+	// same failure mode this per-sentence check exists to catch).
 	return text
-		.split(/(?<=[。！？])/)
+		.split(/(?<=[。！？.!?])/)
 		.map((s) => s.trim())
 		.filter(Boolean);
 }
@@ -81,7 +99,18 @@ function bestSubstringSimilarity(needle: string, haystack: string): number {
 	return best;
 }
 
-export function compareTranscripts(supplied: string, asrText: string): TranscriptDiffReport {
+/**
+ * `asrSegments` are whisper's own segment texts (see transcribe.ts's
+ * WhisperSegment) — optional so a caller with only plain ASR text still
+ * gets the whole-text and supplied-sentence checks, just not the
+ * ASR-only-span one. transcribe.ts, the one real caller, always has
+ * segments available and passes them.
+ */
+export function compareTranscripts(
+	supplied: string,
+	asrText: string,
+	asrSegments: string[] = []
+): TranscriptDiffReport {
 	const normalizedSupplied = normalize(supplied);
 	const normalizedAsr = normalize(asrText);
 	const overallSimilarity =
@@ -97,9 +126,21 @@ export function compareTranscripts(supplied: string, asrText: string): Transcrip
 		if (sim < SENTENCE_MATCH_THRESHOLD) divergentSentences.push(sentence);
 	}
 
+	const asrOnlySpans: string[] = [];
+	for (const segment of asrSegments) {
+		const normalizedSegment = normalize(segment);
+		if (normalizedSegment.length === 0) continue;
+		const sim = bestSubstringSimilarity(normalizedSegment, normalizedSupplied);
+		if (sim < SENTENCE_MATCH_THRESHOLD) asrOnlySpans.push(segment);
+	}
+
 	return {
 		overallSimilarity,
 		divergentSentences,
-		diverged: overallSimilarity < DIVERGENCE_THRESHOLD || divergentSentences.length > 0
+		asrOnlySpans,
+		diverged:
+			overallSimilarity < DIVERGENCE_THRESHOLD ||
+			divergentSentences.length > 0 ||
+			asrOnlySpans.length > 0
 	};
 }

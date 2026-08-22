@@ -3,6 +3,7 @@ import {
 	mkdirSync,
 	readFileSync,
 	readdirSync,
+	renameSync,
 	rmSync,
 	writeFileSync,
 	copyFileSync
@@ -74,15 +75,27 @@ mkdirSync(workDir, { recursive: true });
 
 const sourceExt = path.extname(audioPath) || '.m4a';
 const sourceOriginalPath = path.join(workDir, `source${sourceExt}`);
-copyFileSync(audioPath, sourceOriginalPath);
-
 const sourceWavPath = path.join(workDir, 'source.wav');
+
+// Staged under temp names, not the final source.<ext>/source.wav, until
+// every fallible step below (conversion, whisper, the divergence gate)
+// has succeeded — same reasoning, and same commit point, as the stale
+// cut-output invalidation further down. Without this staging, a
+// same-extension re-transcribe that later aborts (a bad audio file, a
+// whisper crash, a genuine divergence) had already overwritten the
+// retained source, even though the retained chunks.json/transcript is
+// kept around specifically to still be valid — leaving them pointing at
+// audio that no longer matches what they were cut from.
+const tempSourcePath = path.join(workDir, `.tmp-source${sourceExt}`);
+const tempWavPath = path.join(workDir, '.tmp-source.wav');
+copyFileSync(audioPath, tempSourcePath);
+
 console.log(`Converting to analysis wav...`);
-toAnalysisWav(sourceOriginalPath, sourceWavPath);
-const durationMs = probeDurationMs(sourceWavPath);
+toAnalysisWav(tempSourcePath, tempWavPath);
+const durationMs = probeDurationMs(tempWavPath);
 
 console.log('Transcribing with whisper (this can take a minute or two)...');
-const { text: asrText, segments } = transcribeWav(sourceWavPath);
+const { text: asrText, segments } = transcribeWav(tempWavPath);
 
 let transcript: string;
 let transcriptSource: 'supplied' | 'asr';
@@ -93,13 +106,21 @@ if (suppliedTranscriptPath) {
 		process.exit(1);
 	}
 	const supplied = readFileSync(suppliedTranscriptPath, 'utf8').trim();
-	const report = compareTranscripts(supplied, asrText);
+	const report = compareTranscripts(
+		supplied,
+		asrText,
+		segments.map((s) => s.text)
+	);
 	console.log(
 		`\nTranscript cross-check: ${(report.overallSimilarity * 100).toFixed(1)}% similarity to whisper's independent pass.`
 	);
 	if (report.divergentSentences.length > 0) {
 		console.log('Sentences with no good match in the ASR pass:');
 		for (const s of report.divergentSentences) console.log(`  - ${s}`);
+	}
+	if (report.asrOnlySpans.length > 0) {
+		console.log('ASR segments with no good match in the supplied transcript:');
+		for (const s of report.asrOnlySpans) console.log(`  - ${s}`);
 	}
 	if (report.diverged && !acceptTranscript) {
 		console.error(
@@ -114,20 +135,24 @@ if (suppliedTranscriptPath) {
 	transcriptSource = 'asr';
 }
 
-// Re-running ingest:transcribe for an existing user/slug is about to
-// overwrite transcript.json below — but a prior ingest:cut run may have
-// already left chunks.json and cut chunk audio in this same directory, cut
-// from the *old* transcript. Left in place, that stale-but-still-"verified"
-// chunks.json would pass every one of ingest:publish's checks unmodified,
-// publishing chunks/transcript that no longer match the new transcript.json
-// this command is about to write. Clearing it forces ingest:cut to run
-// again before a re-publish is possible — existsSync(chunksPath) is
-// publish's own gate for "run ingest:cut first." This only runs here, after
-// every fallible step above (audio conversion, whisper, the divergence
-// gate) has already succeeded — clearing it any earlier meant a typo'd
-// --transcript path, an ffmpeg error, or a whisper failure destroyed the
-// only local copy of the prior verified/enriched chunks.json (real work:
-// hand-filled kana/translations) while producing no replacement.
+// Everything fallible (conversion, whisper, the divergence gate) has now
+// succeeded — safe to commit the staged source into its final name...
+renameSync(tempSourcePath, sourceOriginalPath);
+renameSync(tempWavPath, sourceWavPath);
+
+// ...and, for the same reason, safe to invalidate a prior ingest:cut run's
+// output. A prior run may have left chunks.json and cut chunk audio in
+// this same directory, cut from the *old* source/transcript. Left in
+// place, that stale-but-still-"verified" chunks.json would pass every one
+// of ingest:publish's checks unmodified, publishing chunks/transcript that
+// no longer match the source/transcript.json this command just committed.
+// Clearing it forces ingest:cut to run again before a re-publish is
+// possible — existsSync(chunksPath) is publish's own gate for "run
+// ingest:cut first." Doing this (and the rename above) only after every
+// fallible step has succeeded is what stops a typo'd --transcript path, an
+// ffmpeg error, a whisper failure, or a genuine divergence-gate abort from
+// destroying the only local copy of prior verified/enriched work (real
+// work: hand-filled kana/translations) while producing no replacement.
 const staleOutputPattern = /^(chunks\.json|chunk-\d+\.m4a|cut-\d+\.wav)$/;
 const staleOutputs = readdirSync(workDir).filter((f) => staleOutputPattern.test(f));
 if (staleOutputs.length > 0) {
