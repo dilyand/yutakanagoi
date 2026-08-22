@@ -162,11 +162,12 @@ output.
   every word/cell has been introduced. Without this, a master
   list/registry bigger than `limit * 16` (box 4's base interval) can
   permanently cap how many distinct items are ever introduced once
-  review-only demand saturates the session limit — both session-start
+  review-only demand saturates the session limit — all three session-start
   endpoints pass the shared `MIN_NEW_SLOTS_PER_SESSION` constant, since
-  vocab's ~2000-word bundled master list and conjugation's 319-cell
-  registry both exceed that ceiling. `nextBox4Streak`/`effectiveInterval`
-  are the other piece both activities share: box 4's due interval is no
+  vocab's ~2000-word bundled master list, conjugation's 319-cell registry,
+  and (once a personal library grows past it) shadowing's per-user chunk
+  library can all exceed that ceiling. `nextBox4Streak`/`effectiveInterval`
+  are the other piece all three activities share: box 4's due interval is no
   longer flat — it grows by one session per additional correct review
   while still at box 4 (16, 17, 18, ...), reset to 0 the instant a word
   drops back out of box 4. See the spec below for both.
@@ -319,10 +320,16 @@ per word.
 
 ### Session algorithm
 
-Shared by both activities (`src/lib/drill-algorithm.ts`'s
-`selectDrillWords`/`applyOutcome`/`pickDueWordsRoundRobin` are reused
-unmodified for conjugation drills, which just treat `cell_id` as an opaque
-word). At the start of a session:
+The selection mechanism below is shared by all three activities
+(`src/lib/drill-algorithm.ts`'s `selectDrillWords`/`pickDueWordsRoundRobin`
+are reused unmodified for conjugation and shadowing drills, which just
+treat `cell_id`/`chunk_id` as an opaque word). The per-word outcome
+function is *not* uniformly shared, though — only vocab drill uses
+`applyOutcome`'s binary correct/incorrect transition directly; conjugation
+(`applyConjugationOutcome`) and shadowing (`applyShadowingOutcome`) each
+define their own activity-specific transition rule, reusing only
+`nextBox4Streak` from `applyOutcome`'s box-4 growth logic — see the "Key
+files" section above for both. At the start of a session:
 
 1. Increment `session_index`.
 2. Compute "due" words using this interval table:

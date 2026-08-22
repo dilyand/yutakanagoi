@@ -182,9 +182,9 @@ export class SessionAlreadyStartingError extends Error {
 /**
  * Inserts the shadowing_sessions row for a session whose response is
  * already fully built — deliberately separate from computing the next
- * session_index (that's ShadowingContext.sessionIndex + 1, already
- * available from fetchShadowingContext at the top of session/start; no
- * second read needed). Session-start used to read-then-insert this row
+ * session_index (that's getLatestSessionIndex's result + 1, already
+ * available from session/start's own fetch at the top; no second read
+ * needed). Session-start used to read-then-insert this row
  * before fetching/signing chunk details, so a failure in that later step
  * (Storage signing, a missing detail row) still left an orphaned,
  * never-completed session behind. Call this only once the response is
