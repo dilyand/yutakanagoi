@@ -29,6 +29,16 @@ export interface VerifyChunkInput {
 	startMs: number;
 	durationMs: number;
 	fadeMs: number;
+	/**
+	 * Whether this is the recording's absolute last chunk — every OTHER
+	 * chunk's end lands on a real, independently-detected SilenceWindow (by
+	 * construction of chunk-planner's boundary selection), so it's already
+	 * safe to fade. The recording's own final edge has no such guarantee:
+	 * chunk-planner never adjusts it (there's no following audio to extend
+	 * into — see its Phase E), yet applyFades still unconditionally fades
+	 * it. Triggers the tail-quiet check below.
+	 */
+	isLastChunk: boolean;
 }
 
 export interface VerifyChunkResult {
@@ -39,6 +49,7 @@ export interface VerifyChunkResult {
 		correlationLagMs: number;
 		correlation: number;
 		attackRmsDb: number;
+		tailRmsDb: number | null;
 		fadeInFinalRmsDb: number;
 		fadeInControlRmsDb: number;
 		fadeOutFinalRmsDb: number;
@@ -147,6 +158,29 @@ export function verifyChunk(input: VerifyChunkInput): VerifyChunkResult {
 		);
 	}
 
+	// 2b. Tail quiet enough to fade — the symmetric case of check 2, only
+	// relevant for the recording's absolute last chunk. Every other chunk's
+	// end lands on a real, independently-detected silence window by
+	// construction (chunk-planner never chooses an internal boundary any
+	// other way), so it's already known-safe. The recording's own final
+	// edge has no such guarantee — chunk-planner leaves it exactly at EOF,
+	// which could be genuine trailing silence or a recording cut off
+	// mid-speech — yet applyFades still unconditionally fades it. Without
+	// this check, check 3 below only proves a fade attenuated something; it
+	// never proves there was silence there to attenuate safely, so a
+	// recording ending on speech could pass every check while its last
+	// sound is audibly swallowed by the fade curve.
+	let tailRmsDb: number | null = null;
+	if (input.isLastChunk) {
+		const preFadeDurationMs = probeDurationMs(input.preFadeWav);
+		tailRmsDb = rmsDbAt(input.preFadeWav, Math.max(0, preFadeDurationMs - 10), 10);
+		if (tailRmsDb > QUIET_THRESHOLD_DB) {
+			failures.push(
+				`tail check: recording's final chunk ends at ${tailRmsDb.toFixed(1)}dB, not below ${QUIET_THRESHOLD_DB}dB — may be cut off mid-speech, unsafe to fade`
+			);
+		}
+	}
+
 	// 3. Fades applied — the finished (faded) chunk must read measurably
 	// quieter than a same-content negative control at the most-attenuated
 	// point of each fade (t=0 for fade-in, the last probeMs for fade-out).
@@ -200,6 +234,7 @@ export function verifyChunk(input: VerifyChunkInput): VerifyChunkResult {
 			correlationLagMs: lagMs,
 			correlation,
 			attackRmsDb,
+			tailRmsDb,
 			fadeInFinalRmsDb,
 			fadeInControlRmsDb,
 			fadeOutFinalRmsDb,

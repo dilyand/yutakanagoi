@@ -91,7 +91,8 @@ plan.forEach((chunk, i) => {
 		sourceWav: sourceWavPath,
 		startMs: chunk.startMs,
 		durationMs: chunk.durationMs,
-		fadeMs: FADE_MS
+		fadeMs: FADE_MS,
+		isLastChunk: i === plan.length - 1
 	});
 
 	console.log(
