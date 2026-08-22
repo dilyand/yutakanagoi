@@ -59,16 +59,30 @@ async function getLatestSessionIndex(supabase: SupabaseClient, userId: number): 
 	return data?.session_index ?? 0;
 }
 
-/** Increments this user's conjugation session counter and inserts the new conjugation_sessions row. */
-export async function startSession(supabase: SupabaseClient, userId: number): Promise<number> {
-	const nextSessionIndex = (await getLatestSessionIndex(supabase, userId)) + 1;
+/**
+ * Inserts the conjugation_sessions row for a session whose response is
+ * already fully built — deliberately separate from computing the next
+ * session_index (that's ConjugationContext.sessionIndex + 1, already
+ * available from fetchConjugationContext at the top of session/start; no
+ * second read needed). Session-start used to read-then-insert this row
+ * (the old startSession) before the Claude conjugation_prompt_glosses
+ * call later in the same handler, so a failure there (network error,
+ * malformed response, rate limit) still left an orphaned, never-completed
+ * session behind. Call this only once the response is ready to return, so
+ * a failure before that point never reserves a session_index it can't
+ * deliver — same fix already applied to shadowing drill's session/start
+ * for the identical bug class (see shadowing-repository.ts's
+ * insertSessionRow).
+ */
+export async function insertSessionRow(
+	supabase: SupabaseClient,
+	userId: number,
+	sessionIndex: number
+): Promise<void> {
 	const { error } = await withRetry(() =>
-		supabase
-			.from('conjugation_sessions')
-			.insert({ user_id: userId, session_index: nextSessionIndex })
+		supabase.from('conjugation_sessions').insert({ user_id: userId, session_index: sessionIndex })
 	);
 	if (error) throw error;
-	return nextSessionIndex;
 }
 
 /** Marks a conjugation session complete once all cells have been drilled. */

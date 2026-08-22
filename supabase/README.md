@@ -147,6 +147,104 @@ schema, not just inferred from reading `.sql` files.
   was actually shown for that attempt, not tied to any registry table (see
   the migration-gotchas note below for why this matters).
 
+- `shadowing_recordings` — one row per ingested source audio file
+  (`user_id`, `slug`, `duration_ms`, `source_audio_path`, `transcript`,
+  `transcript_source` — `'supplied'` or `'asr'`, see below —
+  `chunking_version`). Content is per-user (like `word_lists`), ingested
+  out-of-band by the `ingest/` tool at the repo root — **not part of this
+  app**, never deployed, no version bump on its own (see repo root
+  CLAUDE.md). `unique (user_id, slug)`.
+- `shadowing_chunks` — the drill unit (`recording_id`, `user_id`
+  denormalized — see below, `chunk_index`, `chunk_id`, `audio_path`,
+  `start_ms`/`duration_ms`, `transcript`/`kana`/`translation`,
+  `verified_at`, `flagged_at`/`flag_note`). `chunk_id` is
+  `'<slug>:<chunking_version>:<NN>'` — the app only ever selects rows where
+  `verified_at is not null and flagged_at is null`, so nothing that failed
+  the ingest tool's verification checks (content-match cross-correlation,
+  fade-applied, distinctness, no-cut-on-attack, coverage) can reach a
+  session even if its row somehow got inserted. **Constraints:**
+  `recording_id` → `shadowing_recordings(id)`; `user_id` → `users(id)`;
+  unique `(recording_id, chunk_index)` and unique `(user_id, chunk_id)`;
+  composite `(recording_id, user_id)` → `shadowing_recordings(id, user_id)`
+  (via a `unique (id, user_id)` on `shadowing_recordings`) — the
+  denormalized `user_id` here can't drift from its recording's real owner,
+  since the serving repository authorizes solely against this column
+  before signing `audio_path` (see
+  `20260822040000_shadowing_chunks_recording_owner_fkey.sql`).
+- `shadowing_state` — for the shadowing-drill activity. One row per
+  `(user_id, chunk_id)`, same box/interval/streak shape as `word_state` and
+  `conjugation_state` above. **No FK on `chunk_id`** — see "Shadowing
+  tables: the one deliberate exception" below.
+- `shadowing_sessions` / `shadowing_session_attempts` — same shape as the
+  conjugation pair. Attempts additionally carry `hint_level` (0-3) and
+  `rating` (`'easy'|'good'|'hard'|'very_hard'`) — the rating is derived from
+  how far up the in-app hint ladder the user climbed before advancing (see
+  `src/lib/shadowing/rating.ts`), not self-reported — plus `replays`, which
+  doesn't affect grading but is recorded as a behavioral signal.
+
+### Shadowing Storage bucket
+
+`shadowing-audio` — private, no RLS policies (same reasoning as every table:
+this app has no Supabase Auth, so `auth.uid()`-based policies don't apply;
+access is service-role only, gated server-side after the session cookie is
+verified, same as DB access). Path scheme:
+
+```
+shadowing-audio/
+  users/<user_id>/<slug>/v<chunking_version>/source.<ext>   # full recording, kept for re-chunking (extension matches the ingested file — m4a/mp3/wav/ogg)
+  users/<user_id>/<slug>/v<chunking_version>/chunk-NN.m4a
+```
+
+The chunking version is in the _path_ for both the source and every chunk,
+not just `chunk_id` — a re-chunk's uploads (including the source) can never
+touch anything a live `shadowing_chunks` row, or the live recording row's
+`source_audio_path`, still points at. Uploads happen before the DB swap
+runs, and only the swap itself (see `publish_shadowing_recording` below)
+repoints the recording row at the new version. The app never streams audio
+itself — it mints short-lived signed URLs (`createSignedUrl`, ~2h TTL)
+server-side and hands those to the client. Old versions' Storage objects
+aren't deleted automatically on re-publish — a client that started a
+session before the re-publish may still hold a signed URL into them.
+`ingest:cleanup-old-versions` (see `ingest/README.md`) removes them, run
+manually once no such session could still be active.
+
+### Two RPCs in this schema, for two different reasons
+
+Every other table in this app is written straight through `supabase-js`
+`.insert()`/`.update()`/`.upsert()` calls — these two functions are the
+exceptions, each needed for something a plain call can't express:
+
+- **`publish_shadowing_recording`** — needs a single Postgres
+  _transaction_ (below): three writes that must land together or not at
+  all.
+- **`upsert_shadowing_chunk_states`** (`20260822050000_shadowing_state_reject_stale_writes.sql`)
+  — needs a _conditional_ write: `shadowing-repository.ts`'s
+  `upsertChunkStates` calls it for every `session/complete`, doing an
+  `insert ... on conflict (user_id, chunk_id) do update ... where
+excluded.last_session > shadowing_state.last_session` so a session that
+  completes late (after a concurrently-started later session already
+  recorded newer progress on the same chunk) can't silently regress it —
+  a plain `supabase-js` `.upsert()` has no way to express that `where`
+  clause. See `src/routes/api/shadowing/session/start/+server.ts`'s
+  `SessionAlreadyStartingError` comment for the concurrent-session
+  scenario this guards against.
+
+`ingest:publish`'s re-publish path (`ingest/cli/publish.ts`) has to update
+the recording row, delete its previous `chunking_version`'s chunk rows, and
+insert the new version's rows — three writes that must land together, since
+a re-chunk's whole point is swapping one complete, working chunk set for
+another. Doing that as three separate `supabase-js` calls left a real gap: a
+failure between the delete and the insert left the recording with zero live
+chunks until a manual retry. This function wraps all three writes in one
+Postgres transaction (`security definer`, callable by `service_role` only,
+same access model as every table) so the swap is all-or-nothing — call it
+via `supabase.rpc('publish_shadowing_recording', {...})`, never by hand-
+rolling the three writes again. First-time publish (no existing recording)
+doesn't need this: there's no previous version to protect, and a failed
+chunk insert there just leaves an empty recording row that self-heals on
+the next `ingest:publish` run (it becomes `existingRecording` next time,
+which goes through this transactional path).
+
 ### Migration gotchas: no FK here cascades
 
 **None of the foreign keys above have `ON DELETE`/`ON UPDATE CASCADE`** —
@@ -198,6 +296,28 @@ static list. Historical `conjugation_session_attempts.word` values for a
 since-removed word just sit there as an accurate record of what was shown
 at the time — no FK forces a decision the way `vocab_session_attempts` did
 for the vocab list.
+
+### Shadowing tables: the one deliberate exception
+
+`shadowing_state.chunk_id` has **no FK to `shadowing_chunks`**, even though
+(unlike conjugation's static code registry) `shadowing_chunks` _is_ a real
+table here. This is a conscious tradeoff, not an oversight: the
+merge/split heuristic in `ingest/chunk-planner.ts` that decides chunk
+boundaries is an explicit, untested guess (see its file header), so
+re-chunking a recording is expected to happen more than once as the
+heuristic gets tuned against real data. An FK would turn every re-chunk
+into the same four-step placeholder-rank dance `list_words` renames need
+(above) — and unlike a vocab word rename, a re-chunk changes _every_ chunk
+in a recording at once, not one row.
+
+Instead, `chunk_id` embeds the chunking version
+(`'<slug>:<chunking_version>:<NN>'`), so a re-chunk mints entirely new ids.
+**Accepted downside: progress for a recording's chunks resets when it's
+re-chunked** — old `shadowing_state` rows for the previous version's ids
+simply become unreachable (never deleted, just orphaned data with no FK to
+complain about). This is considered honest rather than lossy: the
+boundaries changed, so the item the progress was tracked against no longer
+exists.
 
 ## One-time data migrations, historical
 

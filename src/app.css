@@ -521,6 +521,75 @@ input[type='password'] {
 	}
 }
 
+/* Shadowing drill's word-block controls. Play/Replay is deliberately NOT
+   .button-primary — Next (in .interaction__actions, below the word-block)
+   is the one primary action on screen at a time; Play stays visually
+   secondary even though it's the most-pressed control. */
+.shadowing-controls {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--space-3);
+	width: 100%;
+	margin-top: var(--space-4);
+}
+
+.shadowing-play-button {
+	width: 100%;
+	font-weight: 600;
+}
+
+.shadowing-secondary-controls {
+	display: flex;
+	gap: var(--space-2);
+	width: 100%;
+}
+
+.shadowing-secondary-controls button {
+	flex: 1 1 auto;
+	font-size: var(--font-size-small);
+}
+
+.shadowing-secondary-controls button.active {
+	background: var(--color-word-card-bg);
+	border-color: var(--color-accent);
+	color: var(--color-accent);
+}
+
+.hint-block {
+	width: 100%;
+	margin-top: var(--space-4);
+	padding-top: var(--space-4);
+	border-top: 1px dashed var(--color-word-card-border);
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+
+.hint-line {
+	margin: 0;
+	text-align: center;
+	color: var(--color-text);
+	font-size: var(--font-size-small);
+}
+
+.hint-line--secondary {
+	color: var(--color-text-secondary);
+	font-style: italic;
+}
+
+.hint-ladder-button {
+	margin-top: var(--space-3);
+	background: none;
+	border-color: transparent;
+	color: var(--color-accent);
+	text-decoration: underline;
+	font-weight: 400;
+	min-height: auto;
+	padding: var(--space-1) var(--space-2);
+	font-size: var(--font-size-tiny-static);
+}
+
 .subtitle {
 	color: var(--color-text-secondary);
 	font-size: var(--font-size-small);

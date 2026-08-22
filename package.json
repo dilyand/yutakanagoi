@@ -1,7 +1,7 @@
 {
 	"name": "yutakanagoi",
 	"private": true,
-	"version": "2.2.3",
+	"version": "3.0.0",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -19,7 +19,12 @@
 		"logs:errors": "tsx --env-file=.env scripts/read-error-log.ts",
 		"scrub-master-list-cleanup": "tsx --env-file=.env scripts/scrub-master-list-cleanup.ts",
 		"fix-hellotalk-words": "tsx --env-file=.env scripts/fix-hellotalk-words-corrections.ts",
-		"strip-list-name-extensions": "tsx --env-file=.env scripts/strip-list-name-extensions.ts"
+		"strip-list-name-extensions": "tsx --env-file=.env scripts/strip-list-name-extensions.ts",
+		"ingest:transcribe": "tsx --env-file=.env ingest/cli/transcribe.ts",
+		"ingest:cut": "tsx --env-file=.env ingest/cli/cut.ts",
+		"ingest:publish": "tsx --env-file=.env ingest/cli/publish.ts",
+		"ingest:flagged": "tsx --env-file=.env ingest/cli/flagged.ts",
+		"ingest:cleanup-old-versions": "tsx --env-file=.env ingest/cli/cleanup-old-versions.ts"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
