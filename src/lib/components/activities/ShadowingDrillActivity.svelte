@@ -152,6 +152,19 @@
 		}
 	}
 
+	// A failure that happens *after* play() has already started (a network
+	// drop or decode error mid-stream) never rejects play()'s promise and
+	// never fires "ended" — it surfaces only as this element's own "error"
+	// event. Without a handler here, Next stays disabled with no
+	// explanation and no way forward for a chunk whose first play attempt
+	// hasn't completed yet. Flag remains a bail-out even without this, but
+	// the actual fix is telling the user what happened and letting them
+	// retry via the same Play button (play() already resets currentTime to
+	// 0 before calling play() again).
+	function handlePlaybackError() {
+		errorMessage = 'Playback failed partway through — try again.';
+	}
+
 	function toggleSpeed() {
 		playbackRate = playbackRate === 1 ? 0.75 : 1;
 		if (audioEl) {
@@ -321,6 +334,7 @@
 			src={currentItem.audioUrl}
 			preload="auto"
 			onended={handlePlaybackEnded}
+			onerror={handlePlaybackError}
 			style="display: none"
 		></audio>
 

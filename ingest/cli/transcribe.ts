@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	writeFileSync,
+	copyFileSync
+} from 'node:fs';
 import path from 'node:path';
 import { parseArgs, requireString, requireSafePathComponent } from '../args.ts';
 import { toAnalysisWav, probeDurationMs } from '../audio-tools.ts';
@@ -63,6 +71,24 @@ const slug = requireSafePathComponent(
 );
 const workDir = path.join(import.meta.dirname, '..', 'work', username, slug);
 mkdirSync(workDir, { recursive: true });
+
+// Re-running ingest:transcribe for an existing user/slug is about to
+// overwrite source.wav/source.<ext> and transcript.json below — but a
+// prior ingest:cut run may have already left chunks.json and cut chunk
+// audio in this same directory, cut from the *old* source. Left in place,
+// that stale-but-still-"verified" chunks.json would pass every one of
+// ingest:publish's checks unmodified, publishing chunks/transcript that no
+// longer match the source audio this command is about to write. Clearing
+// it here forces ingest:cut to run again before a re-publish is possible —
+// existsSync(chunksPath) is publish's own gate for "run ingest:cut first."
+const staleOutputPattern = /^(chunks\.json|chunk-\d+\.m4a|cut-\d+\.wav)$/;
+const staleOutputs = readdirSync(workDir).filter((f) => staleOutputPattern.test(f));
+if (staleOutputs.length > 0) {
+	console.log(
+		`Clearing ${staleOutputs.length} stale cut output file(s) from a previous ingest:cut run (re-run ingest:cut after this completes): ${staleOutputs.join(', ')}`
+	);
+	for (const f of staleOutputs) rmSync(path.join(workDir, f));
+}
 
 const sourceExt = path.extname(audioPath) || '.m4a';
 const sourceOriginalPath = path.join(workDir, `source${sourceExt}`);
