@@ -127,18 +127,7 @@ export async function fetchShadowingContext(
 	};
 }
 
-/**
- * Exported (not just fetchShadowingContext's private helper) so
- * session/start can re-read it on a session_index collision — see
- * insertSessionRow's doc comment on why the insert happens late, which is
- * exactly what makes a collision possible: two concurrent session/start
- * calls for the same user can both read the same latest session_index
- * before either has inserted, then both compute the same "next" value.
- */
-export async function getLatestSessionIndex(
-	supabase: SupabaseClient,
-	userId: number
-): Promise<number> {
+async function getLatestSessionIndex(supabase: SupabaseClient, userId: number): Promise<number> {
 	const { data, error } = await withRetry(() =>
 		supabase
 			.from('shadowing_sessions')
@@ -153,6 +142,22 @@ export async function getLatestSessionIndex(
 }
 
 /**
+ * Thrown by insertSessionRow when another session/start call for the same
+ * user is concurrently in flight — see its doc comment for why this is
+ * refused outright rather than retried with a freshly re-read
+ * session_index (a retry would create a second, fully valid, concurrently
+ * active session built from the same stale progress snapshot, risking a
+ * later completion overwriting newer box/last_session data with older
+ * values). Mapped to a 409 by session/start's route handler.
+ */
+export class SessionAlreadyStartingError extends Error {
+	constructor() {
+		super('A session is already starting for this account — please wait a moment and try again.');
+		this.name = 'SessionAlreadyStartingError';
+	}
+}
+
+/**
  * Inserts the shadowing_sessions row for a session whose response is
  * already fully built — deliberately separate from computing the next
  * session_index (that's ShadowingContext.sessionIndex + 1, already
@@ -164,13 +169,12 @@ export async function getLatestSessionIndex(
  * ready to return, so a failure before that point never reserves a
  * session_index it can't deliver.
  *
- * Deliberately doesn't swallow a unique-violation (Postgrest error code
- * '23505', on shadowing_sessions' (user_id, session_index) constraint) —
- * two concurrent session/start calls for the same user can both compute
- * the same "next" session_index, and only one insert can win. The caller
- * (session/start) is what retries on that specific code with a freshly
- * re-read session_index (see getLatestSessionIndex); this function just
- * reports the conflict as-is.
+ * A unique-violation (Postgrest error code '23505', on shadowing_sessions'
+ * (user_id, session_index) constraint) means two concurrent session/start
+ * calls for the same user both computed the same "next" session_index —
+ * translated to SessionAlreadyStartingError rather than left as the raw
+ * Postgrest error, so the route handler can map it to a clean 409 instead
+ * of an undifferentiated 500.
  */
 export async function insertSessionRow(
 	supabase: SupabaseClient,
@@ -180,6 +184,7 @@ export async function insertSessionRow(
 	const { error } = await withRetry(() =>
 		supabase.from('shadowing_sessions').insert({ user_id: userId, session_index: sessionIndex })
 	);
+	if (error?.code === '23505') throw new SessionAlreadyStartingError();
 	if (error) throw error;
 }
 

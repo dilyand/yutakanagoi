@@ -168,8 +168,13 @@ export function verifyChunk(input: VerifyChunkInput): VerifyChunkResult {
 	}
 
 	// 2. No cut on an attack — confirms the chunk begins in real quiet
-	// (where a fade-in is safe), not mid-consonant.
-	const attackRmsDb = rmsDbAt(input.preFadeWav, 0, 10);
+	// (where a fade-in is safe), not mid-consonant. Probes the full
+	// input.fadeMs window, not a fixed 10ms slice — applyFades attenuates
+	// the entire fade window, so speech starting anywhere inside it (even
+	// past the first 10ms) gets audibly clipped by the fade curve; a 10ms
+	// probe could read as quiet while speech starts at, say, 15ms into a
+	// 30ms fade-in.
+	const attackRmsDb = rmsDbAt(input.preFadeWav, 0, input.fadeMs);
 	if (attackRmsDb > QUIET_THRESHOLD_DB) {
 		failures.push(
 			`attack check: chunk start is ${attackRmsDb.toFixed(1)}dB, not below ${QUIET_THRESHOLD_DB}dB`
@@ -191,7 +196,17 @@ export function verifyChunk(input: VerifyChunkInput): VerifyChunkResult {
 	let tailRmsDb: number | null = null;
 	if (input.isLastChunk) {
 		const preFadeDurationMs = probeDurationMs(input.preFadeWav);
-		tailRmsDb = rmsDbAt(input.preFadeWav, Math.max(0, preFadeDurationMs - 10), 10);
+		// Same reasoning as the attack check above, mirrored: probes the
+		// full fadeMs window before EOF, not a fixed final 10ms — a
+		// recording that has speech continuing through the first part of
+		// the fade-out window and only goes quiet in the last 10ms would
+		// otherwise pass while the fade still audibly attenuates that
+		// speech.
+		tailRmsDb = rmsDbAt(
+			input.preFadeWav,
+			Math.max(0, preFadeDurationMs - input.fadeMs),
+			input.fadeMs
+		);
 		if (tailRmsDb > QUIET_THRESHOLD_DB) {
 			failures.push(
 				`tail check: recording's final chunk ends at ${tailRmsDb.toFixed(1)}dB, not below ${QUIET_THRESHOLD_DB}dB — may be cut off mid-speech, unsafe to fade`

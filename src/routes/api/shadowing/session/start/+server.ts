@@ -6,7 +6,7 @@ import {
 	fetchShadowingContext,
 	fetchChunkDetailsWithSignedUrls,
 	insertSessionRow,
-	getLatestSessionIndex
+	SessionAlreadyStartingError
 } from '$lib/server/shadowing-repository';
 import { verifyUserExists, UserNotFoundError } from '$lib/server/conjugation-auth';
 import { checkRateLimit } from '$lib/server/rate-limit';
@@ -71,81 +71,65 @@ export const POST: RequestHandler = async ({ getClientAddress, locals }) => {
 	);
 
 	// Deliberately not persisted yet — see insertSessionRow's doc comment.
-	// The first attempt's value is the same one startSession used to
-	// compute (read then insert); context.sessionIndex already came from
-	// that same read via fetchShadowingContext above, so no second query is
-	// needed yet. A later attempt (see the retry loop below) re-reads it.
-	let sessionIndex = context.sessionIndex + 1;
+	// context.sessionIndex already came from fetchShadowingContext above, so
+	// no second query is needed.
+	const sessionIndex = context.sessionIndex + 1;
 
-	// Two concurrent session/start calls for the same user can both land
-	// here with the same sessionIndex (both read the same latest value
-	// above/on a prior retry) — only one insertSessionRow can win the
-	// unique (user_id, session_index) constraint. Rather than surface that
-	// as a raw 500 after already doing the signing work below, retry with a
-	// freshly re-read session_index on that specific conflict. Bounded: a
-	// real, repeated conflict past a few attempts means something other
-	// than an ordinary race is going on, and should surface as an error
-	// rather than retry forever.
-	const MAX_SESSION_START_ATTEMPTS = 3;
-	let items: {
-		chunkId: string;
-		isNew: boolean;
-		box: number | undefined;
-		box4Streak: number | undefined;
-		audioUrl: string;
-		transcript: string;
-		kana: string;
-		translation: string;
-		durationMs: number;
-	}[] = [];
-	for (let attempt = 1; attempt <= MAX_SESSION_START_ATTEMPTS; attempt++) {
-		const drillItems = selectDrillWords(
-			library.map((entry) => ({ word: entry.chunkId, frequencyRank: entry.frequencyRank })),
-			eligibleChunkStates,
-			sessionIndex,
-			10,
-			MIN_NEW_SLOTS_PER_SESSION
-		);
+	const drillItems = selectDrillWords(
+		library.map((entry) => ({ word: entry.chunkId, frequencyRank: entry.frequencyRank })),
+		eligibleChunkStates,
+		sessionIndex,
+		10,
+		MIN_NEW_SLOTS_PER_SESSION
+	);
 
-		const details = await fetchChunkDetailsWithSignedUrls(
-			supabase,
-			userId,
-			drillItems.map((item) => item.word)
-		);
-		const detailsByChunkId = new Map(details.map((d) => [d.chunkId, d]));
+	const details = await fetchChunkDetailsWithSignedUrls(
+		supabase,
+		userId,
+		drillItems.map((item) => item.word)
+	);
+	const detailsByChunkId = new Map(details.map((d) => [d.chunkId, d]));
 
-		items = drillItems.map((item) => {
-			const detail = detailsByChunkId.get(item.word);
-			if (!detail) {
-				// Should be unreachable — selectDrillWords only ever picks chunk
-				// ids that came from fetchChunkLibrary, which only lists
-				// verified/unflagged chunks that still exist in shadowing_chunks.
-				throw new Error(`No chunk detail found for chunk_id ${item.word}`);
-			}
-			return {
-				chunkId: item.word,
-				isNew: item.isNew,
-				box: item.isNew ? undefined : item.box,
-				box4Streak: item.isNew ? undefined : item.box4Streak,
-				audioUrl: detail.audioUrl,
-				transcript: detail.transcript,
-				kana: detail.kana,
-				translation: detail.translation,
-				durationMs: detail.durationMs
-			};
-		});
-
-		// Only persist the session row once the response is fully built and
-		// nothing above has thrown — see insertSessionRow's doc comment.
-		try {
-			await insertSessionRow(supabase, userId, sessionIndex);
-			break;
-		} catch (e) {
-			const isSessionIndexConflict =
-				typeof e === 'object' && e !== null && 'code' in e && e.code === '23505';
-			if (!isSessionIndexConflict || attempt === MAX_SESSION_START_ATTEMPTS) throw e;
-			sessionIndex = (await getLatestSessionIndex(supabase, userId)) + 1;
+	const items = drillItems.map((item) => {
+		const detail = detailsByChunkId.get(item.word);
+		if (!detail) {
+			// Should be unreachable — selectDrillWords only ever picks chunk
+			// ids that came from fetchChunkLibrary, which only lists
+			// verified/unflagged chunks that still exist in shadowing_chunks.
+			throw new Error(`No chunk detail found for chunk_id ${item.word}`);
 		}
+		return {
+			chunkId: item.word,
+			isNew: item.isNew,
+			box: item.isNew ? undefined : item.box,
+			box4Streak: item.isNew ? undefined : item.box4Streak,
+			audioUrl: detail.audioUrl,
+			transcript: detail.transcript,
+			kana: detail.kana,
+			translation: detail.translation,
+			durationMs: detail.durationMs
+		};
+	});
+
+	// Only persist the session row once the response is fully built and
+	// nothing above has thrown — see insertSessionRow's doc comment. A
+	// unique-violation here means another session/start call for this same
+	// user is concurrently in flight (both read the same latest
+	// session_index before either inserted) — surfaced as a clean 409
+	// rather than retried with a freshly re-read index. A retry would
+	// build and return a *second*, fully valid, concurrently-active
+	// session from this same stale library/state snapshot; if that second
+	// session completes before this one, this session's later completion
+	// would unconditionally overwrite newer box/last_session data with
+	// older values computed here. Refusing outright, rather than silently
+	// creating that second session, is what actually prevents the
+	// regression — a client-side retry after a moment is safe precisely
+	// because it re-reads fresh state instead of reusing this stale one.
+	try {
+		await insertSessionRow(supabase, userId, sessionIndex);
+	} catch (e) {
+		if (e instanceof SessionAlreadyStartingError) error(409, e.message);
+		throw e;
 	}
 
 	return json({ sessionIndex, drillItems: items });
