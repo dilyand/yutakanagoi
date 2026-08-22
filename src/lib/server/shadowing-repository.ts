@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { WordState } from '$lib/drill-algorithm';
-import { fetchAllRows } from '$lib/supabase-pagination';
 import { withRetry } from '$lib/server/retry';
 
 const PAGE_SIZE = 1000;
@@ -87,11 +86,6 @@ export async function fetchChunkLibrary(
 	return sorted.map((row, index) => ({ chunkId: row.chunkId, frequencyRank: index }));
 }
 
-export interface ShadowingContext {
-	chunkStates: WordState[];
-	sessionIndex: number;
-}
-
 interface ChunkStateRow {
 	chunk_id: string;
 	box: number;
@@ -99,35 +93,58 @@ interface ChunkStateRow {
 	box4_streak: number;
 }
 
-/** Everything selectDrillWords() needs for this user's shadowing progress, plus the latest session_index. */
-export async function fetchShadowingContext(
+/**
+ * This user's shadowing progress, restricted to `libraryChunkIds` (a
+ * fetchChunkLibrary result) rather than every shadowing_state row the user
+ * has ever had. Re-chunking and flagging both deliberately leave old
+ * chunk_ids' state rows behind, unreachably orphaned — see
+ * supabase/README.md's "Accepted downside" note on why there's no FK to
+ * clean them up automatically. Left unfiltered at the query level, that
+ * history only ever grows across every re-chunk/flag a user's library goes
+ * through, even though session/start can only ever select drill items from
+ * current library chunk_ids — so the unfiltered version was transferring
+ * (and paginating past 1000 rows for) data that could never be used.
+ * Session/start now fetches the library first and passes its chunk ids
+ * here, rather than fetching both in parallel and filtering client-side
+ * afterward.
+ */
+export async function fetchShadowingChunkStates(
 	supabase: SupabaseClient,
-	userId: number
-): Promise<ShadowingContext> {
-	const [chunkStateRows, sessionIndex] = await Promise.all([
-		fetchAllRows<ChunkStateRow>(
-			supabase,
-			'shadowing_state',
-			'chunk_id, box, last_session, box4_streak',
-			{
-				user_id: userId
-			}
-		),
-		getLatestSessionIndex(supabase, userId)
-	]);
+	userId: number,
+	libraryChunkIds: string[]
+): Promise<WordState[]> {
+	if (libraryChunkIds.length === 0) return [];
+	const rows: ChunkStateRow[] = [];
+	let from = 0;
+	for (;;) {
+		const { data, error } = await withRetry(() =>
+			supabase
+				.from('shadowing_state')
+				.select('chunk_id, box, last_session, box4_streak')
+				.eq('user_id', userId)
+				.in('chunk_id', libraryChunkIds)
+				.range(from, from + PAGE_SIZE - 1)
+		);
+		if (error) throw error;
+		const page = (data ?? []) as ChunkStateRow[];
+		rows.push(...page);
+		if (page.length < PAGE_SIZE) break;
+		from += PAGE_SIZE;
+	}
 
-	return {
-		chunkStates: chunkStateRows.map((row) => ({
-			word: row.chunk_id,
-			box: row.box,
-			lastSession: row.last_session,
-			box4Streak: row.box4_streak
-		})),
-		sessionIndex
-	};
+	return rows.map((row) => ({
+		word: row.chunk_id,
+		box: row.box,
+		lastSession: row.last_session,
+		box4Streak: row.box4_streak
+	}));
 }
 
-async function getLatestSessionIndex(supabase: SupabaseClient, userId: number): Promise<number> {
+/** The latest shadowing session_index this user has started, or 0 if they've never started one. */
+export async function getLatestSessionIndex(
+	supabase: SupabaseClient,
+	userId: number
+): Promise<number> {
 	const { data, error } = await withRetry(() =>
 		supabase
 			.from('shadowing_sessions')
@@ -240,6 +257,57 @@ export async function upsertChunkStates(
 		})
 	);
 	if (error) throw error;
+}
+
+/**
+ * Thrown by verifySessionOwnership when sessionIndex doesn't match a real
+ * shadowing_sessions row for this user. Mapped to a 404 by session/complete's
+ * route handler.
+ */
+export class SessionNotFoundError extends Error {
+	constructor() {
+		super('No such session for this account.');
+		this.name = 'SessionNotFoundError';
+	}
+}
+
+/**
+ * Confirms sessionIndex corresponds to a real, previously-started session
+ * for this user before session/complete writes anything. Without this, the
+ * client-supplied sessionIndex (and, before this fix, each row's own
+ * client-supplied lastSession) was trusted outright: an authenticated
+ * client could submit an arbitrary large integer as lastSession for any
+ * chunk, which upsert_shadowing_chunk_states' conditional ON CONFLICT (see
+ * upsertChunkStates and its migration) would then treat as genuinely
+ * "more recent" than any real future session — permanently blocking every
+ * legitimate future update to that chunk's state, since no real session
+ * would ever reach that value. Deriving last_session from a
+ * server-validated sessionIndex (done by the route handler, using this
+ * check) rather than the request payload closes that off entirely: a
+ * session_index can only be this large if session/start itself produced
+ * it, which increments by exactly one per real session.
+ *
+ * insertSessionAttempts already performed an equivalent check via its own
+ * .single() lookup, but only when attempts.length > 0 — an empty attempts
+ * array (which the request schema permits) skipped it silently. This is
+ * the one unconditional check the route handler now runs up front,
+ * covering every write below it regardless of whether attempts is empty.
+ */
+export async function verifySessionOwnership(
+	supabase: SupabaseClient,
+	userId: number,
+	sessionIndex: number
+): Promise<void> {
+	const { data, error } = await withRetry(() =>
+		supabase
+			.from('shadowing_sessions')
+			.select('id')
+			.eq('user_id', userId)
+			.eq('session_index', sessionIndex)
+			.maybeSingle()
+	);
+	if (error) throw error;
+	if (!data) throw new SessionNotFoundError();
 }
 
 export interface ShadowingSessionAttempt {

@@ -8,7 +8,8 @@ vi.mock('$lib/server/supabase', () => ({
 const mocks = vi.hoisted(() => ({
 	verifyUserExists: vi.fn(),
 	fetchChunkLibrary: vi.fn(),
-	fetchShadowingContext: vi.fn(),
+	fetchShadowingChunkStates: vi.fn(),
+	getLatestSessionIndex: vi.fn(),
 	fetchChunkDetailsWithSignedUrls: vi.fn(),
 	insertSessionRow: vi.fn()
 }));
@@ -26,7 +27,8 @@ vi.mock('$lib/server/shadowing-repository', async (importOriginal) => {
 	return {
 		...actual,
 		fetchChunkLibrary: mocks.fetchChunkLibrary,
-		fetchShadowingContext: mocks.fetchShadowingContext,
+		fetchShadowingChunkStates: mocks.fetchShadowingChunkStates,
+		getLatestSessionIndex: mocks.getLatestSessionIndex,
 		fetchChunkDetailsWithSignedUrls: mocks.fetchChunkDetailsWithSignedUrls,
 		insertSessionRow: mocks.insertSessionRow
 	};
@@ -90,7 +92,7 @@ describe('POST /api/shadowing/session/start', () => {
 	it('returns an empty session without creating a shadowing_sessions row when the library is empty — regression: startSession used to run unconditionally, leaving an orphaned incomplete session on every attempt before a user had any content', async () => {
 		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
 		mocks.fetchChunkLibrary.mockResolvedValueOnce([]);
-		mocks.fetchShadowingContext.mockResolvedValueOnce({ chunkStates: [], sessionIndex: 0 });
+		mocks.getLatestSessionIndex.mockResolvedValueOnce(0);
 
 		const response = await POST(makeEvent({ userId: 1 }));
 		const body = await response.json();
@@ -98,12 +100,34 @@ describe('POST /api/shadowing/session/start', () => {
 		expect(body.drillItems).toEqual([]);
 		expect(mocks.insertSessionRow).not.toHaveBeenCalled();
 		expect(mocks.fetchChunkDetailsWithSignedUrls).not.toHaveBeenCalled();
+		// Restricted to library membership (see fetchShadowingChunkStates'
+		// doc comment) — with an empty library there's nothing to restrict
+		// to, so it should never even be called.
+		expect(mocks.fetchShadowingChunkStates).not.toHaveBeenCalled();
+	});
+
+	it('fetches chunk states restricted to the library it just fetched, not fetched in parallel and filtered afterward — regression: an unfiltered fetch transferred (and paginated past 1000 rows for) shadowing_state history that re-chunking/flagging leave permanently orphaned, growing unboundedly since only current library chunk_ids can ever be selected', async () => {
+		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
+		mocks.fetchChunkLibrary.mockResolvedValueOnce(fakeLibrary(2)); // rec:1:00, rec:1:01
+		mocks.getLatestSessionIndex.mockResolvedValueOnce(1);
+		mocks.fetchShadowingChunkStates.mockResolvedValueOnce([]);
+		mocks.fetchChunkDetailsWithSignedUrls.mockImplementationOnce(
+			async (_s, _u, chunkIds: string[]) => fakeDetails(chunkIds)
+		);
+
+		await POST(makeEvent({ userId: 1 }));
+
+		expect(mocks.fetchShadowingChunkStates).toHaveBeenCalledWith(expect.anything(), 1, [
+			'rec:1:00',
+			'rec:1:01'
+		]);
 	});
 
 	it('verifies the user, selects drill items from the library, and returns them with signed URLs', async () => {
 		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
 		mocks.fetchChunkLibrary.mockResolvedValueOnce(fakeLibrary(15));
-		mocks.fetchShadowingContext.mockResolvedValueOnce({ chunkStates: [], sessionIndex: 0 });
+		mocks.getLatestSessionIndex.mockResolvedValueOnce(0);
+		mocks.fetchShadowingChunkStates.mockResolvedValueOnce([]);
 		mocks.fetchChunkDetailsWithSignedUrls.mockImplementationOnce(
 			async (_s, _u, chunkIds: string[]) => fakeDetails(chunkIds)
 		);
@@ -130,10 +154,10 @@ describe('POST /api/shadowing/session/start', () => {
 	it('returns existing box/box4Streak for a due (non-new) chunk', async () => {
 		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
 		mocks.fetchChunkLibrary.mockResolvedValueOnce(fakeLibrary(1));
-		mocks.fetchShadowingContext.mockResolvedValueOnce({
-			chunkStates: [{ word: 'rec:1:00', box: 2, lastSession: 0, box4Streak: 0 }],
-			sessionIndex: 1
-		});
+		mocks.getLatestSessionIndex.mockResolvedValueOnce(1);
+		mocks.fetchShadowingChunkStates.mockResolvedValueOnce([
+			{ word: 'rec:1:00', box: 2, lastSession: 0, box4Streak: 0 }
+		]);
 		mocks.fetchChunkDetailsWithSignedUrls.mockImplementationOnce(
 			async (_s, _u, chunkIds: string[]) => fakeDetails(chunkIds)
 		);
@@ -146,45 +170,11 @@ describe('POST /api/shadowing/session/start', () => {
 		expect(body.drillItems[0].box).toBe(2);
 	});
 
-	it('never selects a chunk whose progress row survives after it left the library (e.g. was flagged) — regression for a real bug found in manual testing', async () => {
-		// Flagging a chunk removes it from fetchChunkLibrary's result
-		// without touching its shadowing_state row. selectDrillWords's
-		// due-review and not-yet-due-fallback paths pull straight from the
-		// progress list with no cross-check against the master list — so
-		// an unfiltered chunkStates lets a flagged chunk's old progress
-		// resurface via those fallback paths even though it's no longer in
-		// the library. This reproduced 100% of the time against the real
-		// local Supabase stack until the endpoint started filtering
-		// chunkStates down to library membership before calling
-		// selectDrillWords.
-		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
-		mocks.fetchChunkLibrary.mockResolvedValueOnce(fakeLibrary(2)); // rec:1:00, rec:1:01
-		mocks.fetchShadowingContext.mockResolvedValueOnce({
-			chunkStates: [
-				{ word: 'rec:1:00', box: 4, lastSession: 1, box4Streak: 0 },
-				{ word: 'rec:1:01', box: 4, lastSession: 1, box4Streak: 0 },
-				// Not in the library above — simulates a flagged chunk that
-				// still has progress history.
-				{ word: 'rec:1:99-flagged', box: 4, lastSession: 1, box4Streak: 0 }
-			],
-			sessionIndex: 1
-		});
-		mocks.fetchChunkDetailsWithSignedUrls.mockImplementationOnce(
-			async (_s, _u, chunkIds: string[]) => fakeDetails(chunkIds)
-		);
-
-		const response = await POST(makeEvent({ userId: 1 }));
-		const body = await response.json();
-
-		const chunkIds = body.drillItems.map((item: { chunkId: string }) => item.chunkId);
-		expect(chunkIds).not.toContain('rec:1:99-flagged');
-		expect(chunkIds.every((id: string) => ['rec:1:00', 'rec:1:01'].includes(id))).toBe(true);
-	});
-
 	it('throws if a selected chunk has no matching detail row, and never inserts a session row — regression: the session row used to be inserted before this step, leaving an orphaned incomplete session behind on any failure here (Storage signing, a missing detail row) instead of just failing cleanly', async () => {
 		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
 		mocks.fetchChunkLibrary.mockResolvedValueOnce(fakeLibrary(1));
-		mocks.fetchShadowingContext.mockResolvedValueOnce({ chunkStates: [], sessionIndex: 0 });
+		mocks.getLatestSessionIndex.mockResolvedValueOnce(0);
+		mocks.fetchShadowingChunkStates.mockResolvedValueOnce([]);
 		mocks.fetchChunkDetailsWithSignedUrls.mockResolvedValueOnce([]);
 
 		await expect(POST(makeEvent({ userId: 1 }))).rejects.toThrow(/No chunk detail found/);
@@ -194,7 +184,8 @@ describe('POST /api/shadowing/session/start', () => {
 	it("rejects with a clean 409 on a session_index collision, without retrying into a second concurrent session — regression: retrying with a freshly re-read session_index used to build and return a second, fully valid, concurrently-active session from the same stale progress snapshot passed into this request; if that second session completed before this one, this session's later completion would unconditionally overwrite newer box/last_session data with older values", async () => {
 		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
 		mocks.fetchChunkLibrary.mockResolvedValueOnce(fakeLibrary(1));
-		mocks.fetchShadowingContext.mockResolvedValueOnce({ chunkStates: [], sessionIndex: 0 });
+		mocks.getLatestSessionIndex.mockResolvedValueOnce(0);
+		mocks.fetchShadowingChunkStates.mockResolvedValueOnce([]);
 		mocks.fetchChunkDetailsWithSignedUrls.mockImplementationOnce(
 			async (_s, _u, chunkIds: string[]) => fakeDetails(chunkIds)
 		);
@@ -212,7 +203,8 @@ describe('POST /api/shadowing/session/start', () => {
 	it('does not convert a non-conflict error from insertSessionRow into a 409', async () => {
 		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
 		mocks.fetchChunkLibrary.mockResolvedValueOnce(fakeLibrary(1));
-		mocks.fetchShadowingContext.mockResolvedValueOnce({ chunkStates: [], sessionIndex: 0 });
+		mocks.getLatestSessionIndex.mockResolvedValueOnce(0);
+		mocks.fetchShadowingChunkStates.mockResolvedValueOnce([]);
 		mocks.fetchChunkDetailsWithSignedUrls.mockImplementationOnce(
 			async (_s, _u, chunkIds: string[]) => fakeDetails(chunkIds)
 		);
@@ -225,7 +217,8 @@ describe('POST /api/shadowing/session/start', () => {
 	it('rejects with 429 once the per-IP rate limit is exceeded', async () => {
 		mocks.verifyUserExists.mockResolvedValue(undefined);
 		mocks.fetchChunkLibrary.mockResolvedValue(fakeLibrary(1));
-		mocks.fetchShadowingContext.mockResolvedValue({ chunkStates: [], sessionIndex: 0 });
+		mocks.getLatestSessionIndex.mockResolvedValue(0);
+		mocks.fetchShadowingChunkStates.mockResolvedValue([]);
 		mocks.fetchChunkDetailsWithSignedUrls.mockImplementation(async (_s, _u, chunkIds: string[]) =>
 			fakeDetails(chunkIds)
 		);

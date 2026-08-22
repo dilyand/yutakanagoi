@@ -278,7 +278,11 @@
 			});
 		} catch (e) {
 			errorMessage = e instanceof Error ? e.message : String(e);
-			phase = 'listening';
+			// Deliberately NOT reverting to 'listening' here — that would
+			// close the flag form, and startFlag() clears flagNote when the
+			// form is reopened, losing the note the user just typed on a
+			// merely transient failure. Staying on 'flagging' keeps the note
+			// visible and lets the same "Flag and continue" press retry.
 			isSubmitting = false;
 			return;
 		}

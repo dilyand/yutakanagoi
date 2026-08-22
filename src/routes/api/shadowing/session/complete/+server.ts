@@ -5,7 +5,9 @@ import { createServiceClient } from '$lib/server/supabase';
 import {
 	upsertChunkStates,
 	insertSessionAttempts,
-	completeSession
+	completeSession,
+	verifySessionOwnership,
+	SessionNotFoundError
 } from '$lib/server/shadowing-repository';
 import { verifyUserExists, UserNotFoundError } from '$lib/server/conjugation-auth';
 import { checkRateLimit } from '$lib/server/rate-limit';
@@ -67,13 +69,27 @@ export const POST: RequestHandler = async ({ request, getClientAddress, locals }
 		throw e;
 	}
 
+	// Unconditional, up front — see verifySessionOwnership's doc comment.
+	// insertSessionAttempts below does an equivalent lookup, but only when
+	// attempts is non-empty, so it can't be the only guard.
+	try {
+		await verifySessionOwnership(supabase, userId, sessionIndex);
+	} catch (e) {
+		if (e instanceof SessionNotFoundError) error(404, e.message);
+		throw e;
+	}
+
 	await upsertChunkStates(
 		supabase,
 		userId,
 		chunkStates.map((c) => ({
 			word: c.chunkId,
 			box: c.box,
-			lastSession: c.lastSession,
+			// Derived from the now-verified sessionIndex, not the client-
+			// supplied c.lastSession — see verifySessionOwnership's doc
+			// comment for why trusting the payload here is what let a
+			// client permanently block future updates to a chunk.
+			lastSession: sessionIndex,
 			box4Streak: c.box4Streak
 		}))
 	);

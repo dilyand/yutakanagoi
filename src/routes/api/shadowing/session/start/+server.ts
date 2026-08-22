@@ -3,7 +3,8 @@ import type { RequestHandler } from './$types';
 import { createServiceClient } from '$lib/server/supabase';
 import {
 	fetchChunkLibrary,
-	fetchShadowingContext,
+	fetchShadowingChunkStates,
+	getLatestSessionIndex,
 	fetchChunkDetailsWithSignedUrls,
 	insertSessionRow,
 	SessionAlreadyStartingError
@@ -35,11 +36,16 @@ export const POST: RequestHandler = async ({ getClientAddress, locals }) => {
 	}
 
 	// Shadowing has no shared registry the way conjugation does — the
-	// library is a per-user DB fetch (see fetchChunkLibrary), so it's
-	// fetched alongside context rather than being static code.
-	const [library, context] = await Promise.all([
+	// library is a per-user DB fetch (see fetchChunkLibrary). sessionIndex
+	// has no dependency on it, so it's fetched in parallel; chunkStates
+	// does depend on it (see fetchShadowingChunkStates's doc comment on
+	// why it's restricted to current library membership — re-chunking and
+	// flagging both leave orphaned state rows behind, unreachably, so an
+	// unfiltered fetch would transfer unbounded history that can never be
+	// used), so it's fetched only after library resolves.
+	const [library, latestSessionIndex] = await Promise.all([
 		fetchChunkLibrary(supabase, userId),
-		fetchShadowingContext(supabase, userId)
+		getLatestSessionIndex(supabase, userId)
 	]);
 
 	if (library.length === 0) {
@@ -53,31 +59,15 @@ export const POST: RequestHandler = async ({ getClientAddress, locals }) => {
 		return json({ sessionIndex: 0, drillItems: [] });
 	}
 
-	// selectDrillWords's due-review and not-yet-due-fallback paths (see
-	// drill-algorithm.ts's pickDueWordsRoundRobin/pickEarliestNotYetDue)
-	// pull straight from the progress list (chunkStates here), with no
-	// cross-check against the master list — correct for vocab/conjugation,
-	// where a tracked word never leaves the master list it came from, but
-	// NOT correct for shadowing: flagging a chunk removes it from
-	// fetchChunkLibrary's result without touching its shadowing_state row,
-	// so an unfiltered chunkStates would let a flagged chunk's old
-	// progress resurface through those fallback paths even though it's no
-	// longer in `library`. Filtering here, rather than teaching
-	// selectDrillWords about "master list" membership, keeps that shared,
-	// vocab/conjugation-tested function untouched.
-	const libraryChunkIds = new Set(library.map((entry) => entry.chunkId));
-	const eligibleChunkStates = context.chunkStates.filter((state) =>
-		libraryChunkIds.has(state.word)
-	);
+	const libraryChunkIds = library.map((entry) => entry.chunkId);
+	const chunkStates = await fetchShadowingChunkStates(supabase, userId, libraryChunkIds);
 
 	// Deliberately not persisted yet — see insertSessionRow's doc comment.
-	// context.sessionIndex already came from fetchShadowingContext above, so
-	// no second query is needed.
-	const sessionIndex = context.sessionIndex + 1;
+	const sessionIndex = latestSessionIndex + 1;
 
 	const drillItems = selectDrillWords(
 		library.map((entry) => ({ word: entry.chunkId, frequencyRank: entry.frequencyRank })),
-		eligibleChunkStates,
+		chunkStates,
 		sessionIndex,
 		10,
 		MIN_NEW_SLOTS_PER_SESSION

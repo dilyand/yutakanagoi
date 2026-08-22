@@ -7,6 +7,7 @@ vi.mock('$lib/server/supabase', () => ({
 
 const mocks = vi.hoisted(() => ({
 	verifyUserExists: vi.fn(),
+	verifySessionOwnership: vi.fn(),
 	upsertChunkStates: vi.fn(),
 	insertSessionAttempts: vi.fn(),
 	completeSession: vi.fn()
@@ -17,14 +18,23 @@ vi.mock('$lib/server/conjugation-auth', async (importOriginal) => {
 	return { ...actual, verifyUserExists: mocks.verifyUserExists };
 });
 
-vi.mock('$lib/server/shadowing-repository', () => ({
-	upsertChunkStates: mocks.upsertChunkStates,
-	insertSessionAttempts: mocks.insertSessionAttempts,
-	completeSession: mocks.completeSession
-}));
+// SessionNotFoundError kept real (not mocked) — +server.ts's catch block
+// does an `instanceof` check against it, so a test double class wouldn't
+// satisfy that check.
+vi.mock('$lib/server/shadowing-repository', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('$lib/server/shadowing-repository')>();
+	return {
+		...actual,
+		verifySessionOwnership: mocks.verifySessionOwnership,
+		upsertChunkStates: mocks.upsertChunkStates,
+		insertSessionAttempts: mocks.insertSessionAttempts,
+		completeSession: mocks.completeSession
+	};
+});
 
 import { POST } from './+server';
 import { UserNotFoundError } from '$lib/server/conjugation-auth';
+import { SessionNotFoundError } from '$lib/server/shadowing-repository';
 
 function makeEvent(
 	{ userId, ip = '203.0.113.1', body }: { userId?: number; ip?: string; body?: unknown } = {
@@ -41,7 +51,11 @@ function makeEvent(
 function validBody() {
 	return {
 		sessionIndex: 3,
-		chunkStates: [{ chunkId: 'rec:1:00', box: 2, lastSession: 3, box4Streak: 0 }],
+		// lastSession deliberately differs from sessionIndex (3 vs.
+		// 999999999) — see the "derives lastSession from the verified
+		// sessionIndex" regression test below, which asserts the server
+		// ignores this client-supplied value entirely.
+		chunkStates: [{ chunkId: 'rec:1:00', box: 2, lastSession: 999999999, box4Streak: 0 }],
 		attempts: [
 			{
 				chunkId: 'rec:1:00',
@@ -100,9 +114,25 @@ describe('POST /api/shadowing/session/complete', () => {
 		}
 	});
 
+	it('rejects with 404 when sessionIndex does not match a real session for this user, before writing anything', async () => {
+		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
+		mocks.verifySessionOwnership.mockRejectedValueOnce(new SessionNotFoundError());
+
+		try {
+			await POST(makeEvent({ userId: 1 }));
+			expect.unreachable();
+		} catch (e) {
+			expect(isHttpError(e, 404)).toBe(true);
+		}
+		expect(mocks.upsertChunkStates).not.toHaveBeenCalled();
+		expect(mocks.insertSessionAttempts).not.toHaveBeenCalled();
+		expect(mocks.completeSession).not.toHaveBeenCalled();
+	});
+
 	it('persists chunk states, attempts, and marks the session complete, in that order', async () => {
 		const callOrder: string[] = [];
 		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
+		mocks.verifySessionOwnership.mockResolvedValueOnce(undefined);
 		mocks.upsertChunkStates.mockImplementationOnce(async () => {
 			callOrder.push('upsert');
 		});
@@ -118,9 +148,7 @@ describe('POST /api/shadowing/session/complete', () => {
 
 		expect(body).toEqual({ ok: true });
 		expect(callOrder).toEqual(['upsert', 'attempts', 'complete']);
-		expect(mocks.upsertChunkStates).toHaveBeenCalledWith(expect.anything(), 5, [
-			{ word: 'rec:1:00', box: 2, lastSession: 3, box4Streak: 0 }
-		]);
+		expect(mocks.verifySessionOwnership).toHaveBeenCalledWith(expect.anything(), 5, 3);
 		expect(mocks.insertSessionAttempts).toHaveBeenCalledWith(
 			expect.anything(),
 			5,
@@ -130,8 +158,23 @@ describe('POST /api/shadowing/session/complete', () => {
 		expect(mocks.completeSession).toHaveBeenCalledWith(expect.anything(), 5, 3, 1);
 	});
 
+	it("derives lastSession from the verified sessionIndex, not the client-supplied per-chunk value — regression: a client could otherwise submit an arbitrarily large lastSession that upsert_shadowing_chunk_states' stale-write guard would then treat as permanently more recent than any real future session, blocking every legitimate future update to that chunk", async () => {
+		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
+		mocks.verifySessionOwnership.mockResolvedValueOnce(undefined);
+		mocks.upsertChunkStates.mockResolvedValueOnce(undefined);
+		mocks.insertSessionAttempts.mockResolvedValueOnce(undefined);
+		mocks.completeSession.mockResolvedValueOnce(undefined);
+
+		await POST(makeEvent({ userId: 5 }));
+
+		expect(mocks.upsertChunkStates).toHaveBeenCalledWith(expect.anything(), 5, [
+			{ word: 'rec:1:00', box: 2, lastSession: 3, box4Streak: 0 }
+		]);
+	});
+
 	it('rejects with 429 once the per-IP rate limit is exceeded', async () => {
 		mocks.verifyUserExists.mockResolvedValue(undefined);
+		mocks.verifySessionOwnership.mockResolvedValue(undefined);
 		mocks.upsertChunkStates.mockResolvedValue(undefined);
 		mocks.insertSessionAttempts.mockResolvedValue(undefined);
 		mocks.completeSession.mockResolvedValue(undefined);

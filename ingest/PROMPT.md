@@ -24,6 +24,19 @@ file instead of a person running each command by hand. Report back once
 publish succeeds (or once you hit something you can't resolve yourself —
 see "When something aborts" below).
 
+**Exception: check what `.env` points at before step 5.** Every `ingest:*`
+command reads `.env` by default (see `package.json`'s scripts) — steps 1-4
+never write anywhere but your local working directory regardless of which
+project that is, but step 5 (`ingest:publish`) is a real write to whatever
+Supabase project `.env`'s `SUPABASE_URL` names. If that's the local stack
+or staging, publish as part of this same uninterrupted run, same as every
+other step. **If it's production, stop before running step 5 and get the
+user's explicit confirmation first** — this is the same dry-run → staging
+→ verify → confirm → production sequence CLAUDE.md requires for every
+other production write in this repo; ingestion doesn't get a standing
+exemption from it just because it's driven by a prompt file instead of a
+person typing each command.
+
 ## Why the order is fixed
 
 Step 2 must land before step 3: `ingest:cut`'s chunk planner aligns cut
