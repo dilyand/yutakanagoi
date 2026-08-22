@@ -203,14 +203,20 @@
 	}
 
 	async function next() {
-		if (!currentItem || !hasPlayedOnce || isSubmitting) return;
+		if (!currentItem || isSubmitting) return;
+		// hasPlayedOnce is only required to record a NEW outcome. If this
+		// chunk is already handled (recorded via a prior Next, or flagged —
+		// see confirmFlag()) and we're here again, it's a retry after a
+		// failed session/complete on the last chunk: phase reverts to
+		// 'listening' with this same chunk still current, and Next is the
+		// only control shown. That retry must be able to proceed without
+		// having (re)played a chunk that was already flagged as broken.
+		if (!outcomeRecorded && !hasPlayedOnce) return;
 		isSubmitting = true;
 		try {
-			// Only record once per chunk. On the last chunk, advance() ->
-			// finishSession() can fail (network, server error) and revert to
-			// 'listening' with this same chunk still current — pressing Next
-			// again must retry the completion POST, not push a second
-			// chunkStateUpdates/attempts entry for a chunk already recorded.
+			// Only record once per chunk — see the retry note above for why
+			// a second Next press here must not push a second
+			// chunkStateUpdates/attempts entry for the same chunk.
 			if (!outcomeRecorded) {
 				recordFinalOutcome(currentItem);
 				outcomeRecorded = true;
@@ -248,6 +254,12 @@
 			isSubmitting = false;
 			return;
 		}
+		// Flagging is a terminal decision for this chunk, same as recording
+		// an outcome — marks it handled so a retry after a failed
+		// session/complete (see next()) doesn't re-flag it or, worse, fall
+		// through to recording a graded outcome for a chunk the user just
+		// said was broken.
+		outcomeRecorded = true;
 		await advance();
 		isSubmitting = false;
 	}
@@ -366,8 +378,10 @@
 					<button onclick={cancelFlag} disabled={isSubmitting}>Cancel</button>
 				</p>
 			{:else}
-				<button class="button-primary" onclick={next} disabled={!hasPlayedOnce || isSubmitting}
-					>Next</button
+				<button
+					class="button-primary"
+					onclick={next}
+					disabled={(!outcomeRecorded && !hasPlayedOnce) || isSubmitting}>Next</button
 				>
 				<p class="cancel">
 					<button onclick={cancelSession} disabled={isSubmitting}>Cancel session</button>

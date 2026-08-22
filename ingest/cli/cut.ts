@@ -10,8 +10,10 @@ const USAGE = `Usage: npm run ingest:cut -- --slug <slug> --user <username>
 Reads ingest/work/<user>/<slug>/transcript.json, plans chunk boundaries,
 cuts and fades each chunk, verifies every one (content match, no cut on an
 attack, fades applied, distinctness, coverage), and writes chunks.json with
-"kana"/"translation" left blank for the next step. Aborts — writing no
-chunks.json — if any chunk fails verification.`;
+"kana"/"translation" left blank for the next step. On a verification
+failure, chunks.json is still written (with "verified": false and
+"verifyFailures" on the affected chunk(s)) for inspection, and the command
+exits nonzero rather than proceeding to the next step.`;
 
 const FADE_MS = 30;
 

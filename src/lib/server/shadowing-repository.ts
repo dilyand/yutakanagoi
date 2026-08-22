@@ -275,9 +275,11 @@ export async function fetchChunkDetailsWithSignedUrls(
 
 	const details = await Promise.all(
 		rows.map(async (row): Promise<ChunkDetail> => {
-			const { data: signed, error: signError } = await supabase.storage
-				.from('shadowing-audio')
-				.createSignedUrl(row.audio_path, SIGNED_URL_TTL_SECONDS);
+			const { data: signed, error: signError } = await withRetry(() =>
+				supabase.storage
+					.from('shadowing-audio')
+					.createSignedUrl(row.audio_path, SIGNED_URL_TTL_SECONDS)
+			);
 			if (signError || !signed) {
 				throw signError ?? new Error(`Failed to sign URL for ${row.audio_path}`);
 			}

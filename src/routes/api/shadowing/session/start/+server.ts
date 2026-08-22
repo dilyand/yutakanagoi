@@ -41,6 +41,17 @@ export const POST: RequestHandler = async ({ getClientAddress, locals }) => {
 		fetchShadowingContext(supabase, userId)
 	]);
 
+	if (library.length === 0) {
+		// No verified, unflagged content yet for this user (normal before
+		// their first ingestion, or if everything's been flagged). Starting
+		// a session below would insert a shadowing_sessions row that never
+		// gets a matching session/complete call — the client shows "Session
+		// complete" immediately from an empty drillItems array and only
+		// calls finishSession() when advancing past a real chunk — leaving
+		// an orphaned incomplete session behind on every attempt.
+		return json({ sessionIndex: 0, drillItems: [] });
+	}
+
 	// selectDrillWords's due-review and not-yet-due-fallback paths (see
 	// drill-algorithm.ts's pickDueWordsRoundRobin/pickEarliestNotYetDue)
 	// pull straight from the progress list (chunkStates here), with no

@@ -79,6 +79,19 @@ describe('POST /api/shadowing/session/start', () => {
 		}
 	});
 
+	it('returns an empty session without creating a shadowing_sessions row when the library is empty — regression: startSession used to run unconditionally, leaving an orphaned incomplete session on every attempt before a user had any content', async () => {
+		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
+		mocks.fetchChunkLibrary.mockResolvedValueOnce([]);
+		mocks.fetchShadowingContext.mockResolvedValueOnce({ chunkStates: [], sessionIndex: 0 });
+
+		const response = await POST(makeEvent({ userId: 1 }));
+		const body = await response.json();
+
+		expect(body.drillItems).toEqual([]);
+		expect(mocks.startSession).not.toHaveBeenCalled();
+		expect(mocks.fetchChunkDetailsWithSignedUrls).not.toHaveBeenCalled();
+	});
+
 	it('verifies the user, selects drill items from the library, and returns them with signed URLs', async () => {
 		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
 		mocks.fetchChunkLibrary.mockResolvedValueOnce(fakeLibrary(15));

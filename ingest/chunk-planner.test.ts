@@ -236,12 +236,18 @@ describe('enforceMonotonicWindows (code review regression)', () => {
 		expect(enforceMonotonicWindows(cuts)).toEqual(cuts);
 	});
 
-	it('accepts a window that starts exactly where the previous one ended (touching, not overlapping)', () => {
+	it('drops a later candidate whose window starts exactly where the previous one ended (touching, not just overlapping)', () => {
+		// A touching pair still builds a [prevEnd, nextStart] = [1200, 1200]
+		// zero-duration fragment for whatever transcript text falls between
+		// the two cuts — real text silently attached to a neighbor with no
+		// audio span behind it once that fragment gets merged. Caught in
+		// code review: an earlier version of this fix only rejected a
+		// strictly-overlapping (`<`) window, not a touching one.
 		const cuts = [
 			{ localCharIndex: 5, window: { startMs: 1000, endMs: 1200 } },
 			{ localCharIndex: 12, window: { startMs: 1200, endMs: 1400 } }
 		];
-		expect(enforceMonotonicWindows(cuts)).toEqual(cuts);
+		expect(enforceMonotonicWindows(cuts)).toEqual([cuts[0]]);
 	});
 });
 

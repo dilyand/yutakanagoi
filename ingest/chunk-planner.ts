@@ -196,7 +196,13 @@ export function enforceMonotonicWindows<T extends { window: SilenceWindow }>(cut
 	const accepted: T[] = [];
 	let lastAcceptedEndMs = -Infinity;
 	for (const cut of cuts) {
-		if (cut.window.startMs < lastAcceptedEndMs) continue;
+		// Strictly greater, not just non-overlapping: a later window that
+		// starts exactly where the previous one ends still produces a
+		// zero-duration fragment for the transcript text between the two
+		// cuts — which the caller's cursor loop builds as [prevEnd,
+		// nextStart] = [X, X] — silently attaching that text to whichever
+		// neighbor it merges into even though no audio span represents it.
+		if (cut.window.startMs <= lastAcceptedEndMs) continue;
 		accepted.push(cut);
 		lastAcceptedEndMs = cut.window.endMs;
 	}
