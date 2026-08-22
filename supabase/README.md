@@ -185,14 +185,22 @@ verified, same as DB access). Path scheme:
 
 ```
 shadowing-audio/
-  users/<user_id>/<slug>/source.m4a                   # full recording, kept for re-chunking
+  users/<user_id>/<slug>/v<chunking_version>/source.m4a   # full recording, kept for re-chunking
   users/<user_id>/<slug>/v<chunking_version>/chunk-NN.m4a
 ```
 
-The chunking version is in the _path_, not just `chunk_id`, so a re-chunk
-never overwrites audio a live `shadowing_chunks` row still points at. The app
-never streams audio itself — it mints short-lived signed URLs
-(`createSignedUrl`, ~2h TTL) server-side and hands those to the client.
+The chunking version is in the _path_ for both the source and every chunk,
+not just `chunk_id` — a re-chunk's uploads (including the source) can never
+touch anything a live `shadowing_chunks` row, or the live recording row's
+`source_audio_path`, still points at. Uploads happen before the DB swap
+runs, and only the swap itself (see `publish_shadowing_recording` below)
+repoints the recording row at the new version. The app never streams audio
+itself — it mints short-lived signed URLs (`createSignedUrl`, ~2h TTL)
+server-side and hands those to the client. Old versions' Storage objects
+aren't deleted automatically on re-publish — a client that started a
+session before the re-publish may still hold a signed URL into them.
+`ingest:cleanup-old-versions` (see `ingest/README.md`) removes them, run
+manually once no such session could still be active.
 
 ### `publish_shadowing_recording` — the one RPC in this schema
 

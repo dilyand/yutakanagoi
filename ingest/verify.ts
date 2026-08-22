@@ -63,7 +63,23 @@ export interface VerifyChunkResult {
 // clear them with real margin, based on what the design notes' real bugs
 // actually looked like (tens of ms of lag, a fade that either clearly
 // ramped or didn't apply at all).
-const MAX_LAG_MS = 250;
+// Search radius for cross-correlation — how far the matcher looks in
+// either direction to find the best-aligned offset. Deliberately generous
+// so it can locate and report a genuinely large offset for diagnosis; NOT
+// the acceptance threshold (see ALIGNMENT_TOLERANCE_MS below) — crossCorrelate
+// can never return a lag larger than what it searched, so reusing this
+// same value as the accept/reject cutoff would make the lag check
+// unable to fail, ever.
+const LAG_SEARCH_RADIUS_MS = 250;
+// The actual acceptance threshold. Found 2026-08-22 (code review): an
+// earlier version compared lagMs against MAX_LAG_MS = 250 — the same
+// value as the search radius above — so a cut shifted by anywhere up to
+// 250ms would still pass, including the documented ~20-70ms -ss/-to snap
+// error this whole verification pipeline exists to catch. Real,
+// correctly-aligned cuts land at 0.0ms lag on every real chunk tested so
+// far (see audio-tools.ts's DEFAULT_SILENCE_NOISE_DB comment) — set with
+// margin above that, well below the documented bug's range.
+const ALIGNMENT_TOLERANCE_MS = 15;
 const MIN_CORRELATION = 0.9;
 const QUIET_THRESHOLD_DB = -35;
 // How much quieter the finished (faded) chunk must read than a same-content
@@ -122,8 +138,8 @@ function decodeChunkAndSourceRegion(
 	durationMs: number
 ): { needle: Float32Array; haystack: Float32Array; expectedOffsetSamples: number } {
 	const needle = decodeF32(preFadeWav);
-	const regionStart = Math.max(0, startMs - MAX_LAG_MS);
-	const regionDuration = durationMs + 2 * MAX_LAG_MS;
+	const regionStart = Math.max(0, startMs - LAG_SEARCH_RADIUS_MS);
+	const regionDuration = durationMs + 2 * LAG_SEARCH_RADIUS_MS;
 	const haystack = decodeF32(sourceWav, { startMs: regionStart, durationMs: regionDuration });
 	const expectedOffsetSamples = Math.round(((startMs - regionStart) / 1000) * SAMPLE_RATE);
 	return { needle, haystack, expectedOffsetSamples };
@@ -142,8 +158,10 @@ export function verifyChunk(input: VerifyChunkInput): VerifyChunkResult {
 		input.durationMs
 	);
 	const { lagMs, correlation } = crossCorrelate(needle, haystack, expectedOffsetSamples);
-	if (Math.abs(lagMs) > MAX_LAG_MS) {
-		failures.push(`content match: |lag| ${Math.abs(lagMs).toFixed(1)}ms exceeds ${MAX_LAG_MS}ms`);
+	if (Math.abs(lagMs) > ALIGNMENT_TOLERANCE_MS) {
+		failures.push(
+			`content match: |lag| ${Math.abs(lagMs).toFixed(1)}ms exceeds ${ALIGNMENT_TOLERANCE_MS}ms`
+		);
 	}
 	if (correlation < MIN_CORRELATION) {
 		failures.push(`content match: correlation ${correlation.toFixed(3)} below ${MIN_CORRELATION}`);

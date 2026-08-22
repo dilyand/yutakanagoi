@@ -116,9 +116,12 @@ plan.forEach((chunk, i) => {
 	});
 });
 
+const recordingVerifyFailures: string[] = [];
+
 const distinct = verifyDistinct(finalPaths);
 if (!distinct.ok) {
 	anyFailed = true;
+	recordingVerifyFailures.push(...distinct.failures);
 	console.log('Distinctness check failed:');
 	for (const f of distinct.failures) console.log(`  - ${f}`);
 }
@@ -126,6 +129,7 @@ if (!distinct.ok) {
 const coverage = verifyCoverage(plan, manifest.durationMs);
 if (!coverage.ok) {
 	anyFailed = true;
+	recordingVerifyFailures.push(...coverage.failures);
 	console.log('Coverage check failed:');
 	for (const f of coverage.failures) console.log(`  - ${f}`);
 }
@@ -138,6 +142,15 @@ interface ChunkManifest {
 	transcript: string;
 	transcriptSource: 'supplied' | 'asr';
 	recordedOn: string | null;
+	// Recording-wide checks (distinctness across all chunks, coverage of
+	// the whole timeline) aren't per-chunk — persisted here rather than
+	// only printed to the console, so ingest:publish's verification gate
+	// (which only reads this file, never a prior command's console output
+	// or exit code) can actually see a failure here too. Previously these
+	// checks correctly made ingest:cut itself exit nonzero, but a chunk
+	// could still show "verified": true individually while the recording
+	// as a whole had a real problem — publish's gate never looked at this.
+	recordingVerifyFailures: string[];
 	chunks: ChunkManifestEntry[];
 }
 
@@ -149,6 +162,7 @@ const chunkManifest: ChunkManifest = {
 	transcript: manifest.transcript,
 	transcriptSource: manifest.transcriptSource,
 	recordedOn: null,
+	recordingVerifyFailures,
 	chunks: chunkEntries
 };
 writeFileSync(path.join(workDir, 'chunks.json'), JSON.stringify(chunkManifest, null, 2));

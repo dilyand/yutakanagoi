@@ -65,10 +65,11 @@ the commands directly, for running by hand or understanding what the
 session is doing.
 
 ```sh
-npm run ingest:transcribe -- --audio <file> --user <username> [--transcript <file>] [--accept-transcript]
-npm run ingest:cut        -- --slug <slug> --user <username>
-npm run ingest:publish    -- --slug <slug> --user <username> [--dry-run]
-npm run ingest:flagged    -- --user <username>
+npm run ingest:transcribe          -- --audio <file> --user <username> [--transcript <file>] [--accept-transcript]
+npm run ingest:cut                 -- --slug <slug> --user <username>
+npm run ingest:publish             -- --slug <slug> --user <username> [--dry-run]
+npm run ingest:flagged             -- --user <username>
+npm run ingest:cleanup-old-versions -- --slug <slug> --user <username> [--dry-run]
 ```
 
 Working files land in `ingest/work/<user>/<slug>/` (gitignored — local
@@ -111,8 +112,11 @@ limits), cuts and fades every chunk, and verifies each one — content
 match against the source, no cut landing on a consonant attack, fades
 actually applied, every chunk distinct, full coverage of the recording.
 **Any verification failure aborts** — `chunks.json` is still written (for
-inspection), but with `verified: false` on the failing chunk(s), and
-`ingest:publish` refuses to run until every chunk shows clean.
+inspection), with `verified: false` on the failing per-chunk check(s) and
+any recording-wide failure (distinctness, coverage — these run once across
+the whole recording, not per chunk) listed in `chunks.json`'s
+`recordingVerifyFailures`. `ingest:publish` refuses to run until every
+chunk shows clean **and** `recordingVerifyFailures` is empty.
 
 Writes `chunks.json` with `kana`/`translation` left blank per chunk.
 
@@ -133,10 +137,19 @@ without touching anything.
 
 **Re-publishing an already-published `(user, slug)` is a re-chunk**: it
 bumps `chunking_version`, replaces that recording's `shadowing_chunks`
-rows entirely, and orphans progress on the old version's chunk ids (see
-`supabase/README.md`'s "Shadowing tables" section for why this is
-accepted rather than migrated). The full source recording is kept in
-Storage specifically so a re-chunk never requires re-recording.
+rows entirely (atomically — see `supabase/README.md`'s
+"`publish_shadowing_recording`" section), and orphans progress on the old
+version's chunk ids (see `supabase/README.md`'s "Shadowing tables" section
+for why this is accepted rather than migrated). The source recording and
+every chunk are uploaded under a `v<chunking_version>/` prefix — including
+the source, so a re-publish's uploads can never touch anything the
+currently-live version depends on — and the old version's DB rows are
+replaced only once every new file is safely uploaded.
+
+The old version's Storage objects are deliberately **not** deleted by this
+command — a client that started a session before the re-publish may still
+hold a signed URL into that old audio (valid up to 2h). See
+`ingest:cleanup-old-versions` below.
 
 ### `ingest:flagged`
 
@@ -144,6 +157,15 @@ Lists a user's chunks flagged in-app (via the drill's Flag button) —
 recording, storage path, transcript, offsets, note. The companion to
 debugging a bad chunk: "let's debug flagged items" starts here, since
 acting on a flag means re-cutting, which is this tool's job.
+
+### `ingest:cleanup-old-versions`
+
+Removes Storage objects for every `chunking_version` of a recording older
+than the currently live one. Deliberately a separate, manually-run command
+rather than something `ingest:publish` does automatically — run it once
+you're confident no session from before the re-publish is still active
+(past the 2h signed-URL TTL is a safe rule of thumb). `--dry-run` previews
+what would be removed.
 
 ## Files
 
@@ -155,7 +177,7 @@ acting on a flag means re-cutting, which is this tool's job.
 | `transcript-diff.ts` | The supplied-vs-ASR cross-check gate.                                                       |
 | `verify.ts`          | The five per-chunk/per-recording verification checks.                                       |
 | `args.ts`            | Minimal `--flag value` argv parsing, no dependency.                                         |
-| `cli/*.ts`           | The four command entry points (`npm run ingest:*`).                                         |
+| `cli/*.ts`           | The five command entry points (`npm run ingest:*`).                                         |
 
 The `cli/*.ts` commands reuse `src/lib/list-naming.ts`'s `deriveListName`
 for slug derivation and `scripts/lib/supabase-admin.ts`'s

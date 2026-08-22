@@ -44,10 +44,18 @@ interface ChunkManifest {
 	transcript: string;
 	transcriptSource: 'supplied' | 'asr';
 	recordedOn: string | null;
+	recordingVerifyFailures: string[];
 	chunks: ChunkManifestEntry[];
 }
 
 const manifest: ChunkManifest = JSON.parse(readFileSync(chunksPath, 'utf8'));
+
+if (manifest.recordingVerifyFailures?.length > 0) {
+	console.error(
+		`This recording failed a recording-wide check during ingest:cut (distinctness or coverage across all chunks) — re-run ingest:cut, don't edit chunks.json's "recordingVerifyFailures" field by hand. Affected: ${manifest.recordingVerifyFailures.join('; ')}`
+	);
+	process.exit(1);
+}
 
 const unverified = manifest.chunks.filter((c) => !c.verified);
 if (unverified.length > 0) {
@@ -95,7 +103,15 @@ if (existingError) {
 const chunkingVersion = existingRecording ? existingRecording.chunking_version + 1 : 1;
 
 const sourceExt = path.extname(manifest.sourceAudioPath) || '.m4a';
-const sourceStoragePath = `users/${userId}/${slug}/source${sourceExt}`;
+// Versioned like every chunk file, not a fixed unversioned path — an
+// earlier version always wrote to the same "source.<ext>" path with
+// upsert:true, which overwrote the currently-retained source immediately,
+// before chunk uploads and the DB swap even ran. A later failure then left
+// the previous chunking_version's recording/chunks still fully live, but
+// its archival source silently replaced by the new (possibly bad) one.
+// Versioning means this upload can never touch anything the current live
+// version depends on, matching the chunk upload pattern below.
+const sourceStoragePath = `users/${userId}/${slug}/v${chunkingVersion}/source${sourceExt}`;
 const CONTENT_TYPE_BY_EXT: Record<string, string> = {
 	'.m4a': 'audio/mp4',
 	'.mp3': 'audio/mpeg',
@@ -201,34 +217,9 @@ if (existingRecording) {
 	console.log(
 		`\nPublished "${slug}" for ${username}: ${chunkRows.length} chunk(s) at chunking_version ${chunkingVersion}.`
 	);
-
-	// The old chunking_version's DB rows are already gone (the RPC deleted
-	// them), so nothing points at its Storage objects any more — safe to
-	// remove them now rather than letting every re-publish accumulate
-	// another orphaned version's worth of audio indefinitely. Best-effort:
-	// the DB swap already succeeded, so a cleanup failure here shouldn't
-	// fail the whole publish, just leave those objects for a later pass.
-	const oldVersionPrefix = `users/${userId}/${slug}/v${existingRecording.chunking_version}`;
-	const { data: oldObjects, error: listError } = await supabase.storage
-		.from('shadowing-audio')
-		.list(oldVersionPrefix);
-	if (listError) {
-		console.error(
-			`Could not list the previous chunking_version's storage objects to clean up: ${listError.message}`
-		);
-	} else if (oldObjects.length > 0) {
-		const oldPaths = oldObjects.map((o) => `${oldVersionPrefix}/${o.name}`);
-		const { error: removeError } = await supabase.storage.from('shadowing-audio').remove(oldPaths);
-		if (removeError) {
-			console.error(
-				`Could not remove the previous chunking_version's storage objects: ${removeError.message}`
-			);
-		} else {
-			console.log(
-				`Removed ${oldPaths.length} file(s) from the previous chunking_version (v${existingRecording.chunking_version}).`
-			);
-		}
-	}
+	console.log(
+		`The previous chunking_version's audio (v${existingRecording.chunking_version}) is now unreferenced but NOT deleted — a client that started a session before this re-publish may still hold a signed URL into it (valid up to 2h, see SIGNED_URL_TTL_SECONDS in shadowing-repository.ts). Once you're confident no such session is still active, run "npm run ingest:cleanup-old-versions -- --slug ${slug} --user ${username}" to remove it.`
+	);
 } else {
 	// No prior version to protect — a plain insert-then-insert is enough.
 	// If the chunk insert below fails, the orphaned empty recording row
