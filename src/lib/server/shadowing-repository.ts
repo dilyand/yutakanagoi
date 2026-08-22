@@ -42,7 +42,16 @@ export async function fetchChunkLibrary(
 		const { data, error } = await withRetry(() =>
 			supabase
 				.from('shadowing_chunks')
-				.select('chunk_id, chunk_index, shadowing_recordings!inner(ingested_at)')
+				// The relationship hint (!shadowing_chunks_recording_id_fkey) is
+				// required, not cosmetic: once shadowing_chunks_recording_owner_fkey
+				// (the composite ownership FK — see supabase/README.md) existed
+				// alongside the plain recording_id FK, PostgREST had two valid
+				// routes to shadowing_recordings and refused to embed at all
+				// (PGRST201) — this broke session/start outright. Naming the FK
+				// explicitly is what makes an unambiguous embed possible again.
+				.select(
+					'chunk_id, chunk_index, shadowing_recordings!shadowing_chunks_recording_id_fkey!inner(ingested_at)'
+				)
 				.eq('user_id', userId)
 				.is('flagged_at', null)
 				.not('verified_at', 'is', null)

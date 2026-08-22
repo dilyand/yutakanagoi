@@ -52,6 +52,18 @@ if (!user) {
 }
 
 const slug = deriveListName(path.basename(audioPath));
+if (slug === '') {
+	// A filename made only of separators deriveListName strips entirely
+	// (e.g. "-.m4a") derives to an empty string. Left unchecked, workDir
+	// below collapses to the user's own work root (path.join no-ops on an
+	// empty component) — every later file lands there instead of a proper
+	// <user>/<slug>/ subdirectory, and --slug '' is then unaddressable
+	// (requireString rejects an empty value), leaving the operator stuck.
+	console.error(
+		`"${path.basename(audioPath)}" derives to an empty slug — rename the file to include at least one letter or digit.`
+	);
+	process.exit(1);
+}
 const workDir = path.join(import.meta.dirname, '..', 'work', username, slug);
 mkdirSync(workDir, { recursive: true });
 

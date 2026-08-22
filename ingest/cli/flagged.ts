@@ -25,10 +25,15 @@ if (!user) {
 	process.exit(1);
 }
 
+// The relationship hint (!shadowing_chunks_recording_id_fkey) is required,
+// not cosmetic — see the identical comment on fetchChunkLibrary in
+// src/lib/server/shadowing-repository.ts for why an unhinted embed here
+// fails outright once shadowing_chunks_recording_owner_fkey exists
+// alongside the plain recording_id FK.
 const { data: rows, error: rowsError } = await supabase
 	.from('shadowing_chunks')
 	.select(
-		'chunk_id, audio_path, start_ms, duration_ms, transcript, flagged_at, flag_note, shadowing_recordings(slug)'
+		'chunk_id, audio_path, start_ms, duration_ms, transcript, flagged_at, flag_note, shadowing_recordings!shadowing_chunks_recording_id_fkey(slug)'
 	)
 	.eq('user_id', user.id)
 	.not('flagged_at', 'is', null)
