@@ -65,7 +65,20 @@ if (manifest.chunks.length === 0) {
 	process.exit(1);
 }
 
-if (manifest.recordingVerifyFailures?.length > 0) {
+if (!Array.isArray(manifest.recordingVerifyFailures)) {
+	// Optional chaining here (`manifest.recordingVerifyFailures?.length > 0`)
+	// used to fail open: a stale or hand-malformed manifest missing this
+	// field entirely evaluated to `undefined > 0` — false — and was treated
+	// as "no recording-wide failures" rather than "unknown, don't trust
+	// it." The current manifest contract (see ChunkManifest above) always
+	// has this field, populated by ingest:cut even when it's empty — a
+	// manifest without it hasn't been through that check at all.
+	console.error(
+		'chunks.json is missing or has a malformed "recordingVerifyFailures" field — re-run ingest:cut, don\'t edit chunks.json by hand.'
+	);
+	process.exit(1);
+}
+if (manifest.recordingVerifyFailures.length > 0) {
 	console.error(
 		`This recording failed a recording-wide check during ingest:cut (distinctness or coverage across all chunks) — re-run ingest:cut, don't edit chunks.json's "recordingVerifyFailures" field by hand. Affected: ${manifest.recordingVerifyFailures.join('; ')}`
 	);

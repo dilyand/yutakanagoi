@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareTranscripts } from './transcript-diff.ts';
+import { compareTranscripts, bestSubstringSimilarity } from './transcript-diff.ts';
 
 describe('compareTranscripts', () => {
 	it('does not flag a transcript that matches the ASR pass closely', () => {
@@ -122,5 +122,19 @@ describe('compareTranscripts', () => {
 		const asr = 'おはよう今日はいい天気ですね散歩に行きました';
 		const report = compareTranscripts(supplied, asr);
 		expect(report.asrOnlySpans).toHaveLength(0);
+	});
+});
+
+describe('bestSubstringSimilarity (code review regression)', () => {
+	it('scores an exact match at the end of haystack as 1, even when its start position is not a multiple of step', () => {
+		// step = floor(needle.length / 4) = 5. The exact match starts at
+		// index 3 (haystack.length - needle.length), which a `for (i += 5)`
+		// scan starting at 0 never lands on (0, 5, 10, ... all overshoot or
+		// undershoot 3) — without always evaluating the last valid start
+		// position, the only window ever scored is the misaligned one at
+		// i=0, which scores well below 1 despite an exact match existing.
+		const needle = 'abcdefghijklmnopqrst'; // 20 chars
+		const haystack = 'xyz' + needle; // exact match starts at index 3
+		expect(bestSubstringSimilarity(needle, haystack)).toBe(1);
 	});
 });

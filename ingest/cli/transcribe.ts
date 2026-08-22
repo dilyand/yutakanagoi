@@ -44,6 +44,17 @@ if (!existsSync(audioPath)) {
 	console.error(`No such audio file: ${audioPath}`);
 	process.exit(1);
 }
+if (suppliedTranscriptPath && !existsSync(suppliedTranscriptPath)) {
+	// Checked up front, not after the divergence gate runs — the whole
+	// point of validating a cheap precondition first is to fail before
+	// paying for the expensive part. This used to only be checked deep
+	// inside the transcriptSource branch below, meaning a --transcript
+	// typo still paid for the full audio conversion and whisper pass
+	// (documented above as taking minutes) before erroring on something a
+	// stat() call could have caught immediately.
+	console.error(`No such transcript file: ${suppliedTranscriptPath}`);
+	process.exit(1);
+}
 
 const supabase = createAdminClient();
 const { data: user, error: userError } = await supabase
@@ -101,10 +112,6 @@ let transcript: string;
 let transcriptSource: 'supplied' | 'asr';
 
 if (suppliedTranscriptPath) {
-	if (!existsSync(suppliedTranscriptPath)) {
-		console.error(`No such transcript file: ${suppliedTranscriptPath}`);
-		process.exit(1);
-	}
 	const supplied = readFileSync(suppliedTranscriptPath, 'utf8').trim();
 	const report = compareTranscripts(
 		supplied,

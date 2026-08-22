@@ -83,15 +83,32 @@ function splitSentences(text: string): string[] {
 		.filter(Boolean);
 }
 
-/** Best fuzzy match of `needle` anywhere in `haystack`, via a same-length sliding window. */
-function bestSubstringSimilarity(needle: string, haystack: string): number {
+/**
+ * Best fuzzy match of `needle` anywhere in `haystack`, via a same-length
+ * sliding window. Exported for direct regression testing — testing it only
+ * indirectly through compareTranscripts risks the aggregate-similarity
+ * trigger masking a bug in this function's own scan, the same
+ * black-box-masking failure mode chunk-planner.ts's small pure functions
+ * are exported to avoid.
+ */
+export function bestSubstringSimilarity(needle: string, haystack: string): number {
 	if (needle.length === 0) return 1;
 	if (haystack.length <= needle.length) {
 		return 1 - levenshtein(needle, haystack) / Math.max(needle.length, haystack.length, 1);
 	}
 	let best = 0;
 	const step = Math.max(1, Math.floor(needle.length / 4));
-	for (let i = 0; i + needle.length <= haystack.length; i += step) {
+	const lastStart = haystack.length - needle.length;
+	// lastStart is always evaluated even when it isn't a multiple of
+	// `step` — otherwise a `for (i += step)` scan can step clean over the
+	// one window that exactly matches: an exact match ending exactly at
+	// haystack's end, whose start isn't step-aligned, would only ever be
+	// scored via an earlier, misaligned window that scores far lower than
+	// the real match — falsely flagging a real exact match as divergent.
+	const starts = new Set<number>();
+	for (let i = 0; i <= lastStart; i += step) starts.add(i);
+	starts.add(lastStart);
+	for (const i of starts) {
 		const window = haystack.slice(i, i + needle.length);
 		const sim = 1 - levenshtein(needle, window) / needle.length;
 		if (sim > best) best = sim;
