@@ -5,7 +5,7 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
-## 2.3.0 — Add shadowing drill, yutakanagoi's third activity
+## 3.0.0 — Add shadowing drill, yutakanagoi's third activity
 
 Plays a short chunk of real Japanese speech, the user repeats it back, no
 speech recognition or grading — repetition practice on authentic audio
