@@ -208,11 +208,27 @@ session before the re-publish may still hold a signed URL into them.
 `ingest:cleanup-old-versions` (see `ingest/README.md`) removes them, run
 manually once no such session could still be active.
 
-### `publish_shadowing_recording` — the one RPC in this schema
+### Two RPCs in this schema, for two different reasons
 
 Every other table in this app is written straight through `supabase-js`
-`.insert()`/`.update()`/`.upsert()` calls — this function
-(`20260822000001_shadowing_publish_atomic_swap.sql`) is the sole exception.
+`.insert()`/`.update()`/`.upsert()` calls — these two functions are the
+exceptions, each needed for something a plain call can't express:
+
+- **`publish_shadowing_recording`** — needs a single Postgres
+  _transaction_ (below): three writes that must land together or not at
+  all.
+- **`upsert_shadowing_chunk_states`** (`20260822050000_shadowing_state_reject_stale_writes.sql`)
+  — needs a _conditional_ write: `shadowing-repository.ts`'s
+  `upsertChunkStates` calls it for every `session/complete`, doing an
+  `insert ... on conflict (user_id, chunk_id) do update ... where
+excluded.last_session > shadowing_state.last_session` so a session that
+  completes late (after a concurrently-started later session already
+  recorded newer progress on the same chunk) can't silently regress it —
+  a plain `supabase-js` `.upsert()` has no way to express that `where`
+  clause. See `src/routes/api/shadowing/session/start/+server.ts`'s
+  `SessionAlreadyStartingError` comment for the concurrent-session
+  scenario this guards against.
+
 `ingest:publish`'s re-publish path (`ingest/cli/publish.ts`) has to update
 the recording row, delete its previous `chunking_version`'s chunk rows, and
 insert the new version's rows — three writes that must land together, since

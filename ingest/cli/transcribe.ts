@@ -143,23 +143,27 @@ if (suppliedTranscriptPath) {
 }
 
 // Everything fallible (conversion, whisper, the divergence gate) has now
-// succeeded — safe to commit the staged source into its final name...
-renameSync(tempSourcePath, sourceOriginalPath);
-renameSync(tempWavPath, sourceWavPath);
-
-// ...and, for the same reason, safe to invalidate a prior ingest:cut run's
-// output. A prior run may have left chunks.json and cut chunk audio in
-// this same directory, cut from the *old* source/transcript. Left in
-// place, that stale-but-still-"verified" chunks.json would pass every one
-// of ingest:publish's checks unmodified, publishing chunks/transcript that
-// no longer match the source/transcript.json this command just committed.
-// Clearing it forces ingest:cut to run again before a re-publish is
-// possible — existsSync(chunksPath) is publish's own gate for "run
-// ingest:cut first." Doing this (and the rename above) only after every
-// fallible step has succeeded is what stops a typo'd --transcript path, an
-// ffmpeg error, a whisper failure, or a genuine divergence-gate abort from
-// destroying the only local copy of prior verified/enriched work (real
-// work: hand-filled kana/translations) while producing no replacement.
+// succeeded — safe to commit. Invalidate a prior ingest:cut run's output
+// FIRST, before either source rename below, not after. A prior run may
+// have left chunks.json and cut chunk audio in this same directory, cut
+// from the *old* source/transcript. Left in place, that stale-but-still-
+// "verified" chunks.json would pass every one of ingest:publish's checks
+// unmodified, publishing chunks/transcript that no longer match the
+// source/transcript.json this command is about to commit. Clearing it
+// forces ingest:cut to run again before a re-publish is possible —
+// existsSync(chunksPath) is publish's own gate for "run ingest:cut
+// first." The ordering matters, not just the fact that it happens after
+// every fallible step: invalidating first means an interruption (a kill
+// signal, a crash) at ANY point from here through the renames below can
+// never leave the stale manifest behind paired with an already-replaced
+// source — chunks.json is gone before source.<ext>/source.wav change at
+// all, so publish's own "no chunks.json" gate catches it regardless of
+// exactly where an interruption lands. Doing all of this only after
+// every fallible step has succeeded (not earlier) is what stops a typo'd
+// --transcript path, an ffmpeg error, a whisper failure, or a genuine
+// divergence-gate abort from destroying the only local copy of prior
+// verified/enriched work (real work: hand-filled kana/translations)
+// while producing no replacement.
 const staleOutputPattern = /^(chunks\.json|chunk-\d+\.m4a|cut-\d+\.wav)$/;
 const staleOutputs = readdirSync(workDir).filter((f) => staleOutputPattern.test(f));
 if (staleOutputs.length > 0) {
@@ -168,6 +172,11 @@ if (staleOutputs.length > 0) {
 	);
 	for (const f of staleOutputs) rmSync(path.join(workDir, f));
 }
+
+// Only now, with the stale manifest already gone, commit the staged
+// source into its final name.
+renameSync(tempSourcePath, sourceOriginalPath);
+renameSync(tempWavPath, sourceWavPath);
 
 interface TranscriptManifest {
 	slug: string;

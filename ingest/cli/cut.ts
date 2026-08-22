@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs, requireString, requireSafePathComponent } from '../args.ts';
 import { cutChunk, applyFades, detectSilences } from '../audio-tools.ts';
@@ -178,14 +178,29 @@ interface ChunkManifest {
 }
 
 // Every chunk in the plan has been cut/faded/verified with nothing
-// throwing — safe to commit the staged audio into its final chunk-NN.m4a
-// names, and only then write chunks.json. This runs regardless of
-// anyFailed (a verification failure still writes chunks.json "for
-// inspection", by design — see the USAGE string above); what this staging
-// specifically prevents is an earlier THROWN exception (an ffmpeg crash)
-// leaving some chunk-NN.m4a files overwritten while chunks.json still
-// describes the previous run's chunks, which is what actually breaks
-// ingest:publish's trust in the manifest.
+// throwing — safe to commit. This runs regardless of anyFailed (a
+// verification failure still writes chunks.json "for inspection", by
+// design — see the USAGE string above); what this staging specifically
+// prevents is an earlier THROWN exception (an ffmpeg crash) leaving some
+// chunk-NN.m4a files overwritten while chunks.json still describes the
+// previous run's chunks, which is what actually breaks ingest:publish's
+// trust in the manifest.
+//
+// The old chunks.json is invalidated FIRST, before the rename loop below
+// promotes any staged chunk audio — not after. The promotion loop is
+// itself interruptible (a kill signal, a crash between any two renames):
+// if the old manifest were still in place while some chunk-NN.m4a files
+// have already been promoted to this new run's audio and others haven't,
+// ingest:publish would trust the old (now-wrong) transcript/verified
+// status for a manifest describing a mix of old and new chunk audio.
+// Deleting chunks.json first means an interruption at any point from
+// here through the rename loop leaves no manifest at all — publish's own
+// "no chunks.json" gate catches it regardless of exactly where an
+// interruption lands, the same reasoning ingest:transcribe's source
+// commit uses.
+const chunksJsonPath = path.join(workDir, 'chunks.json');
+if (existsSync(chunksJsonPath)) rmSync(chunksJsonPath);
+
 for (const { staged, final } of stagedToFinal) renameSync(staged, final);
 
 const chunkManifest: ChunkManifest = {
@@ -199,8 +214,8 @@ const chunkManifest: ChunkManifest = {
 	recordingVerifyFailures,
 	chunks: chunkEntries
 };
-writeFileSync(path.join(workDir, 'chunks.json'), JSON.stringify(chunkManifest, null, 2));
-console.log(`\nWrote ${path.join(workDir, 'chunks.json')}`);
+writeFileSync(chunksJsonPath, JSON.stringify(chunkManifest, null, 2));
+console.log(`\nWrote ${chunksJsonPath}`);
 
 if (anyFailed) {
 	console.error(
