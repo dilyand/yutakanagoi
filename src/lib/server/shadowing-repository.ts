@@ -108,28 +108,33 @@ interface ChunkStateRow {
  * here, rather than fetching both in parallel and filtering client-side
  * afterward.
  */
+// Chunked into batches, not one .in() call with every library chunk_id at
+// once — a large library sends the entire id list as one query-string
+// parameter, and a URL that long can be rejected by the HTTP/proxy layer
+// before result pagination ever runs (unlike the other .in() in this file,
+// on session/complete's attempts, which receives at most 10 items). No
+// inner range() pagination needed within a batch: (user_id, chunk_id) is
+// unique, so a batch of at most CHUNK_ID_BATCH_SIZE ids can never return
+// more rows than that — always comfortably under PAGE_SIZE.
+const CHUNK_ID_BATCH_SIZE = 100;
+
 export async function fetchShadowingChunkStates(
 	supabase: SupabaseClient,
 	userId: number,
 	libraryChunkIds: string[]
 ): Promise<WordState[]> {
-	if (libraryChunkIds.length === 0) return [];
 	const rows: ChunkStateRow[] = [];
-	let from = 0;
-	for (;;) {
+	for (let i = 0; i < libraryChunkIds.length; i += CHUNK_ID_BATCH_SIZE) {
+		const batch = libraryChunkIds.slice(i, i + CHUNK_ID_BATCH_SIZE);
 		const { data, error } = await withRetry(() =>
 			supabase
 				.from('shadowing_state')
 				.select('chunk_id, box, last_session, box4_streak')
 				.eq('user_id', userId)
-				.in('chunk_id', libraryChunkIds)
-				.range(from, from + PAGE_SIZE - 1)
+				.in('chunk_id', batch)
 		);
 		if (error) throw error;
-		const page = (data ?? []) as ChunkStateRow[];
-		rows.push(...page);
-		if (page.length < PAGE_SIZE) break;
-		from += PAGE_SIZE;
+		rows.push(...((data ?? []) as ChunkStateRow[]));
 	}
 
 	return rows.map((row) => ({

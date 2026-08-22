@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs, requireString, requireSafePathComponent } from '../args.ts';
 import { cutChunk, applyFades, detectSilences } from '../audio-tools.ts';
@@ -81,22 +81,36 @@ interface ChunkManifestEntry {
 }
 
 const chunkEntries: ChunkManifestEntry[] = [];
-const finalPaths: string[] = [];
+// Staged chunk audio (path.join(workDir, `.tmp-${audioFile}`) below), not
+// each chunk's own final chunk-NN.m4a name, until every chunk in the plan
+// has been cut/faded/verified with nothing throwing along the way. Without
+// this, cutChunk/applyFades throwing partway through the loop (an ffmpeg
+// crash on one chunk) left whichever earlier chunk-NN.m4a files the loop
+// had already reached fully overwritten, while the crash meant chunks.json
+// below never got rewritten — leaving the *previous* run's manifest (still
+// claiming those chunk files' old, now-incorrect transcript/verified
+// status) paired with audio that no longer matches it. ingest:publish
+// trusts chunks.json outright and never re-verifies audio bytes against
+// it, so that mismatch would publish silently. Same reasoning, and same
+// commit point, as ingest:transcribe's staged source/stale-chunks
+// invalidation (see its comments).
+const stagedToFinal: { staged: string; final: string }[] = [];
 let anyFailed = false;
 
 plan.forEach((chunk, i) => {
 	const n = String(i + 1).padStart(2, '0');
 	const preFadeWav = path.join(workDir, `cut-${n}.wav`);
 	const audioFile = `chunk-${n}.m4a`;
+	const stagedPath = path.join(workDir, `.tmp-${audioFile}`);
 	const finalPath = path.join(workDir, audioFile);
 
 	cutChunk(sourceWavPath, chunk.startMs, chunk.durationMs, preFadeWav);
-	applyFades(preFadeWav, finalPath, FADE_MS);
-	finalPaths.push(finalPath);
+	applyFades(preFadeWav, stagedPath, FADE_MS);
+	stagedToFinal.push({ staged: stagedPath, final: finalPath });
 
 	const result = verifyChunk({
 		preFadeWav,
-		finalAudioPath: finalPath,
+		finalAudioPath: stagedPath,
 		sourceWav: sourceWavPath,
 		startMs: chunk.startMs,
 		durationMs: chunk.durationMs,
@@ -127,7 +141,7 @@ plan.forEach((chunk, i) => {
 
 const recordingVerifyFailures: string[] = [];
 
-const distinct = verifyDistinct(finalPaths);
+const distinct = verifyDistinct(stagedToFinal.map((p) => p.staged));
 if (!distinct.ok) {
 	anyFailed = true;
 	recordingVerifyFailures.push(...distinct.failures);
@@ -162,6 +176,17 @@ interface ChunkManifest {
 	recordingVerifyFailures: string[];
 	chunks: ChunkManifestEntry[];
 }
+
+// Every chunk in the plan has been cut/faded/verified with nothing
+// throwing — safe to commit the staged audio into its final chunk-NN.m4a
+// names, and only then write chunks.json. This runs regardless of
+// anyFailed (a verification failure still writes chunks.json "for
+// inspection", by design — see the USAGE string above); what this staging
+// specifically prevents is an earlier THROWN exception (an ffmpeg crash)
+// leaving some chunk-NN.m4a files overwritten while chunks.json still
+// describes the previous run's chunks, which is what actually breaks
+// ingest:publish's trust in the manifest.
+for (const { staged, final } of stagedToFinal) renameSync(staged, final);
 
 const chunkManifest: ChunkManifest = {
 	slug: manifest.slug,
