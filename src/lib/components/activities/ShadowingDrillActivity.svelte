@@ -10,6 +10,13 @@
 	type Phase =
 		'idle' | 'starting' | 'listening' | 'flagging' | 'completing' | 'done' | 'no-content';
 
+	// Mirrors the server's z.string().max(500) in
+	// /api/shadowing/chunks/flag/+server.ts — without a client-side cap,
+	// typing past 500 characters got a generic 400 on submit, closed the
+	// flag form, and startFlag() clears flagNote on reopening, losing the
+	// user's text entirely.
+	const FLAG_NOTE_MAX_LENGTH = 500;
+
 	interface ShadowingDrillItem {
 		chunkId: string;
 		isNew: boolean;
@@ -405,6 +412,7 @@
 						type="text"
 						bind:value={flagNote}
 						disabled={isSubmitting}
+						maxlength={FLAG_NOTE_MAX_LENGTH}
 						onkeydown={(e) => e.key === 'Enter' && confirmFlag()}
 					/>
 				</label>

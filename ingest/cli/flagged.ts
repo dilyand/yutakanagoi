@@ -25,25 +25,54 @@ if (!user) {
 	process.exit(1);
 }
 
-// The relationship hint (!shadowing_chunks_recording_id_fkey) is required,
-// not cosmetic — see the identical comment on fetchChunkLibrary in
-// src/lib/server/shadowing-repository.ts for why an unhinted embed here
-// fails outright once shadowing_chunks_recording_owner_fkey exists
-// alongside the plain recording_id FK.
-const { data: rows, error: rowsError } = await supabase
-	.from('shadowing_chunks')
-	.select(
-		'chunk_id, audio_path, start_ms, duration_ms, transcript, flagged_at, flag_note, shadowing_recordings!shadowing_chunks_recording_id_fkey(slug)'
-	)
-	.eq('user_id', user.id)
-	.not('flagged_at', 'is', null)
-	.order('flagged_at', { ascending: false });
-if (rowsError) {
-	console.error('Failed to fetch flagged chunks:', rowsError.message);
-	process.exit(1);
+interface FlaggedRow {
+	chunk_id: string;
+	audio_path: string;
+	start_ms: number;
+	duration_ms: number;
+	transcript: string;
+	flagged_at: string;
+	flag_note: string | null;
+	shadowing_recordings: { slug: string } | { slug: string }[];
 }
 
-if (!rows || rows.length === 0) {
+// Paginated with range(), same as fetchChunkLibrary in
+// src/lib/server/shadowing-repository.ts — an unpaginated select() is
+// silently capped at the project's API row limit (typically 1,000),
+// which would under-report a user's flagged chunks past that point
+// without any indication the list was truncated. A secondary order()
+// on id (not just flagged_at, which isn't guaranteed unique) keeps the
+// sort stable across pages.
+const PAGE_SIZE = 1000;
+const rows: FlaggedRow[] = [];
+let from = 0;
+for (;;) {
+	// The relationship hint (!shadowing_chunks_recording_id_fkey) is
+	// required, not cosmetic — see the identical comment on
+	// fetchChunkLibrary for why an unhinted embed here fails outright
+	// once shadowing_chunks_recording_owner_fkey exists alongside the
+	// plain recording_id FK.
+	const { data, error: rowsError } = await supabase
+		.from('shadowing_chunks')
+		.select(
+			'chunk_id, audio_path, start_ms, duration_ms, transcript, flagged_at, flag_note, shadowing_recordings!shadowing_chunks_recording_id_fkey(slug)'
+		)
+		.eq('user_id', user.id)
+		.not('flagged_at', 'is', null)
+		.order('flagged_at', { ascending: false })
+		.order('id')
+		.range(from, from + PAGE_SIZE - 1);
+	if (rowsError) {
+		console.error('Failed to fetch flagged chunks:', rowsError.message);
+		process.exit(1);
+	}
+	const page = (data ?? []) as unknown as FlaggedRow[];
+	rows.push(...page);
+	if (page.length < PAGE_SIZE) break;
+	from += PAGE_SIZE;
+}
+
+if (rows.length === 0) {
 	console.log(`No flagged chunks for "${username}".`);
 	process.exit(0);
 }

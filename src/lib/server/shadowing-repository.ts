@@ -205,7 +205,23 @@ export async function completeSession(
 	if (error) throw error;
 }
 
-/** Upserts the post-drill box/last_session for each chunk drilled this session, scoped to one user. */
+/**
+ * Upserts the post-drill box/last_session for each chunk drilled this
+ * session, scoped to one user. Goes through the upsert_shadowing_chunk_states
+ * RPC (see its migration, 20260822050000) rather than a plain
+ * supabase-js .upsert() — SessionAlreadyStartingError only stops two
+ * requests racing to insert the *same* session_index; it doesn't stop a
+ * sequential second session (a tab left open with an incomplete session,
+ * then a new one started later) from being built off the same stale
+ * progress snapshot. If that second session finishes first and the first
+ * finishes later, a plain upsert would let the first session's completion
+ * silently overwrite the second's newer box/last_session values with older
+ * ones. The RPC's conditional ON CONFLICT only accepts a write whose
+ * last_session is greater than what's already stored per chunk — since
+ * every row in one batch shares this session's own session_index as its
+ * last_session (see rating.ts's applyShadowingOutcome), that's exactly
+ * "only a more recent session's completion may update this chunk."
+ */
 export async function upsertChunkStates(
 	supabase: SupabaseClient,
 	userId: number,
@@ -213,16 +229,15 @@ export async function upsertChunkStates(
 ): Promise<void> {
 	if (rows.length === 0) return;
 	const { error } = await withRetry(() =>
-		supabase.from('shadowing_state').upsert(
-			rows.map((row) => ({
-				user_id: userId,
+		supabase.rpc('upsert_shadowing_chunk_states', {
+			p_user_id: userId,
+			p_rows: rows.map((row) => ({
 				chunk_id: row.word,
 				box: row.box,
 				last_session: row.lastSession,
 				box4_streak: row.box4Streak
-			})),
-			{ onConflict: 'user_id,chunk_id' }
-		)
+			}))
+		})
 	);
 	if (error) throw error;
 }
