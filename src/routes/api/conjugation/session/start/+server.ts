@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createServiceClient } from '$lib/server/supabase';
-import { fetchConjugationContext, startSession } from '$lib/server/conjugation-repository';
+import { fetchConjugationContext, insertSessionRow } from '$lib/server/conjugation-repository';
 import { verifyUserExists, UserNotFoundError } from '$lib/server/conjugation-auth';
 import { checkRateLimit } from '$lib/server/rate-limit';
 import { requireUserId } from '$lib/server/require-session';
@@ -40,7 +40,10 @@ export const POST: RequestHandler = async ({ getClientAddress, locals }) => {
 	}
 
 	const context = await fetchConjugationContext(supabase, userId);
-	const sessionIndex = await startSession(supabase, userId);
+	// Deliberately not persisted yet — see insertSessionRow's doc comment.
+	// context.sessionIndex already came from fetchConjugationContext above,
+	// so no second query is needed.
+	const sessionIndex = context.sessionIndex + 1;
 
 	// The registry has no inherent "frequency" — its array index (form-major,
 	// see buildConjugationRegistry's comment) doubles as the new-cell
@@ -95,6 +98,10 @@ export const POST: RequestHandler = async ({ getClientAddress, locals }) => {
 		...item,
 		targetMeaning: targetMeaningByCellId.get(item.cellId) ?? ''
 	}));
+
+	// Only persist the session row once the response is fully built and
+	// nothing above has thrown — see insertSessionRow's doc comment.
+	await insertSessionRow(supabase, userId, sessionIndex);
 
 	return json({ sessionIndex, drillItems: drillItemsWithGlosses });
 };

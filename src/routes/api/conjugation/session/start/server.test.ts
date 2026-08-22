@@ -8,7 +8,7 @@ vi.mock('$lib/server/supabase', () => ({
 const mocks = vi.hoisted(() => ({
 	verifyUserExists: vi.fn(),
 	fetchConjugationContext: vi.fn(),
-	startSession: vi.fn(),
+	insertSessionRow: vi.fn(),
 	evaluate: vi.fn()
 }));
 
@@ -19,7 +19,7 @@ vi.mock('$lib/server/conjugation-auth', async (importOriginal) => {
 
 vi.mock('$lib/server/conjugation-repository', () => ({
 	fetchConjugationContext: mocks.fetchConjugationContext,
-	startSession: mocks.startSession
+	insertSessionRow: mocks.insertSessionRow
 }));
 
 vi.mock('$lib/server/claude-evaluate', () => ({
@@ -69,15 +69,14 @@ describe('POST /api/conjugation/session/start', () => {
 		});
 		mocks.fetchConjugationContext.mockImplementationOnce(async () => {
 			callOrder.push('fetch');
-			return { cellStates: [], sessionIndex: 0 };
-		});
-		mocks.startSession.mockImplementationOnce(async () => {
-			callOrder.push('start');
-			return 5;
+			return { cellStates: [], sessionIndex: 4 };
 		});
 		mocks.evaluate.mockImplementationOnce(async (req: { items: { cellId: string }[] }) => {
 			callOrder.push('glosses');
 			return { glosses: req.items.map((i) => ({ cellId: i.cellId, targetMeaning: 'test gloss' })) };
+		});
+		mocks.insertSessionRow.mockImplementationOnce(async () => {
+			callOrder.push('insert');
 		});
 
 		const response = await POST(makeEvent({ userId: 2 }));
@@ -101,7 +100,19 @@ describe('POST /api/conjugation/session/start', () => {
 		expect(mocks.evaluate).toHaveBeenCalledWith(
 			expect.objectContaining({ mode: 'conjugation_prompt_glosses' })
 		);
-		expect(callOrder).toEqual(['verify', 'fetch', 'start', 'glosses']);
+		expect(mocks.insertSessionRow).toHaveBeenCalledWith(expect.anything(), 2, 5);
+		// insertSessionRow last, not before the Claude call — see the next
+		// test for why this ordering is the actual fix, not just style.
+		expect(callOrder).toEqual(['verify', 'fetch', 'glosses', 'insert']);
+	});
+
+	it('never inserts a session row when the Claude glosses call throws — regression: the session row used to be inserted before this step (the old startSession, called right after fetchConjugationContext), leaving an orphaned, never-completed session behind on any failure here (network error, malformed response, rate limit) instead of just failing cleanly', async () => {
+		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
+		mocks.fetchConjugationContext.mockResolvedValueOnce({ cellStates: [], sessionIndex: 0 });
+		mocks.evaluate.mockRejectedValueOnce(new Error('Claude API request failed'));
+
+		await expect(POST(makeEvent({ userId: 1 }))).rejects.toThrow('Claude API request failed');
+		expect(mocks.insertSessionRow).not.toHaveBeenCalled();
 	});
 
 	it('rejects with 429 once the per-IP rate limit is exceeded', async () => {
@@ -110,10 +121,10 @@ describe('POST /api/conjugation/session/start', () => {
 			cellStates: [],
 			sessionIndex: 0
 		}));
-		mocks.startSession.mockImplementation(async () => 1);
 		mocks.evaluate.mockImplementation(async (req: { items: { cellId: string }[] }) => ({
 			glosses: req.items.map((i) => ({ cellId: i.cellId, targetMeaning: 'test gloss' }))
 		}));
+		mocks.insertSessionRow.mockImplementation(async () => {});
 
 		const ip = `198.51.100.${Math.floor(Math.random() * 255)}`;
 		for (let i = 0; i < 20; i++) {
