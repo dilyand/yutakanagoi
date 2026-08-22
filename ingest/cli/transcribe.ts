@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
 import path from 'node:path';
-import { parseArgs, requireString } from '../args.ts';
+import { parseArgs, requireString, requireSafePathComponent } from '../args.ts';
 import { toAnalysisWav, probeDurationMs } from '../audio-tools.ts';
 import { transcribeWav } from '../transcribe.ts';
 import { compareTranscripts } from '../transcript-diff.ts';
@@ -16,7 +16,7 @@ whisper's own independent pass — aborting on real divergence unless
 
 const args = parseArgs(process.argv.slice(2));
 const audioPath = requireString(args, 'audio', USAGE);
-const username = requireString(args, 'user', USAGE);
+const username = requireSafePathComponent(requireString(args, 'user', USAGE), 'username');
 if (args.transcript === true) {
 	// parseArgs treats a --transcript with no following value (missing
 	// entirely, or immediately followed by another --flag) as the boolean
@@ -51,19 +51,16 @@ if (!user) {
 	process.exit(1);
 }
 
-const slug = deriveListName(path.basename(audioPath));
-if (slug === '') {
-	// A filename made only of separators deriveListName strips entirely
-	// (e.g. "-.m4a") derives to an empty string. Left unchecked, workDir
-	// below collapses to the user's own work root (path.join no-ops on an
-	// empty component) — every later file lands there instead of a proper
-	// <user>/<slug>/ subdirectory, and --slug '' is then unaddressable
-	// (requireString rejects an empty value), leaving the operator stuck.
-	console.error(
-		`"${path.basename(audioPath)}" derives to an empty slug — rename the file to include at least one letter or digit.`
-	);
-	process.exit(1);
-}
+// deriveListName's extension-stripping and separator-collapsing never
+// touches literal dots, so a filename like "...m4a" derives to "..", and
+// one like "-.m4a" derives to "" — both unsafe as a path.join component
+// below (".." navigates out of the user's own work directory entirely; ""
+// collapses workDir to the user's own root, silently landing every file
+// there instead of a proper <user>/<slug>/ subdirectory).
+const slug = requireSafePathComponent(
+	deriveListName(path.basename(audioPath)),
+	`slug derived from "${path.basename(audioPath)}"`
+);
 const workDir = path.join(import.meta.dirname, '..', 'work', username, slug);
 mkdirSync(workDir, { recursive: true });
 

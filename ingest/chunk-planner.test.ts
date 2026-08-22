@@ -328,6 +328,30 @@ describe('findCandidates (code review regression)', () => {
 		const candidates = findCandidates(text, new Set(['。', '！', '？']));
 		expect(Array.from(text.slice(0, candidates[0].charIndex)).join('')).toBe('文A。');
 	});
+
+	it('treats consecutive sentence-final marks (！？) as a single boundary', () => {
+		// Without deferring to the last adjacent mark, "！" and "？" each
+		// produce their own candidate — a boundary could then land between
+		// them, starting the next chunk's text with a stray "？".
+		const text = '本当！？次に行きましょう。またね。';
+		const candidates = findCandidates(text, new Set(['。', '！', '？']));
+		const boundaryChars = candidates.map((c) => Array.from(text.slice(0, c.charIndex)).join(''));
+		expect(boundaryChars).toEqual(['本当！？', '本当！？次に行きましょう。']);
+	});
+
+	it('treats consecutive sentence-final marks (？！) in either order as a single boundary', () => {
+		const text = '本当？！次に行きましょう。またね。';
+		const candidates = findCandidates(text, new Set(['。', '！', '？']));
+		const boundaryChars = candidates.map((c) => Array.from(text.slice(0, c.charIndex)).join(''));
+		expect(boundaryChars).toEqual(['本当？！', '本当？！次に行きましょう。']);
+	});
+
+	it('combines a consecutive-mark run with a trailing closing quote correctly', () => {
+		const text = '「本当！？」次に行きましょう。またね。';
+		const candidates = findCandidates(text, new Set(['。', '！', '？']));
+		const boundaryChars = candidates.map((c) => Array.from(text.slice(0, c.charIndex)).join(''));
+		expect(boundaryChars).toEqual(['「本当！？」', '「本当！？」次に行きましょう。']);
+	});
 });
 
 describe('findBestSilence (code review regression)', () => {

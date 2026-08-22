@@ -33,3 +33,31 @@ export function requireString(
 	}
 	return value;
 }
+
+/**
+ * Rejects a value that isn't safe to use as a single filesystem path
+ * segment — every ingestion command builds
+ * ingest/work/<user>/<slug>/... directly from --user/--slug (or, in
+ * ingest:transcribe's case, a slug derived from the audio filename via
+ * deriveListName), with nothing else constraining their characters.
+ * "..", "/", or "\" in either lets a malformed value navigate outside the
+ * intended per-user work directory — deriveListName can itself produce
+ * ".." for a filename like "...m4a" (its extension-stripping and
+ * separator-collapsing never touches literal dots), so this needs to run
+ * on both raw CLI input and any derived value.
+ */
+export function requireSafePathComponent(value: string, label: string): string {
+	if (
+		value === '' ||
+		value === '.' ||
+		value === '..' ||
+		value.includes('/') ||
+		value.includes('\\')
+	) {
+		console.error(
+			`"${value}" is not a valid ${label} — must not be empty, ".", "..", or contain "/" or "\\".`
+		);
+		process.exit(1);
+	}
+	return value;
+}

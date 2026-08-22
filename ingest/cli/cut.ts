@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { parseArgs, requireString } from '../args.ts';
+import { parseArgs, requireString, requireSafePathComponent } from '../args.ts';
 import { cutChunk, applyFades, detectSilences } from '../audio-tools.ts';
 import { planChunks, type WhisperSegment } from '../chunk-planner.ts';
 import { verifyChunk, verifyDistinct, verifyCoverage } from '../verify.ts';
@@ -18,8 +18,11 @@ exits nonzero rather than proceeding to the next step.`;
 const FADE_MS = 30;
 
 const args = parseArgs(process.argv.slice(2));
-const slug = requireString(args, 'slug', USAGE);
-const username = requireString(args, 'user', USAGE);
+// Both values are used as filesystem path components below — validated
+// beyond just non-empty so a value like "../other" or ".." can't navigate
+// workDir outside the intended ingest/work/<user>/<slug> directory.
+const slug = requireSafePathComponent(requireString(args, 'slug', USAGE), 'slug');
+const username = requireSafePathComponent(requireString(args, 'user', USAGE), 'username');
 
 const workDir = path.join(import.meta.dirname, '..', 'work', username, slug);
 const transcriptPath = path.join(workDir, 'transcript.json');

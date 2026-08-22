@@ -98,29 +98,50 @@ interface CandidateBoundary {
 
 /**
  * Finds every occurrence of a mark set, as an index right after the mark —
- * advanced past any immediately-following closing bracket (」/』) and
- * whitespace first, so a boundary right before a closing quote (e.g. the
- * 。 in 「こんにちは。」次に…) doesn't split the quote mark itself into the
- * next chunk, leaving one chunk's hint text with an unmatched opening
- * quote and the next's with a stray closing one. A mark as the very last
- * character (after that advance) produces no boundary — there's nothing
- * after it to cut off.
+ * advanced past any immediately-following run of the SAME mark set first
+ * (e.g. "！？"), then past any immediately-following closing bracket
+ * (」/』) and whitespace. Two fixes for the same underlying reason,
+ * neither safe to skip:
+ *
+ * - Without the consecutive-mark advance, "本当！？次…" produces a
+ *   candidate right after "！" (before "？") AND a separate one right
+ *   after "？" — a chunk boundary could then land between them, starting
+ *   the next chunk's hint text with a stray "？" (or giving the
+ *   punctuation-only gap its own near-zero audio span).
+ * - Without the closing-bracket/whitespace advance, a boundary right
+ *   before a closing quote (e.g. the 。 in 「こんにちは。」次に…) splits the
+ *   quote mark itself into the next chunk, leaving one chunk's hint text
+ *   with an unmatched opening quote and the next's with a stray closing
+ *   one.
+ *
+ * A mark as the very last character (after both advances) produces no
+ * boundary — there's nothing after it to cut off.
  */
 export function findCandidates(text: string, marks: Set<string>): CandidateBoundary[] {
 	const boundaries: CandidateBoundary[] = [];
 	const chars = Array.from(text);
 	let idx = 0;
-	for (let i = 0; i < chars.length; i++) {
+	let i = 0;
+	while (i < chars.length) {
 		const ch = chars[i];
 		idx += ch.length;
-		if (!marks.has(ch)) continue;
+		if (!marks.has(ch)) {
+			i++;
+			continue;
+		}
 		let boundaryIdx = idx;
 		let j = i + 1;
+		while (j < chars.length && marks.has(chars[j])) {
+			boundaryIdx += chars[j].length;
+			j++;
+		}
 		while (j < chars.length && (CLOSING_BRACKET_MARKS.has(chars[j]) || /\s/.test(chars[j]))) {
 			boundaryIdx += chars[j].length;
 			j++;
 		}
 		if (boundaryIdx < text.length) boundaries.push({ charIndex: boundaryIdx });
+		idx = boundaryIdx;
+		i = j;
 	}
 	return boundaries;
 }

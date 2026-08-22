@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { parseArgs, requireString } from '../args.ts';
+import { parseArgs, requireString, requireSafePathComponent } from '../args.ts';
 import { createAdminClient } from '../../scripts/lib/supabase-admin.ts';
 
 const USAGE = `Usage: npm run ingest:publish -- --slug <slug> --user <username> [--dry-run]
@@ -13,8 +13,12 @@ progress on the old version's chunks is orphaned, not migrated (see
 supabase/README.md's "Shadowing tables" section for why).`;
 
 const args = parseArgs(process.argv.slice(2));
-const slug = requireString(args, 'slug', USAGE);
-const username = requireString(args, 'user', USAGE);
+// Both values are used as filesystem path components below — validated
+// beyond just non-empty so a value like "../other" or ".." can't navigate
+// workDir outside the intended ingest/work/<user>/<slug> directory (which
+// could otherwise publish the wrong manifest under another user/slug).
+const slug = requireSafePathComponent(requireString(args, 'slug', USAGE), 'slug');
+const username = requireSafePathComponent(requireString(args, 'user', USAGE), 'username');
 const dryRun = args['dry-run'] === true;
 
 const workDir = path.join(import.meta.dirname, '..', 'work', username, slug);
