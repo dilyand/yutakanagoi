@@ -40,7 +40,7 @@ one user's data and another's.
 
 ### Data model
 
-Two independent activities share the `users` table but otherwise keep
+Three independent activities share the `users` table but otherwise keep
 separate schemas — see `supabase/README.md` for full table definitions and
 constraints (don't duplicate that detail here):
 
@@ -87,6 +87,29 @@ constraints (don't duplicate that detail here):
   `drill-algorithm.ts` below — shared with vocab drill, not
   conjugation-specific), so the full 319-cell registry stays reachable
   regardless of review backlog.
+- **Shadowing drill**: per-user chunk library like vocab drill (not shared
+  like conjugation's registry) — `shadowing_recordings` (one row per
+  ingested source audio file) → `shadowing_chunks` (the drill unit: audio
+  path, transcript, kana, translation, `verified_at`/`flagged_at`),
+  progress per `(user_id, chunk_id)` in `shadowing_state`, sessions in
+  `shadowing_sessions`/`shadowing_session_attempts`. `chunk_id`
+  (`"<slug>:<chunking_version>:<NN>"`) is opaque to `drill-algorithm.ts`
+  exactly the way conjugation's `cell_id` already is, so `selectDrillWords`
+  is reused unmodified (`applyOutcome` is not — shadowing's own box
+  transition rule is `applyShadowingOutcome`, see `rating.ts` below).
+  Content is populated entirely by `ingest/`, a local command-line tool that
+  is **not part of this app** — see "The `ingest/` tool" below — never by
+  anything under `src/`. No speech recognition or grading: the Leitner
+  rating is derived from how far up the in-app hint ladder the user
+  climbed before advancing, not a correct/incorrect answer — see
+  `src/lib/shadowing/rating.ts` and the drill algorithm spec below.
+  `session/start` filters a user's progress rows down to their *current*
+  library before calling `selectDrillWords` — required because flagging a
+  chunk (excluding it from `fetchChunkLibrary`) doesn't delete its
+  `shadowing_state` row, and `selectDrillWords`'s not-yet-due fallback
+  reads progress directly with no such cross-check (true for
+  vocab/conjugation, where a tracked word never leaves its master list,
+  but not here).
 
 ### Activities
 
@@ -107,12 +130,31 @@ component under `src/lib/components/activities/`, add one `{:else if}`
 branch in `+page.svelte`. No changes needed to `ActivityPicker.svelte` or
 any DB table.
 
+### The `ingest/` tool
+
+`ingest/` at the repo root is the local command-line tool that populates
+the shadowing-drill activity's per-user chunk library (see
+`ingest/README.md` for usage, `ingest/PROMPT.md` for the agent-driven
+runbook). **It is not part of the yutakanagoi app** — it never deploys,
+and changes to it never bump `package.json`'s version or get a CHANGELOG
+entry, since nothing there ships to users; the app only ever reads what
+`ingest:publish` already wrote to the DB and Storage. It shares exactly two
+things with the app: the DB schema
+(`supabase/migrations/20260814000001_shadowing_tables.sql`) and the
+`shadowing-audio` Storage bucket, plus two already-generic app utilities it
+reuses rather than duplicates (`src/lib/list-naming.ts`'s `deriveListName`
+for slug derivation, `scripts/lib/supabase-admin.ts`'s `createAdminClient`
+for DB access). Everything else — the whisper/ffmpeg pipeline, the chunk
+boundary algorithm, the verification checks — lives entirely under
+`ingest/` and is a separate concern from the drill UI/API that consumes its
+output.
+
 ### Key files
 
 - `src/lib/drill-algorithm.ts` — pure, list/cell-agnostic due-word
   selection and box-transition logic (see the spec below). Unit-tested in
-  `drill-algorithm.test.ts`. Shared by both activities; if you're changing
-  drill behavior, this is the file to edit. `selectDrillWords`'s
+  `drill-algorithm.test.ts`. Shared by all three activities; if you're
+  changing drill behavior, this is the file to edit. `selectDrillWords`'s
   `minNewSlots` param (default 0, so a caller that omits it is unaffected)
   reserves up to that many session slots for never-before-seen items
   regardless of due-review backlog — but only as many as actually remain
@@ -153,9 +195,18 @@ any DB table.
 - `src/lib/server/user-list-repository.ts` (`verifyListOwnership`) and
   `src/lib/server/conjugation-auth.ts` (`verifyUserExists`) — ownership
   checks. Conjugation drills have no `listId` to check against, so
-  `verifyUserExists` is the lighter equivalent.
-- `src/lib/server/drill-repository.ts` / `conjugation-repository.ts` —
-  per-activity Supabase data access.
+  `verifyUserExists` is the lighter equivalent — reused verbatim by
+  shadowing drill's endpoints for the same reason (chunk ownership is
+  enforced by scoping every query on the session-derived `userId`
+  directly, not via a separate ownership check).
+- `src/lib/server/drill-repository.ts` / `conjugation-repository.ts` /
+  `shadowing-repository.ts` — per-activity Supabase data access.
+- `src/lib/shadowing/rating.ts` — `ratingForHintLevel`/
+  `applyShadowingOutcome`, shadowing drill's own box-transition rule
+  (direct precedent: `conjugation-engine.ts`'s `applyConjugationOutcome`
+  already does the same — an activity-specific transition function reusing
+  `nextBox4Streak` from `drill-algorithm.ts`, rather than that module's
+  binary-correct/incorrect `applyOutcome`).
 - `src/hooks.server.ts` — sets security headers
   (`Strict-Transport-Security`, `Permissions-Policy`) and the
   `handleError` hook (logs unexpected errors to both `console.error` and

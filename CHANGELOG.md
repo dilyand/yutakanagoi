@@ -5,6 +5,38 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 3.0.0 — Add shadowing drill, yutakanagoi's third activity
+
+Plays a short chunk of real Japanese speech, the user repeats it back, no
+speech recognition or grading — repetition practice on authentic audio
+rather than generic listening material. Ships as two separate pieces:
+
+- `ingest/` — a local command-line tool (not part of the app; no version
+  bump or CHANGELOG entry of its own going forward) that turns an audio
+  recording into verified, chunked, transcribed, translated rows in the
+  database: convert → whisper transcription → transcript-guided automatic
+  chunk boundaries → cut/fade/verify every chunk (content-match
+  cross-correlation, no-cut-on-an-attack, fades-applied, distinctness,
+  coverage — five checks, any failure aborts before anything publishes) →
+  upload. See `ingest/README.md` for the command reference and
+  `ingest/PROMPT.md` for the agent-driven runbook that ties the pipeline's
+  two manual editing steps (punctuation restoration, kana/translation)
+  together with the mechanical commands.
+- The drill itself — per-user chunk library (like vocab's word lists, not
+  shared like conjugation's registry), reusing `drill-algorithm.ts`'s
+  `selectDrillWords` unmodified by treating `chunk_id` as an opaque word,
+  same pattern conjugation's `cell_id` already established (box transitions
+  are shadowing's own `applyShadowingOutcome`, not the shared binary
+  `applyOutcome` — it only reuses `drill-algorithm.ts`'s `nextBox4Streak`).
+  No rating question to answer — the Leitner rating
+  is derived from how far up the in-app hint ladder (Japanese text → kana
+  → English) the user climbed before advancing (`src/lib/shadowing/rating.ts`),
+  since there's no correct/incorrect signal to grade shadowing against.
+  Playback is always user-initiated, never automatic. A chunk can be
+  flagged in-app as broken/unusable; flagging excludes it from future
+  sessions without affecting other progress, and `ingest:flagged` lists
+  flagged chunks for later triage.
+
 ## 2.2.3 — Fix vocab drill sessions shrinking well below 10 cards on small lists
 
 Reported as sessions ending after 5-9 cards instead of 10, only on the

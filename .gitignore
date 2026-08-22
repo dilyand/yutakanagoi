@@ -18,6 +18,17 @@ Thumbs.db
 !.env.example
 !.env.test
 
+# Local working notes (not for GitHub)
+/notes
+/audio
+
+# Supabase local dev (nested supabase/.gitignore already covers these for
+# git itself, but ESLint's flat-config includeIgnoreFile only reads the
+# root .gitignore, not nested ones — listed here too so `npm run lint`
+# doesn't choke on generated files after `npx supabase start`)
+/supabase/.temp
+/supabase/.branches
+
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
