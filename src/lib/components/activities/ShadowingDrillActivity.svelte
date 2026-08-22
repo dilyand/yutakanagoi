@@ -7,7 +7,8 @@
 	import type { WordState } from '$lib/drill-algorithm';
 	import { apiPost } from '$lib/client/api-client';
 
-	type Phase = 'idle' | 'starting' | 'listening' | 'flagging' | 'completing' | 'done';
+	type Phase =
+		'idle' | 'starting' | 'listening' | 'flagging' | 'completing' | 'done' | 'no-content';
 
 	interface ShadowingDrillItem {
 		chunkId: string;
@@ -119,7 +120,14 @@
 			drillItems = data.drillItems;
 			currentIndex = 0;
 			resetPerChunkState();
-			phase = drillItems.length === 0 ? 'done' : 'listening';
+			// An empty session here means no verified, unflagged content
+			// exists for this user yet (never ingested, or everything's been
+			// flagged) — session/start returns early with no drillItems
+			// rather than starting a real session. Distinct from 'done',
+			// which only follows an actual completed or cancelled session —
+			// otherwise this reads as "Session complete" and offers another
+			// identical, equally-empty session with no explanation.
+			phase = drillItems.length === 0 ? 'no-content' : 'listening';
 			if (drillItems.length > 0) prefetchNext();
 		} catch (e) {
 			errorMessage = e instanceof Error ? e.message : String(e);
@@ -380,6 +388,12 @@
 {:else if phase === 'done'}
 	<p>{wasCancelled ? 'Session cancelled — progress saved.' : 'Session complete.'}</p>
 	<button class="button-primary" onclick={start}>Start another session</button>
+	<p class="cancel"><button onclick={onExit}>Back to activities</button></p>
+{:else if phase === 'no-content'}
+	<p>
+		No shadowing content available yet — nothing has been ingested for this account, or every chunk
+		has been flagged.
+	</p>
 	<p class="cancel"><button onclick={onExit}>Back to activities</button></p>
 {:else if currentItem}
 	<div class="interaction">

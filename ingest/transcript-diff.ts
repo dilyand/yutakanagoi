@@ -6,13 +6,18 @@
  * direction alone isn't reliable; only comparing against an independent
  * transcription is.
  *
- * A whole-text normalized similarity score is the abort gate (robust
- * whether or not the ASR side has punctuation, which it often doesn't —
- * see transcribe.ts). Per-sentence reporting on top is a best-effort
- * approximation, not true alignment: each of the supplied transcript's own
- * sentences is checked against every same-length window of the ASR text
- * for the best fuzzy match, so a divergent sentence can be named in the
- * printed report rather than just contributing to one opaque score.
+ * Two independent triggers decide `diverged`: a whole-text normalized
+ * similarity score (robust whether or not the ASR side has punctuation,
+ * which it often doesn't — see transcribe.ts), and any single sentence
+ * with no good match anywhere in the ASR text. The whole-text score alone
+ * isn't enough on a long recording — one fully invented sentence only
+ * moves the aggregate score by a small fraction of the total character
+ * count, so it can hide well above DIVERGENCE_THRESHOLD even though it's
+ * exactly the kind of localized hallucination this gate exists to catch.
+ * Per-sentence matching is a best-effort approximation, not true
+ * alignment: each of the supplied transcript's own sentences is checked
+ * against every same-length window of the ASR text for the best fuzzy
+ * match. Both triggers share the same --accept-transcript override.
  */
 
 const DIVERGENCE_THRESHOLD = 0.75;
@@ -95,6 +100,6 @@ export function compareTranscripts(supplied: string, asrText: string): Transcrip
 	return {
 		overallSimilarity,
 		divergentSentences,
-		diverged: overallSimilarity < DIVERGENCE_THRESHOLD
+		diverged: overallSimilarity < DIVERGENCE_THRESHOLD || divergentSentences.length > 0
 	};
 }

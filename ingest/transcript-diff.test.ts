@@ -31,4 +31,31 @@ describe('compareTranscripts', () => {
 		const report = compareTranscripts(supplied, asr);
 		expect(report.diverged).toBe(true);
 	});
+
+	it('flags a localized hallucination even on a long recording where whole-text similarity stays above threshold', () => {
+		// Without checking divergentSentences, this exact case slips through:
+		// one fully invented sentence dilutes to a small fraction of a long
+		// transcript's total characters, keeping overallSimilarity above
+		// DIVERGENCE_THRESHOLD (0.75) even though it's exactly the kind of
+		// localized hallucination this gate exists to catch.
+		const sentences = [
+			'おはよう。',
+			'今日はいい天気ですね。',
+			'公園まで散歩に行きました。',
+			'桜がきれいに咲いていました。',
+			'途中でコーヒーを買いました。',
+			'友達と少し話しました。',
+			'それから家に帰りました。',
+			'夕方は本を読みました。',
+			'夜ご飯はカレーを作りました。',
+			'とても美味しかったです。'
+		];
+		const fake = 'これは完全に無関係などこかの誰かの話です。';
+		const supplied = sentences.slice(0, 5).join('') + fake + sentences.slice(5).join('');
+		const asr = sentences.join('').replace(/[。、！？]/g, '');
+		const report = compareTranscripts(supplied, asr);
+		expect(report.overallSimilarity).toBeGreaterThan(0.75);
+		expect(report.divergentSentences).toContain(fake);
+		expect(report.diverged).toBe(true);
+	});
 });

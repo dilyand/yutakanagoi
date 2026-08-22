@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
 	fetchChunkLibrary: vi.fn(),
 	fetchShadowingContext: vi.fn(),
 	fetchChunkDetailsWithSignedUrls: vi.fn(),
-	insertSessionRow: vi.fn()
+	insertSessionRow: vi.fn(),
+	getLatestSessionIndex: vi.fn()
 }));
 
 vi.mock('$lib/server/conjugation-auth', async (importOriginal) => {
@@ -22,7 +23,8 @@ vi.mock('$lib/server/shadowing-repository', () => ({
 	fetchChunkLibrary: mocks.fetchChunkLibrary,
 	fetchShadowingContext: mocks.fetchShadowingContext,
 	fetchChunkDetailsWithSignedUrls: mocks.fetchChunkDetailsWithSignedUrls,
-	insertSessionRow: mocks.insertSessionRow
+	insertSessionRow: mocks.insertSessionRow,
+	getLatestSessionIndex: mocks.getLatestSessionIndex
 }));
 
 import { POST } from './+server';
@@ -181,6 +183,59 @@ describe('POST /api/shadowing/session/start', () => {
 
 		await expect(POST(makeEvent({ userId: 1 }))).rejects.toThrow(/No chunk detail found/);
 		expect(mocks.insertSessionRow).not.toHaveBeenCalled();
+	});
+
+	it('retries with a freshly re-read session_index after a session_index collision — regression: two concurrent session/start calls for the same user can both compute the same "next" session_index, and the losing insert used to surface as a raw 500 after all the signing work was already done', async () => {
+		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
+		mocks.fetchChunkLibrary.mockResolvedValueOnce(fakeLibrary(1));
+		mocks.fetchShadowingContext.mockResolvedValueOnce({ chunkStates: [], sessionIndex: 0 });
+		mocks.fetchChunkDetailsWithSignedUrls.mockImplementation(async (_s, _u, chunkIds: string[]) =>
+			fakeDetails(chunkIds)
+		);
+		mocks.insertSessionRow
+			.mockRejectedValueOnce(Object.assign(new Error('duplicate key'), { code: '23505' }))
+			.mockResolvedValueOnce(undefined);
+		mocks.getLatestSessionIndex.mockResolvedValueOnce(5); // another request won the race and inserted session_index 1
+
+		const response = await POST(makeEvent({ userId: 1 }));
+		const body = await response.json();
+
+		expect(body.sessionIndex).toBe(6);
+		expect(mocks.insertSessionRow).toHaveBeenCalledTimes(2);
+		expect(mocks.insertSessionRow).toHaveBeenNthCalledWith(1, expect.anything(), 1, 1);
+		expect(mocks.insertSessionRow).toHaveBeenNthCalledWith(2, expect.anything(), 1, 6);
+	});
+
+	it('gives up after repeated session_index collisions instead of retrying forever', async () => {
+		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
+		mocks.fetchChunkLibrary.mockResolvedValueOnce(fakeLibrary(1));
+		mocks.fetchShadowingContext.mockResolvedValueOnce({ chunkStates: [], sessionIndex: 0 });
+		mocks.fetchChunkDetailsWithSignedUrls.mockImplementation(async (_s, _u, chunkIds: string[]) =>
+			fakeDetails(chunkIds)
+		);
+		const conflict = () => Object.assign(new Error('duplicate key'), { code: '23505' });
+		mocks.insertSessionRow
+			.mockRejectedValueOnce(conflict())
+			.mockRejectedValueOnce(conflict())
+			.mockRejectedValueOnce(conflict());
+		mocks.getLatestSessionIndex.mockResolvedValue(1);
+
+		await expect(POST(makeEvent({ userId: 1 }))).rejects.toThrow('duplicate key');
+		expect(mocks.insertSessionRow).toHaveBeenCalledTimes(3);
+	});
+
+	it('does not retry a non-conflict error from insertSessionRow', async () => {
+		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
+		mocks.fetchChunkLibrary.mockResolvedValueOnce(fakeLibrary(1));
+		mocks.fetchShadowingContext.mockResolvedValueOnce({ chunkStates: [], sessionIndex: 0 });
+		mocks.fetchChunkDetailsWithSignedUrls.mockImplementation(async (_s, _u, chunkIds: string[]) =>
+			fakeDetails(chunkIds)
+		);
+		mocks.insertSessionRow.mockRejectedValueOnce(new Error('network blip'));
+
+		await expect(POST(makeEvent({ userId: 1 }))).rejects.toThrow('network blip');
+		expect(mocks.insertSessionRow).toHaveBeenCalledTimes(1);
+		expect(mocks.getLatestSessionIndex).not.toHaveBeenCalled();
 	});
 
 	it('rejects with 429 once the per-IP rate limit is exceeded', async () => {

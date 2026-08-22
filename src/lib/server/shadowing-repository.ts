@@ -127,7 +127,18 @@ export async function fetchShadowingContext(
 	};
 }
 
-async function getLatestSessionIndex(supabase: SupabaseClient, userId: number): Promise<number> {
+/**
+ * Exported (not just fetchShadowingContext's private helper) so
+ * session/start can re-read it on a session_index collision — see
+ * insertSessionRow's doc comment on why the insert happens late, which is
+ * exactly what makes a collision possible: two concurrent session/start
+ * calls for the same user can both read the same latest session_index
+ * before either has inserted, then both compute the same "next" value.
+ */
+export async function getLatestSessionIndex(
+	supabase: SupabaseClient,
+	userId: number
+): Promise<number> {
 	const { data, error } = await withRetry(() =>
 		supabase
 			.from('shadowing_sessions')
@@ -152,6 +163,14 @@ async function getLatestSessionIndex(supabase: SupabaseClient, userId: number): 
  * never-completed session behind. Call this only once the response is
  * ready to return, so a failure before that point never reserves a
  * session_index it can't deliver.
+ *
+ * Deliberately doesn't swallow a unique-violation (Postgrest error code
+ * '23505', on shadowing_sessions' (user_id, session_index) constraint) —
+ * two concurrent session/start calls for the same user can both compute
+ * the same "next" session_index, and only one insert can win. The caller
+ * (session/start) is what retries on that specific code with a freshly
+ * re-read session_index (see getLatestSessionIndex); this function just
+ * reports the conflict as-is.
  */
 export async function insertSessionRow(
 	supabase: SupabaseClient,
