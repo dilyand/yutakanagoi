@@ -164,7 +164,13 @@ schema, not just inferred from reading `.sql` files.
   fade-applied, distinctness, no-cut-on-attack, coverage) can reach a
   session even if its row somehow got inserted. **Constraints:**
   `recording_id` → `shadowing_recordings(id)`; `user_id` → `users(id)`;
-  unique `(recording_id, chunk_index)` and unique `(user_id, chunk_id)`.
+  unique `(recording_id, chunk_index)` and unique `(user_id, chunk_id)`;
+  composite `(recording_id, user_id)` → `shadowing_recordings(id, user_id)`
+  (via a `unique (id, user_id)` on `shadowing_recordings`) — the
+  denormalized `user_id` here can't drift from its recording's real owner,
+  since the serving repository authorizes solely against this column
+  before signing `audio_path` (see
+  `20260822040000_shadowing_chunks_recording_owner_fkey.sql`).
 - `shadowing_state` — for the shadowing-drill activity. One row per
   `(user_id, chunk_id)`, same box/interval/streak shape as `word_state` and
   `conjugation_state` above. **No FK on `chunk_id`** — see "Shadowing

@@ -97,8 +97,9 @@ the check — fix the actual problem and re-run.
   `--accept-transcript` reflexively just to get past the check — look at
   what it flagged first.
 - **`ingest:cut` aborts if the transcript has no sentence-final
-  punctuation** (ASR path only): you skipped or under-did step 2. Go back
-  and restore punctuation properly.
+  punctuation** (either path — a supplied transcript can be just as
+  unpunctuated as ASR output, see step 2 above): you skipped or under-did
+  step 2. Go back and restore punctuation properly.
 - **`ingest:cut` aborts on a verification failure**: it printed which
   chunk(s) failed which check(s) (content match, attack, fades, distinct,
   coverage). `chunks.json` still gets written, with `verified: false` on

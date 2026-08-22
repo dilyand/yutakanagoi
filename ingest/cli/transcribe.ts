@@ -17,6 +17,17 @@ whisper's own independent pass — aborting on real divergence unless
 const args = parseArgs(process.argv.slice(2));
 const audioPath = requireString(args, 'audio', USAGE);
 const username = requireString(args, 'user', USAGE);
+if (args.transcript === true) {
+	// parseArgs treats a --transcript with no following value (missing
+	// entirely, or immediately followed by another --flag) as the boolean
+	// true, same as any other bare flag. Silently coercing that to
+	// "not supplied" (the old behavior) meant a simple usage mistake —
+	// forgetting the file path — quietly fell back to the ASR-only path
+	// instead of erroring, skipping the independent cross-check the
+	// operator explicitly asked for.
+	console.error(`--transcript requires a file path.\n\n${USAGE}`);
+	process.exit(1);
+}
 const suppliedTranscriptPath = typeof args.transcript === 'string' ? args.transcript : undefined;
 const acceptTranscript = args['accept-transcript'] === true;
 

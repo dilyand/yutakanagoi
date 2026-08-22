@@ -37,19 +37,6 @@ rather than generic listening material. Ships as two separate pieces:
   sessions without affecting other progress, and `ingest:flagged` lists
   flagged chunks for later triage.
 
-Found and fixed one real bug during implementation, worth recording since
-it's a subtle interaction rather than an obvious mistake:
-`selectDrillWords`'s not-yet-due fallback (`pickEarliestNotYetDue`) reads
-straight from the progress list with no cross-check against the current
-master list — correct for vocab and conjugation, where a tracked word
-never leaves the list it came from, but not for shadowing, where flagging
-removes a chunk from the library without touching its `shadowing_state`
-row. Unfiltered, a flagged chunk's old progress kept resurfacing through
-that fallback path indefinitely. Fixed in `session/start` by filtering the
-progress list down to current library membership before calling
-`selectDrillWords`, rather than teaching the shared function about list
-membership.
-
 ## 2.2.3 — Fix vocab drill sessions shrinking well below 10 cards on small lists
 
 Reported as sessions ending after 5-9 cards instead of 10, only on the

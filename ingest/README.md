@@ -51,9 +51,11 @@ root `CLAUDE.md`).
 
 ## Usage
 
-The tool is four commands plus two manual editing steps in between. The
-whole sequence — including the editing steps — is designed to be run as
-**one Claude Code session**, driven by `PROMPT.md`:
+The core ingestion sequence is three commands (`transcribe`, `cut`,
+`publish`) plus two manual editing steps in between — `flagged` and
+`cleanup-old-versions` are separate, occasional maintenance commands, not
+part of the sequence. The sequence — including the editing steps — is
+designed to be run as **one Claude Code session**, driven by `PROMPT.md`:
 
 > "Use the prompt from ingest to ingest `~/Downloads/some-recording.m4a`
 > for dilyand."
