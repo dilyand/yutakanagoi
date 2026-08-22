@@ -174,6 +174,35 @@ function findBestSilence(
 	return best;
 }
 
+/**
+ * Keeps only cuts (already in transcript/charIndex order, i.e.
+ * chronological) whose resolved window starts strictly after the previous
+ * ACCEPTED cut's window ends — dropping any candidate whose independently-
+ * found window is shared with, or falls before, one already accepted.
+ *
+ * findBestSilence resolves each candidate boundary independently, so two
+ * nearby candidates (two sentence-final marks close together, or the ASR
+ * time estimate being imprecise) can both match the same real silence
+ * window, or resolve to windows out of chronological order. Left
+ * unfiltered, the caller's cursor-based loop then builds a fragment whose
+ * end is before its start (or overlaps the next one) — not silently wrong
+ * data, since verifyCoverage's non-positive-duration/overlap checks catch
+ * it, but a real recording that should ingest cleanly aborts instead. A
+ * dropped candidate here is treated exactly like one findBestSilence
+ * already couldn't resolve: not a cut opportunity at this pass, not an
+ * error.
+ */
+export function enforceMonotonicWindows<T extends { window: SilenceWindow }>(cuts: T[]): T[] {
+	const accepted: T[] = [];
+	let lastAcceptedEndMs = -Infinity;
+	for (const cut of cuts) {
+		if (cut.window.startMs < lastAcceptedEndMs) continue;
+		accepted.push(cut);
+		lastAcceptedEndMs = cut.window.endMs;
+	}
+	return accepted;
+}
+
 function startsWithDiscourseConnector(text: string): boolean {
 	const trimmed = text.trimStart();
 	return DISCOURSE_CONNECTORS.some((c) => trimmed.startsWith(c));
@@ -264,11 +293,13 @@ function splitAtCommas(
 	if (cuts.length === 0) return [fragment];
 
 	cuts.sort((a, b) => a.localCharIndex - b.localCharIndex);
+	const monotonicCuts = enforceMonotonicWindows(cuts);
+	if (monotonicCuts.length === 0) return [fragment];
 	const pieces: Fragment[] = [];
 	let cursorMs = fragment.startMs;
 	let cursorChar = 0;
 	let leading = fragment.leadingSilence;
-	for (const cut of cuts) {
+	for (const cut of monotonicCuts) {
 		pieces.push({
 			startMs: cursorMs,
 			endMs: cut.window.startMs,
@@ -318,12 +349,13 @@ export function planChunks(input: ChunkPlannerInput): PlannedChunk[] {
 		const window = findBestSilence(expected, silences, 0, durationMs);
 		if (window) resolvedCuts.push({ charIndex: c.charIndex, window });
 	}
+	const monotonicResolvedCuts = enforceMonotonicWindows(resolvedCuts);
 
 	const fragments: Fragment[] = [];
 	let cursorMs = 0;
 	let cursorChar = 0;
 	let leading: SilenceWindow | null = null;
-	for (const cut of resolvedCuts) {
+	for (const cut of monotonicResolvedCuts) {
 		fragments.push({
 			startMs: cursorMs,
 			endMs: cut.window.startMs,

@@ -194,6 +194,27 @@ never overwrites audio a live `shadowing_chunks` row still points at. The app
 never streams audio itself — it mints short-lived signed URLs
 (`createSignedUrl`, ~2h TTL) server-side and hands those to the client.
 
+### `publish_shadowing_recording` — the one RPC in this schema
+
+Every other table in this app is written straight through `supabase-js`
+`.insert()`/`.update()`/`.upsert()` calls — this function
+(`20260822000001_shadowing_publish_atomic_swap.sql`) is the sole exception.
+`ingest:publish`'s re-publish path (`ingest/cli/publish.ts`) has to update
+the recording row, delete its previous `chunking_version`'s chunk rows, and
+insert the new version's rows — three writes that must land together, since
+a re-chunk's whole point is swapping one complete, working chunk set for
+another. Doing that as three separate `supabase-js` calls left a real gap: a
+failure between the delete and the insert left the recording with zero live
+chunks until a manual retry. This function wraps all three writes in one
+Postgres transaction (`security definer`, callable by `service_role` only,
+same access model as every table) so the swap is all-or-nothing — call it
+via `supabase.rpc('publish_shadowing_recording', {...})`, never by hand-
+rolling the three writes again. First-time publish (no existing recording)
+doesn't need this: there's no previous version to protect, and a failed
+chunk insert there just leaves an empty recording row that self-heals on
+the next `ingest:publish` run (it becomes `existingRecording` next time,
+which goes through this transactional path).
+
 ### Migration gotchas: no FK here cascades
 
 **None of the foreign keys above have `ON DELETE`/`ON UPDATE CASCADE`** —

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	planChunks,
+	enforceMonotonicWindows,
 	MAX_MS,
 	MIN_MS,
 	TARGET_MS,
@@ -190,6 +191,56 @@ describe('planChunks — comma-split of an over-long sentence, then re-merge tow
 		expect(chunks).toHaveLength(1);
 		expect(chunks[0].durationMs).toBeGreaterThan(MAX_MS);
 		expect(chunks[0].transcript).toBe(transcript);
+	});
+});
+
+describe('enforceMonotonicWindows (code review regression)', () => {
+	// findBestSilence resolves each candidate boundary independently, so two
+	// nearby candidates can land on the same real silence window (or, more
+	// rarely, on out-of-order ones). Unfiltered, the caller's cursor-based
+	// loop then builds a fragment whose end is before its start. Tested
+	// directly against enforceMonotonicWindows rather than through
+	// planChunks's full pipeline: end-to-end, greedyMergeToward's forced
+	// pull-in of anything under MIN_MS (including a negative-duration
+	// fragment, which trivially satisfies "< MIN_MS") silently absorbs the
+	// broken fragment into its neighbor most of the time, so a black-box
+	// planChunks test can pass even when this filter is missing — the
+	// absorption doesn't crash or produce an obviously malformed chunk, it
+	// silently pulls the wrong span of transcript text into a chunk whose
+	// actual audio doesn't contain it, which nothing downstream (verify.ts
+	// checks audio content, not transcript-to-audio alignment) would catch.
+	it('drops a later candidate whose window is identical to an earlier accepted one', () => {
+		const window = { startMs: 1300, endMs: 1700 };
+		const cuts = [
+			{ localCharIndex: 9, window },
+			{ localCharIndex: 16, window }
+		];
+		expect(enforceMonotonicWindows(cuts)).toEqual([{ localCharIndex: 9, window }]);
+	});
+
+	it('drops a later candidate whose window overlaps (but is not identical to) an earlier accepted one', () => {
+		const cuts = [
+			{ localCharIndex: 5, window: { startMs: 1000, endMs: 1500 } },
+			{ localCharIndex: 12, window: { startMs: 1200, endMs: 1800 } } // starts before the first ends
+		];
+		expect(enforceMonotonicWindows(cuts)).toEqual([cuts[0]]);
+	});
+
+	it('keeps every candidate when windows are already strictly increasing and non-overlapping', () => {
+		const cuts = [
+			{ localCharIndex: 5, window: { startMs: 1000, endMs: 1200 } },
+			{ localCharIndex: 12, window: { startMs: 2000, endMs: 2200 } },
+			{ localCharIndex: 20, window: { startMs: 3000, endMs: 3200 } }
+		];
+		expect(enforceMonotonicWindows(cuts)).toEqual(cuts);
+	});
+
+	it('accepts a window that starts exactly where the previous one ended (touching, not overlapping)', () => {
+		const cuts = [
+			{ localCharIndex: 5, window: { startMs: 1000, endMs: 1200 } },
+			{ localCharIndex: 12, window: { startMs: 1200, endMs: 1400 } }
+		];
+		expect(enforceMonotonicWindows(cuts)).toEqual(cuts);
 	});
 });
 

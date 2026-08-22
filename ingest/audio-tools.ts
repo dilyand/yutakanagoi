@@ -197,6 +197,9 @@ export function detectSilences(
 		],
 		{ encoding: 'utf8', maxBuffer: 1024 * 1024 * 64 }
 	);
+	if (result.status !== 0) {
+		throw new Error(`ffmpeg silencedetect failed for ${wav}:\n${result.stderr}`);
+	}
 	const stderr = result.stderr ?? '';
 
 	const starts: number[] = [];

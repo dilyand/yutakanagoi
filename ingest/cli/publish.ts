@@ -154,40 +154,58 @@ for (const chunk of manifest.chunks) {
 	chunkUploads.push({ chunk, storagePath });
 }
 
-// Now swap the DB rows — the only remaining step, and the smallest
-// possible window between "old version still fully live" and "new version
-// fully live," now that every file it references already exists.
-let recordingId: number;
+function buildChunkRow(recordingId: number, chunk: ChunkManifestEntry, storagePath: string) {
+	return {
+		recording_id: recordingId,
+		user_id: userId,
+		chunk_index: chunk.index,
+		chunk_id: `${slug}:${chunkingVersion}:${String(chunk.index).padStart(2, '0')}`,
+		audio_path: storagePath,
+		// start_ms/duration_ms are integer columns; chunk-planner's output
+		// carries fractional ms (ffmpeg's silencedetect reports fractional
+		// seconds) — round at this DB boundary rather than earlier, since
+		// fractional ms don't hurt any of the intermediate ffmpeg calls.
+		start_ms: Math.round(chunk.startMs),
+		duration_ms: Math.round(chunk.durationMs),
+		transcript: chunk.transcript,
+		kana: chunk.kana,
+		translation: chunk.translation
+	};
+}
+
 if (existingRecording) {
-	recordingId = existingRecording.id;
-	const { error: updateError } = await supabase
-		.from('shadowing_recordings')
-		.update({
-			source_audio_path: sourceStoragePath,
-			duration_ms: manifest.durationMs,
-			transcript: manifest.transcript,
-			transcript_source: manifest.transcriptSource,
-			chunking_version: chunkingVersion,
-			ingested_at: new Date().toISOString()
-		})
-		.eq('id', recordingId);
-	if (updateError) {
-		console.error('Failed to update recording:', updateError.message);
+	// The recording update, old-chunk delete, and new-chunk insert all run
+	// inside one DB transaction (publish_shadowing_recording, see the
+	// matching migration) — a mid-swap failure rolls back completely rather
+	// than leaving the recording with zero live chunks. Every new-version
+	// file is already uploaded above, so this is the only remaining step.
+	const chunkRows = chunkUploads.map(({ chunk, storagePath }) =>
+		buildChunkRow(existingRecording.id, chunk, storagePath)
+	);
+	const { error: rpcError } = await supabase.rpc('publish_shadowing_recording', {
+		p_recording_id: existingRecording.id,
+		p_source_audio_path: sourceStoragePath,
+		p_duration_ms: manifest.durationMs,
+		p_transcript: manifest.transcript,
+		p_transcript_source: manifest.transcriptSource,
+		p_chunking_version: chunkingVersion,
+		p_chunk_rows: chunkRows
+	});
+	if (rpcError) {
+		console.error('Failed to swap in the new chunking_version:', rpcError.message);
+		console.error(
+			`The previous chunking_version's chunks are still fully intact (the swap is transactional) — all new-version audio is already uploaded, so re-running "npm run ingest:publish -- --slug ${slug} --user ${username}" retries safely.`
+		);
 		process.exit(1);
 	}
-	// Old chunking_version's rows are replaced wholesale — see the no-FK
-	// rationale in supabase/README.md's "Shadowing tables" section.
-	// shadowing_state rows for the old chunk_ids are left in place,
-	// harmlessly unreachable (no FK to violate).
-	const { error: deleteError } = await supabase
-		.from('shadowing_chunks')
-		.delete()
-		.eq('recording_id', recordingId);
-	if (deleteError) {
-		console.error("Failed to clear the previous chunking_version's chunks:", deleteError.message);
-		process.exit(1);
-	}
+	console.log(
+		`\nPublished "${slug}" for ${username}: ${chunkRows.length} chunk(s) at chunking_version ${chunkingVersion}.`
+	);
 } else {
+	// No prior version to protect — a plain insert-then-insert is enough.
+	// If the chunk insert below fails, the orphaned empty recording row
+	// self-heals on the next run: it becomes "existingRecording" above, and
+	// that re-publish goes through the transactional swap path.
 	const { data: inserted, error: insertError } = await supabase
 		.from('shadowing_recordings')
 		.insert({
@@ -205,38 +223,16 @@ if (existingRecording) {
 		console.error('Failed to insert recording:', insertError?.message);
 		process.exit(1);
 	}
-	recordingId = inserted.id;
-}
-
-const chunkRows = chunkUploads.map(({ chunk, storagePath }) => ({
-	recording_id: recordingId,
-	user_id: userId,
-	chunk_index: chunk.index,
-	chunk_id: `${slug}:${chunkingVersion}:${String(chunk.index).padStart(2, '0')}`,
-	audio_path: storagePath,
-	// start_ms/duration_ms are integer columns; chunk-planner's output
-	// carries fractional ms (ffmpeg's silencedetect reports fractional
-	// seconds) — round at this DB boundary rather than earlier, since
-	// fractional ms don't hurt any of the intermediate ffmpeg calls.
-	start_ms: Math.round(chunk.startMs),
-	duration_ms: Math.round(chunk.durationMs),
-	transcript: chunk.transcript,
-	kana: chunk.kana,
-	translation: chunk.translation,
-	verified_at: new Date().toISOString()
-}));
-
-const { error: chunksInsertError } = await supabase.from('shadowing_chunks').insert(chunkRows);
-if (chunksInsertError) {
-	console.error('Failed to insert chunk rows:', chunksInsertError.message);
-	if (existingRecording) {
-		console.error(
-			`The previous chunking_version's chunk rows were already cleared. Re-run "npm run ingest:publish -- --slug ${slug} --user ${username}" to retry — all new-version audio is already uploaded, so the retry only needs to redo this insert.`
-		);
+	const chunkRows = chunkUploads.map(({ chunk, storagePath }) => ({
+		...buildChunkRow(inserted.id, chunk, storagePath),
+		verified_at: new Date().toISOString()
+	}));
+	const { error: chunksInsertError } = await supabase.from('shadowing_chunks').insert(chunkRows);
+	if (chunksInsertError) {
+		console.error('Failed to insert chunk rows:', chunksInsertError.message);
+		process.exit(1);
 	}
-	process.exit(1);
+	console.log(
+		`\nPublished "${slug}" for ${username}: ${chunkRows.length} chunk(s) at chunking_version ${chunkingVersion}.`
+	);
 }
-
-console.log(
-	`\nPublished "${slug}" for ${username}: ${chunkRows.length} chunk(s) at chunking_version ${chunkingVersion}.`
-);

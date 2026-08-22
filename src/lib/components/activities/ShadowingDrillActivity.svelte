@@ -52,6 +52,12 @@
 	// firing a second request (and, on the last chunk, a second
 	// session/complete write) while the first is still in flight.
 	let isSubmitting = $state(false);
+	// Set once recordFinalOutcome() has run for the current chunk, so a
+	// retried Next after a failed session/complete (see finishSession())
+	// doesn't push a second chunkStateUpdates/attempts entry for the same
+	// chunk — a duplicate (user_id, chunk_id) pair in one batch upsert call
+	// fails permanently, not just once.
+	let outcomeRecorded = $state(false);
 
 	let chunkStateUpdates: WordState[] = [];
 	let attempts: ShadowingSessionAttempt[] = [];
@@ -79,6 +85,7 @@
 		hasPlayedOnce = false;
 		playbackRate = 1;
 		flagNote = '';
+		outcomeRecorded = false;
 		// The audio element is reused across chunks (only its src changes),
 		// so its playbackRate is a live DOM property that outlives this
 		// reset unless cleared explicitly — otherwise a 0.75x chunk leaves
@@ -124,10 +131,25 @@
 	// advancing to the next chunk, only on an explicit tap here.
 	function play() {
 		if (!audioEl) return;
-		if (hasPlayedOnce) replays += 1;
-		hasPlayedOnce = true;
+		errorMessage = '';
 		audioEl.currentTime = 0;
-		audioEl.play();
+		// hasPlayedOnce/replays are set from a real "ended" event (below),
+		// not from this call — play() can reject (network/codec/CSP) or the
+		// user can abandon it mid-clip, and neither should count as having
+		// heard the chunk.
+		audioEl.play().catch(() => {
+			errorMessage = 'Playback failed — try again.';
+		});
+	}
+
+	// Only a completed playthrough counts: the first sets hasPlayedOnce
+	// (unlocking Next), every one after that counts as a replay.
+	function handlePlaybackEnded() {
+		if (hasPlayedOnce) {
+			replays += 1;
+		} else {
+			hasPlayedOnce = true;
+		}
 	}
 
 	function toggleSpeed() {
@@ -184,7 +206,15 @@
 		if (!currentItem || !hasPlayedOnce || isSubmitting) return;
 		isSubmitting = true;
 		try {
-			recordFinalOutcome(currentItem);
+			// Only record once per chunk. On the last chunk, advance() ->
+			// finishSession() can fail (network, server error) and revert to
+			// 'listening' with this same chunk still current — pressing Next
+			// again must retry the completion POST, not push a second
+			// chunkStateUpdates/attempts entry for a chunk already recorded.
+			if (!outcomeRecorded) {
+				recordFinalOutcome(currentItem);
+				outcomeRecorded = true;
+			}
 			await advance();
 		} finally {
 			isSubmitting = false;
@@ -265,7 +295,12 @@
 			<span class="badge">{chunkLengthLabel}</span>
 		</div>
 
-		<audio bind:this={audioEl} src={currentItem.audioUrl} preload="auto" style="display: none"
+		<audio
+			bind:this={audioEl}
+			src={currentItem.audioUrl}
+			preload="auto"
+			onended={handlePlaybackEnded}
+			style="display: none"
 		></audio>
 
 		<div class="shadowing-controls">
@@ -273,7 +308,11 @@
 				{hasPlayedOnce ? '▶ Replay' : '▶ Play'}
 			</button>
 			<div class="shadowing-secondary-controls">
-				<button class:active={playbackRate === 0.75} onclick={toggleSpeed}>0.75×</button>
+				<button
+					class:active={playbackRate === 0.75}
+					aria-pressed={playbackRate === 0.75}
+					onclick={toggleSpeed}>0.75×</button
+				>
 				<button onclick={startFlag} disabled={phase === 'flagging' || isSubmitting}>⚑ Flag</button>
 			</div>
 		</div>
