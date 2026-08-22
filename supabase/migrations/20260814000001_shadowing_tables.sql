@@ -1,4 +1,4 @@
--- 2.3.0: shadowing drill, yutakanagoi's third activity.
+-- 3.0.0: shadowing drill, yutakanagoi's third activity.
 --
 -- Unlike conjugation drill's shared registry, shadowing content is per-user
 -- (like vocab drill's word lists) — each user's shadowing library is their

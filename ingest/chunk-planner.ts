@@ -327,6 +327,37 @@ function clamp(v: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, v));
 }
 
+interface JointBoundary {
+	/** Where the chunk before this window should end. */
+	chunkEndMs: number;
+	/** Where the chunk after this window should start. */
+	nextStartMs: number;
+}
+
+/**
+ * Resolves one internal silence window's boundary for the two chunks that
+ * share it, computed jointly so they can never cross. Wide enough
+ * (>= PRE_ATTACK_MS + TAIL_MS) for both adjustments in full: reproduces the
+ * original independent-clamp behavior exactly, which deliberately leaves a
+ * small gap of untouched silence between the two chunks. Narrower than
+ * that: splits whatever width is actually available between the two sides
+ * in the same TAIL_MS:PRE_ATTACK_MS ratio as the constants themselves, so
+ * both meet at exactly one point instead of overlapping.
+ */
+export function jointBoundary(window: SilenceWindow): JointBoundary {
+	const desiredEndMs = window.startMs + TAIL_MS;
+	const desiredStartMs = window.endMs - PRE_ATTACK_MS;
+	if (desiredEndMs <= desiredStartMs) {
+		return {
+			chunkEndMs: clamp(desiredEndMs, window.startMs, window.endMs),
+			nextStartMs: clamp(desiredStartMs, window.startMs, window.endMs)
+		};
+	}
+	const width = window.endMs - window.startMs;
+	const boundary = window.startMs + width * (TAIL_MS / (TAIL_MS + PRE_ATTACK_MS));
+	return { chunkEndMs: boundary, nextStartMs: boundary };
+}
+
 export function planChunks(input: ChunkPlannerInput): PlannedChunk[] {
 	const { transcript, durationMs, whisperSegments, silences } = input;
 	const asrSpine = buildAsrSpine(whisperSegments);
@@ -421,28 +452,36 @@ export function planChunks(input: ChunkPlannerInput): PlannedChunk[] {
 		}
 	}
 
-	// Phase E: pre-attack/tail adjustment on every surviving boundary,
-	// using each chunk's own leading/trailing silence window — carried
-	// through every merge above — never the raw fragment edges. The first
-	// chunk's start and the last chunk's end are left untouched: there is
-	// no preceding/following audio there to adjust into.
+	// Phase E: pre-attack/tail adjustment on every surviving boundary. An
+	// internal boundary is a silence window shared between the chunk before
+	// it (whose end extends TAIL_MS into it) and the chunk after it (whose
+	// start pulls PRE_ATTACK_MS back into it) — resolved jointly per window
+	// via jointBoundary below, not independently per chunk, so a window
+	// narrower than PRE_ATTACK_MS + TAIL_MS can never make the two sides
+	// cross (found 2026-08-22, code review: detectSilences accepts windows
+	// as short as DEFAULT_SILENCE_MIN_DURATION_S=150ms, well under the
+	// 275ms both adjustments need in full — an independent clamp on each
+	// side let them overlap, which verifyCoverage then aborted on). The
+	// first chunk's start and the last chunk's end are left untouched:
+	// there is no preceding/following audio there to adjust into.
+	const jointBoundaryCache = new Map<SilenceWindow, JointBoundary>();
+	function cachedJointBoundary(window: SilenceWindow): JointBoundary {
+		const cached = jointBoundaryCache.get(window);
+		if (cached) return cached;
+		const result = jointBoundary(window);
+		jointBoundaryCache.set(window, result);
+		return result;
+	}
+
 	return final.map((chunk, i) => {
 		const startMs =
 			i === 0 || !chunk.leadingSilence
 				? chunk.startMs
-				: clamp(
-						chunk.leadingSilence.endMs - PRE_ATTACK_MS,
-						chunk.leadingSilence.startMs,
-						chunk.leadingSilence.endMs
-					);
+				: cachedJointBoundary(chunk.leadingSilence).nextStartMs;
 		const endMs =
 			i === final.length - 1 || !chunk.trailingSilence
 				? chunk.endMs
-				: clamp(
-						chunk.trailingSilence.startMs + TAIL_MS,
-						chunk.trailingSilence.startMs,
-						chunk.trailingSilence.endMs
-					);
+				: cachedJointBoundary(chunk.trailingSilence).chunkEndMs;
 		return {
 			startMs,
 			durationMs: Math.max(endMs - startMs, 1),

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	planChunks,
 	enforceMonotonicWindows,
+	jointBoundary,
 	MAX_MS,
 	MIN_MS,
 	TARGET_MS,
@@ -241,6 +242,57 @@ describe('enforceMonotonicWindows (code review regression)', () => {
 			{ localCharIndex: 12, window: { startMs: 1200, endMs: 1400 } }
 		];
 		expect(enforceMonotonicWindows(cuts)).toEqual(cuts);
+	});
+});
+
+describe('jointBoundary (code review regression)', () => {
+	// Phase E independently clamped each chunk's own end/start into its
+	// shared boundary window — findBestSilence/detectSilences can produce
+	// windows as short as DEFAULT_SILENCE_MIN_DURATION_S (150ms), well
+	// under the 275ms (PRE_ATTACK_MS + TAIL_MS) both adjustments need in
+	// full, so the two independently-clamped values could cross.
+
+	it('reproduces the original independent-clamp behavior when the window is wide enough for both adjustments', () => {
+		const window: SilenceWindow = { startMs: 1000, endMs: 1300 }; // 300ms, > 275ms
+		const { chunkEndMs, nextStartMs } = jointBoundary(window);
+		expect(chunkEndMs).toBe(1000 + TAIL_MS);
+		expect(nextStartMs).toBe(1300 - PRE_ATTACK_MS);
+		expect(chunkEndMs).toBeLessThan(nextStartMs); // the original's small gap is preserved
+	});
+
+	it('meets at exactly one point, never crossing, for a window narrower than PRE_ATTACK_MS + TAIL_MS (150-274ms)', () => {
+		for (const width of [150, 200, 250, 274]) {
+			const window: SilenceWindow = { startMs: 1000, endMs: 1000 + width };
+			const { chunkEndMs, nextStartMs } = jointBoundary(window);
+			expect(chunkEndMs).toBe(nextStartMs);
+			expect(chunkEndMs).toBeGreaterThanOrEqual(window.startMs);
+			expect(chunkEndMs).toBeLessThanOrEqual(window.endMs);
+		}
+	});
+
+	it('is continuous at the exact PRE_ATTACK_MS + TAIL_MS threshold', () => {
+		const window: SilenceWindow = { startMs: 1000, endMs: 1000 + PRE_ATTACK_MS + TAIL_MS };
+		const { chunkEndMs, nextStartMs } = jointBoundary(window);
+		expect(chunkEndMs).toBe(nextStartMs);
+		expect(chunkEndMs).toBe(1000 + TAIL_MS);
+	});
+
+	it('planChunks end-to-end: two chunks straddling a 200ms internal window never overlap', () => {
+		// Both sentences individually exceed TARGET_MS, so greedyMergeToward
+		// (phase C) keeps them as two separate chunks instead of re-merging
+		// them back across the boundary this test is checking.
+		const transcript = 'すぐに始まります。それから終わります。';
+		const whisperSegments: WhisperSegment[] = [
+			{ startMs: 0, endMs: 8300, text: 'すぐに始まります' },
+			{ startMs: 8500, endMs: 16800, text: 'それから終わります' }
+		];
+		// A 200ms window: narrower than PRE_ATTACK_MS + TAIL_MS (275ms).
+		const silences: SilenceWindow[] = [{ startMs: 8300, endMs: 8500 }];
+
+		const chunks = planChunks({ transcript, durationMs: 16800, whisperSegments, silences });
+
+		expect(chunks).toHaveLength(2);
+		expect(chunks[0].startMs + chunks[0].durationMs).toBeLessThanOrEqual(chunks[1].startMs);
 	});
 });
 
