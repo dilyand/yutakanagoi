@@ -20,6 +20,7 @@
 		"scrub-master-list-cleanup": "tsx --env-file=.env scripts/scrub-master-list-cleanup.ts",
 		"fix-hellotalk-words": "tsx --env-file=.env scripts/fix-hellotalk-words-corrections.ts",
 		"strip-list-name-extensions": "tsx --env-file=.env scripts/strip-list-name-extensions.ts",
+		"fix-hellotalk-duplicate-list": "tsx --env-file=.env scripts/fix-hellotalk-duplicate-list.ts",
 		"ingest:transcribe": "tsx --env-file=.env ingest/cli/transcribe.ts",
 		"ingest:cut": "tsx --env-file=.env ingest/cli/cut.ts",
 		"ingest:publish": "tsx --env-file=.env ingest/cli/publish.ts",
