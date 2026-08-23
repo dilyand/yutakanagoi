@@ -177,8 +177,9 @@ output.
   session slots with not-yet-due words (closest-to-due first, box 4
   included) rather than returning a short session. A ~2000-word master
   list never introduces enough mastery pressure to hit this in practice —
-  it took a 97-word list (`hellotalk-words`) 87% mastered into box 4 to
-  surface it. See the spec below and CHANGELOG 2.2.3.
+  it took a 97-word list (`hello-talk`, renamed from `hellotalk-words` in
+  3.0.1 — see CHANGELOG 3.0.1) 87% mastered into box 4 to surface it. See
+  the spec below and CHANGELOG 2.2.3.
 - `src/lib/conjugation-engine.ts` — `conjugate()`, a pure deterministic
   function. Grading tries an exact match against it first (zero Claude
   calls for the common case).
