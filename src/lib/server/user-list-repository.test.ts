@@ -103,55 +103,40 @@ describe('verifyListOwnership', () => {
 });
 
 describe('createWordList', () => {
-	it('creates the list and its words, returning the new list id', async () => {
-		const listWordsBuilder = queryBuilder({ error: null });
-		const supabase = {
-			from: vi.fn((table: string) => {
-				if (table === 'word_lists') return queryBuilder({ data: { id: 42 } });
-				if (table === 'list_words') return listWordsBuilder;
-				throw new Error(`unexpected table ${table}`);
-			})
-		} as unknown as SupabaseClient;
+	it('creates the list and its words via the create_word_list RPC, returning the new list id', async () => {
+		const rpc = vi.fn(() => Promise.resolve({ data: 42, error: null }));
+		const supabase = { rpc } as unknown as SupabaseClient;
 
 		const listId = await createWordList(supabase, 1, 'my-list.txt', ['一', '二', '三']);
 
 		expect(listId).toBe(42);
-		expect(listWordsBuilder.insert).toHaveBeenCalledWith([
-			{ list_id: 42, word: '一', frequency_rank: 1 },
-			{ list_id: 42, word: '二', frequency_rank: 2 },
-			{ list_id: 42, word: '三', frequency_rank: 3 }
-		]);
+		expect(rpc).toHaveBeenCalledWith('create_word_list', {
+			p_user_id: 1,
+			p_name: 'my-list.txt',
+			p_words: ['一', '二', '三']
+		});
 	});
 
-	it('throws ListNameConflictError on a unique_violation from word_lists', async () => {
-		const supabase = fakeSupabase({
-			word_lists: { error: { code: '23505', message: 'duplicate' } }
-		});
+	it('throws ListNameConflictError on a unique_violation from the RPC', async () => {
+		const supabase = {
+			rpc: vi.fn(() =>
+				Promise.resolve({ data: null, error: { code: '23505', message: 'duplicate' } })
+			)
+		} as unknown as SupabaseClient;
+
 		await expect(createWordList(supabase, 1, 'dup.txt', ['a'])).rejects.toThrow(
 			ListNameConflictError
 		);
 	});
 
-	it('rethrows a non-conflict error from word_lists as-is', async () => {
-		const supabase = fakeSupabase({ word_lists: { error: { code: '42501', message: 'denied' } } });
+	it('rethrows a non-conflict error from the RPC as-is', async () => {
+		const supabase = {
+			rpc: vi.fn(() => Promise.resolve({ data: null, error: { code: '42501', message: 'denied' } }))
+		} as unknown as SupabaseClient;
+
 		await expect(createWordList(supabase, 1, 'x.txt', ['a'])).rejects.toMatchObject({
 			code: '42501'
 		});
-	});
-
-	it('rethrows an error from inserting list_words', async () => {
-		const supabase = {
-			from: vi.fn((table: string) => {
-				if (table === 'word_lists') return queryBuilder({ data: { id: 42 } });
-				if (table === 'list_words')
-					return queryBuilder({ error: new Error('words insert failed') });
-				throw new Error(`unexpected table ${table}`);
-			})
-		} as unknown as SupabaseClient;
-
-		await expect(createWordList(supabase, 1, 'x.txt', ['a'])).rejects.toThrow(
-			'words insert failed'
-		);
 	});
 });
 

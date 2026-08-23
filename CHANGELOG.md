@@ -5,6 +5,24 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 3.0.1 — Fix hellotalk-words duplicate list, atomic list creation, vocab drill back button
+
+`hellotalk-words` was hand-typed before `deriveListName` existed (2.1.0),
+so it never matched what that function derives from `HelloTalk.xml`
+("hello-talk") — every re-upload of that file was doomed to create a new
+list rather than update the real one. Combined with `createWordList`'s
+non-atomic two-step insert, a failed/retried upload left a 233-word orphan
+list behind in production with zero drill history, while the real list (97
+words, 28 sessions) went untouched. Recovered in production (deleted the
+orphan, renamed the real list to `hello-talk` so future uploads correctly
+match it — see `scripts/fix-hellotalk-duplicate-list.ts`) and fixed at the
+root: `createWordList` now creates a list and its words in one transaction
+(`create_word_list`, a new Postgres function), so a partial failure can no
+longer leave an orphaned list behind.
+
+Also fixed a missing "Back to activities" button on vocab drill's
+list-choice screen — the only activity sub-screen that didn't have one.
+
 ## 3.0.0 — Add shadowing drill, yutakanagoi's third activity
 
 Plays a short chunk of real Japanese speech, the user repeats it back, no

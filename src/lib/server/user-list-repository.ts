@@ -94,6 +94,11 @@ export async function verifyListOwnership(
  * if this user already has a list with this name (list name = uploaded
  * filename with its extension stripped, and re-uploading the same filename
  * is rejected rather than silently overwriting progress).
+ *
+ * Both inserts happen in a single transaction, via the create_word_list
+ * Postgres function (see supabase/migrations/20260823000001_*.sql) — doing
+ * them as two separate supabase-js calls could leave an orphaned, empty
+ * word_lists row behind if the second failed after the first succeeded.
  */
 export async function createWordList(
 	supabase: SupabaseClient,
@@ -101,27 +106,16 @@ export async function createWordList(
 	name: string,
 	words: string[]
 ): Promise<number> {
-	const { data: listRow, error: listError } = await withRetry(() =>
-		supabase.from('word_lists').insert({ user_id: userId, name }).select('id').single()
+	const { data: listId, error } = await withRetry(() =>
+		supabase.rpc('create_word_list', { p_user_id: userId, p_name: name, p_words: words })
 	);
-	if (listError) {
+	if (error) {
 		// Postgres unique_violation on word_lists(user_id, name).
-		if (listError.code === '23505') throw new ListNameConflictError(name);
-		throw listError;
+		if (error.code === '23505') throw new ListNameConflictError(name);
+		throw error;
 	}
 
-	const { error: wordsError } = await withRetry(() =>
-		supabase.from('list_words').insert(
-			words.map((word, index) => ({
-				list_id: listRow.id,
-				word,
-				frequency_rank: index + 1
-			}))
-		)
-	);
-	if (wordsError) throw wordsError;
-
-	return listRow.id;
+	return listId as number;
 }
 
 /**

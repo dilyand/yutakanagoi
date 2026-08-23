@@ -298,6 +298,7 @@
 			selectedListName = name;
 		}}
 	/>
+	<p class="cancel"><button onclick={onExit}>Back to activities</button></p>
 {:else if phase === 'idle' || phase === 'starting'}
 	<p class="subtitle">{username} · {selectedListName}</p>
 	<button class="button-primary" onclick={start} disabled={phase === 'starting'}>
