@@ -143,9 +143,12 @@ each final entry:
   in the drill's hint ladder).
 - `translation` — an English translation (hint rung 3).
 
-Every entry's `text` must stay an exact substring of the transcript —
-`ingest:cut` verifies the full set concatenates back to `transcript.json`
-word-for-word and aborts if it doesn't.
+Every entry's `text` must stay a substring of the transcript, up to
+width-normalization — `ingest:cut` width-normalizes both sides (the same
+`normalizeMarkWidth` step splitting already applied — see `chunk-planner.ts`)
+before checking the full set concatenates back to `transcript.json`, and
+aborts if it doesn't. A half-width mark you left un-normalized by hand is
+fine; dropped, reordered, or reworded content is what actually fails this.
 
 ### 5. `ingest:cut`
 

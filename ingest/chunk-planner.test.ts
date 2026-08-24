@@ -224,6 +224,27 @@ describe('locateChunks', () => {
 		expect(result.failures[0]).toMatch(/do not reconstruct/);
 	});
 
+	it('accepts a plan entry that differs from the raw transcript only by mark width, rather than rejecting valid scaffold output', () => {
+		// Found in code review 2026-08-24: this reconstruction check compares
+		// width-normalized text on both sides (same as splitIntoSentenceUnits
+		// already does when producing chunk_plan.json's scaffold in the first
+		// place), so a raw transcript with a half-width mark and an untouched
+		// generated entry (already full-width) are expected to differ by
+		// exactly this — that must NOT be treated as a grouping mistake.
+		const transcript = 'おはよう。今日はいい天気です?'; // half-width "?" in the raw field
+		const plan: ChunkPlanEntry[] = [
+			{ text: 'おはよう。今日はいい天気です？' } // full-width, as splitIntoSentenceUnits would emit
+		];
+		const whisperSegments: WhisperSegment[] = [
+			{ startMs: 0, endMs: 8000, text: 'おはよう今日はいい天気です' }
+		];
+
+		const result = locateChunks(plan, transcript, [], whisperSegments, [], 8000);
+
+		expect(result.ok).toBe(true);
+		expect(result.chunks[0].transcript).toBe('おはよう。今日はいい天気です？');
+	});
+
 	it('fails on zero planned chunks rather than silently producing an empty recording', () => {
 		const result = locateChunks([], 'おはよう。', [], [], [], 3000);
 		expect(result.ok).toBe(false);

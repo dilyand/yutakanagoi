@@ -132,10 +132,13 @@ in transcript order. Your job:
     actually said including its register (casual speech reads as casual
     English, not textbook-formal).
 
-Every entry's `text` must stay an exact, untrimmed substring of the
-transcript — `ingest:cut` verifies every entry concatenates back to
-`transcript.json`'s `transcript` field exactly, and aborts if it doesn't
-(catches an accidental edit during grouping, not just a missed merge).
+Every entry's `text` must stay an untrimmed substring of the transcript, up
+to width-normalization (half-width `?`/`!`/`.`/`,` are equivalent to their
+full-width forms here, same as everywhere else in this pipeline — see
+`chunk-planner.ts`'s `normalizeMarkWidth`) — `ingest:cut` verifies every
+entry concatenates back to `transcript.json`'s `transcript` field under
+that same normalization, and aborts if it doesn't (catches an accidental
+edit, reorder, or dropped text during grouping, not just a missed merge).
 
 ## When something aborts
 

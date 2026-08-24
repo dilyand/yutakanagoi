@@ -479,7 +479,19 @@ export function locateChunks(
 		return {
 			ok: false,
 			failures: [
-				'Planned chunk texts do not reconstruct transcript.json\'s "transcript" field exactly — a chunk was edited, reordered, or had text dropped while grouping. Fix chunk_plan.json so its texts concatenate back word-for-word, then re-run.'
+				// "Exactly" here means after width-normalization on both sides
+				// (this reconstruction check compares `ranges` — already
+				// normalizeMarkWidth'd above — against `transcript`, likewise
+				// normalized), not literal byte-identity with the raw
+				// transcript.json field. A scaffold entry that still has an
+				// un-normalized half-width mark, or one an operator typed by
+				// hand, is fine — it's dropped, reordered, or reworded content
+				// this check exists to catch. Said "word-for-word" without
+				// that qualifier before code review 2026-08-24, which reads as
+				// stricter than the real contract and could send an operator
+				// hunting for a punctuation-width difference that was never
+				// the actual problem.
+				'Planned chunk texts do not reconstruct transcript.json\'s "transcript" field (after width-normalization) — a chunk was edited, reordered, or had text dropped while grouping. Fix chunk_plan.json so its texts concatenate back to the same content, then re-run.'
 			],
 			chunks: []
 		};
