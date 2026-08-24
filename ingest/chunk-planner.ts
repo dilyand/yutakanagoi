@@ -102,7 +102,12 @@ const WIDTH_NORMALIZE_MAP: Record<string, string> = {
 	'!': '！'
 };
 
-const ASCII_DIGIT = /[0-9]/;
+// Both digit widths, not just ASCII — a Japanese IME left in full-width
+// mode produces "３.５キロ"/"１,０００円" just as easily as the half-width
+// forms this whole function exists to normalize, and an ASCII-only check
+// would still corrupt those into "３。５キロ"/"１、０００円". Found in code
+// review 2026-08-24.
+const DIGIT = /[0-9０-９]/;
 
 /**
  * 1:1 character substitution only (no multi-char expansion), so char
@@ -126,10 +131,7 @@ export function normalizeMarkWidth(text: string): string {
 				const prev = chars[i - 1];
 				const next = chars[i + 1];
 				const isNumericSeparator =
-					prev !== undefined &&
-					next !== undefined &&
-					ASCII_DIGIT.test(prev) &&
-					ASCII_DIGIT.test(next);
+					prev !== undefined && next !== undefined && DIGIT.test(prev) && DIGIT.test(next);
 				if (isNumericSeparator) return ch;
 				return ch === '.' ? '。' : '、';
 			}
@@ -244,6 +246,75 @@ function buildAsrSpine(segments: WhisperSegment[]): AsrSpineChar[] {
 		});
 	}
 	return spine;
+}
+
+// Same reasoning as verify.ts's MAX_GAP_MS (a real gap between correctly-
+// planned chunks can be a second or more, but a dropped-audio-sized hole
+// is much bigger) — reused here for a different purpose: how big an
+// uncovered stretch in charTimings counts as "this data isn't usable",
+// not "chunk-planner.ts, verify.ts" sharing a literal constant.
+const MAX_CHAR_TIMING_GAP_MS = 3_000;
+
+/**
+ * Whether charTimings actually covers the recording closely enough to
+ * trust for every boundary — head, tail, and every gap between
+ * consecutive entries, allowing a gap only if it's short
+ * (<= MAX_CHAR_TIMING_GAP_MS) or genuinely explained by real detected
+ * silence. A nonempty but partial result (whisper's `-ml 1` pass can
+ * legitimately produce sparse or missing output for a hard stretch — see
+ * transcribeWavCharTimings' own doc comment) was being treated as
+ * complete for the WHOLE recording before this check existed: found in
+ * code review 2026-08-24. Without it, a boundary that actually falls
+ * inside the uncovered span gets estimated from whatever charTimings data
+ * exists elsewhere (stretched across the gap) under the correspondingly
+ * tight CHAR_TIMING_BOUNDARY_SEARCH_MARGIN_MS — either failing to find a
+ * real pause that's actually there, or resolving to the wrong one just
+ * inside the margin.
+ *
+ * The silence cross-check matters as much as the gap check itself: an
+ * early version flagged ANY gap over the threshold, including a
+ * recording's genuine multi-second lead-in silence (`-ml 1` correctly
+ * has nothing to time before speech starts — that's not missing data,
+ * it's an accurate absence) — which wrongly discarded charTimings for a
+ * real recording that had a confirmed, fully-silent 3.9s opening, one
+ * this session had already specifically diagnosed as real. A gap is only
+ * "insufficient" now if it's NOT substantially real silence, i.e. it's
+ * long AND doesn't correspond to detected quiet — which is what "whisper
+ * failed to transcribe actual speech here" actually looks like.
+ *
+ * Deliberately all-or-nothing per recording, not per boundary: a boundary
+ * right at the edge of a real gap would still have an unreliable estimate
+ * even if charTimings happens to have *an* entry nearby, and locateChunks
+ * has no per-boundary way to tell "just inside a sparse patch" from
+ * "genuinely precise" once one bad interpolation has already blended into
+ * the shared spine.
+ */
+function hasSufficientCharTimingCoverage(
+	charTimings: WhisperSegment[],
+	durationMs: number,
+	silences: SilenceWindow[]
+): boolean {
+	if (charTimings.length === 0) return false;
+
+	function gapIsAcceptable(gapStartMs: number, gapEndMs: number): boolean {
+		const gapMs = gapEndMs - gapStartMs;
+		if (gapMs <= MAX_CHAR_TIMING_GAP_MS) return true;
+		let silenceCoveredMs = 0;
+		for (const w of silences) {
+			const overlapMs = Math.min(w.endMs, gapEndMs) - Math.max(w.startMs, gapStartMs);
+			if (overlapMs > 0) silenceCoveredMs += overlapMs;
+		}
+		return gapMs - silenceCoveredMs <= MAX_CHAR_TIMING_GAP_MS;
+	}
+
+	const sorted = [...charTimings].sort((a, b) => a.startMs - b.startMs);
+	if (!gapIsAcceptable(0, sorted[0].startMs)) return false;
+	for (let i = 1; i < sorted.length; i++) {
+		if (!gapIsAcceptable(sorted[i - 1].endMs, sorted[i].startMs)) return false;
+	}
+	const last = sorted[sorted.length - 1];
+	if (!gapIsAcceptable(last.endMs, durationMs)) return false;
+	return true;
 }
 
 /**
@@ -497,7 +568,7 @@ export function locateChunks(
 		};
 	}
 
-	const usingCharTimings = charTimings.length > 0;
+	const usingCharTimings = hasSufficientCharTimingCoverage(charTimings, durationMs, silences);
 	const spine = usingCharTimings ? buildAsrSpine(charTimings) : buildAsrSpine(whisperSegments);
 	const transcriptSpineLength = spineLength(transcript);
 	const marginMs = usingCharTimings

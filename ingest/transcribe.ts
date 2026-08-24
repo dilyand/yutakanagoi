@@ -115,8 +115,12 @@ export function transcribeWav(wavPath: string, opts?: { modelPath?: string }): T
  * doubling transcribe time) rather than a flag added to the call above,
  * because `-ml 1` fragments the JSON's normal multi-sentence segments —
  * transcribeWav's own segments stay coarse/readable on purpose, for
- * debugging and as a fallback spine if this pass is ever sparse/missing
- * for a given span.
+ * debugging and as a fallback spine for the whole recording if this pass
+ * ever comes back sparse or with a real gap in it (see
+ * hasSufficientCharTimingCoverage in chunk-planner.ts — the fallback is
+ * all-or-nothing per recording, not per missing span: there's no reliable
+ * way to tell "estimate near a sparse patch" from "genuinely precise"
+ * once one bad interpolation has blended into the shared spine).
  */
 export function transcribeWavCharTimings(
 	wavPath: string,

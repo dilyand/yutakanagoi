@@ -38,6 +38,14 @@ describe('normalizeMarkWidth (real-recording regression)', () => {
 		expect(normalizeMarkWidth('1,000円でした。')).toBe('1,000円でした。');
 	});
 
+	it('also recognizes full-width digits as flanking a "."/","', () => {
+		// Found in code review 2026-08-24: an ASCII-only digit check still
+		// corrupted "３.５キロ" (full-width digits, half-width mark — a
+		// realistic mixed-width IME slip) into "３。５キロ".
+		expect(normalizeMarkWidth('３.５キロ走った。')).toBe('３.５キロ走った。');
+		expect(normalizeMarkWidth('１,０００円でした。')).toBe('１,０００円でした。');
+	});
+
 	it('still converts a "."/"," that is not flanked by digits on both sides', () => {
 		expect(normalizeMarkWidth('今日は晴れです.明日は雨かな,どうかな')).toBe(
 			'今日は晴れです。明日は雨かな、どうかな'
@@ -190,6 +198,83 @@ describe('locateChunks', () => {
 
 		expect(result.ok).toBe(true);
 		expect(result.chunks[0].durationMs).toBe(3100 + TAIL_MS);
+	});
+
+	it('falls back to whisperSegments for the whole recording when charTimings is nonempty but leaves a real gap', () => {
+		// Found in code review 2026-08-24: a nonempty-but-partial charTimings
+		// result (whisper's -ml 1 pass can legitimately come back sparse or
+		// missing for a hard stretch — see transcribeWavCharTimings' own doc
+		// comment) was being trusted for the ENTIRE recording just because it
+		// wasn't empty. Here charTimings only covers "おはよう" (0-1000ms) and
+		// says nothing about the other 7000ms of an 8000ms recording — using
+		// it anyway would clamp every later boundary estimate to ~1000ms
+		// (the last spine entry), missing the real pause at ~3250ms by more
+		// than the tight char-timing margin allows. Must fall back to
+		// whisperSegments (correctly timed here) for the whole recording,
+		// not just the uncovered tail.
+		const transcript = 'おはよう。今日はいい天気です。';
+		const plan: ChunkPlanEntry[] = [{ text: 'おはよう。' }, { text: '今日はいい天気です。' }];
+		const charTimings: WhisperSegment[] = [
+			{ startMs: 0, endMs: 250, text: 'お' },
+			{ startMs: 250, endMs: 500, text: 'は' },
+			{ startMs: 500, endMs: 750, text: 'よ' },
+			{ startMs: 750, endMs: 1000, text: 'う' }
+			// nothing from 1000ms to the recording's 8000ms end
+		];
+		const whisperSegments: WhisperSegment[] = [
+			{ startMs: 0, endMs: 3000, text: 'おはよう' },
+			{ startMs: 3500, endMs: 8000, text: '今日はいい天気です' }
+		];
+		const silences: SilenceWindow[] = [{ startMs: 3100, endMs: 3400 }];
+
+		const result = locateChunks(plan, transcript, charTimings, whisperSegments, silences, 8000);
+
+		expect(result.ok).toBe(true);
+		expect(result.chunks[0].durationMs).toBe(3100 + TAIL_MS);
+	});
+
+	it('does not treat genuine leading silence as insufficient charTimings coverage', () => {
+		// Real recording (hellotalk-260808-1817, 2026-08-24): a first version
+		// of the coverage check above flagged ANY head/tail/internal gap over
+		// MAX_CHAR_TIMING_GAP_MS as "insufficient", with no way to tell real
+		// silence apart from actually-missing data — which wrongly discarded
+		// charTimings for this exact recording, which has a confirmed,
+		// fully-silent 3.9s opening (RMS-verified at -120dB throughout) before
+		// speech starts. charTimings correctly has nothing to time before
+		// 3910ms — that's an accurate absence, not missing data — while
+		// whisperSegments' own (coarser, less reliable) first segment
+		// wrongly claims speech starts at 0ms. The fix must still prefer
+		// charTimings here specifically because a real silences entry
+		// explains the gap.
+		const transcript = 'おはよう。今日はいい天気です。';
+		const plan: ChunkPlanEntry[] = [{ text: 'おはよう。' }, { text: '今日はいい天気です。' }];
+		const charTimings: WhisperSegment[] = [
+			{ startMs: 3910, endMs: 4200, text: 'お' },
+			{ startMs: 4200, endMs: 4450, text: 'は' },
+			{ startMs: 4450, endMs: 4700, text: 'よ' },
+			{ startMs: 4700, endMs: 4950, text: 'う' },
+			{ startMs: 5450, endMs: 5950, text: '今日' },
+			{ startMs: 5950, endMs: 6150, text: 'は' },
+			{ startMs: 6150, endMs: 6350, text: 'いい' },
+			{ startMs: 6350, endMs: 6650, text: '天気' },
+			{ startMs: 6650, endMs: 6900, text: 'です' }
+		];
+		const whisperSegments: WhisperSegment[] = [
+			{ startMs: 0, endMs: 4950, text: 'おはよう' }, // wrongly claims speech starts at 0
+			{ startMs: 5450, endMs: 6900, text: '今日はいい天気です' }
+		];
+		const silences: SilenceWindow[] = [
+			{ startMs: 0, endMs: 3910 }, // the genuine lead-in — explains the head gap
+			{ startMs: 5050, endMs: 5350 } // the real pause between the two sentences
+		];
+
+		const result = locateChunks(plan, transcript, charTimings, whisperSegments, silences, 6900);
+
+		expect(result.ok).toBe(true);
+		// Resolves to the real pause (5050-5350) that charTimings' own
+		// precise spine points to — not whisperSegments' misleadingly wide
+		// first segment, which this test would otherwise fall back to.
+		expect(result.chunks[0].startMs + result.chunks[0].durationMs).toBeLessThan(5450);
 	});
 
 	it('fails with a clear, actionable message when a decided boundary has no real pause nearby, instead of silently forcing a bad cut', () => {
