@@ -266,11 +266,27 @@ function estimateTimeMs(
 		return transcript.length === 0 ? 0 : (charIndex / transcript.length) * durationMs;
 	}
 	const fraction = spineLength(transcript.slice(0, charIndex)) / transcriptSpineLength;
-	const asrIndex = Math.max(
-		0,
-		Math.min(asrSpine.length - 1, Math.round(fraction * asrSpine.length))
-	);
-	return asrSpine[asrIndex].timeMs;
+	// Each asrSpine[i] is the MIDPOINT of character i (see buildAsrSpine),
+	// i.e. it sits at continuous position i + 0.5 along the spine, not at
+	// position i. charIndex asks for the boundary — the GAP right before
+	// character `fraction * asrSpine.length` — so subtracting 0.5 shifts
+	// from "nearest character's own center" to that gap position, and the
+	// two neighboring characters' times are linearly interpolated across
+	// it. Found in code review 2026-08-24: the previous version rounded to
+	// the single nearest spine index and returned its time directly — when
+	// the transcript and ASR spines happened to be the same length, a
+	// boundary after k characters landed exactly on asrIndex k, i.e. the
+	// MIDPOINT of the character *after* the boundary, not the gap after
+	// the character before it. That's a systematic late bias on every
+	// estimate this exact-length case produced, not just an occasional
+	// rounding wobble — material now that charTimings makes each spine
+	// entry span only one character instead of a whole multi-second
+	// segment.
+	const gapPosition = fraction * asrSpine.length - 0.5;
+	const lowIndex = Math.max(0, Math.min(asrSpine.length - 1, Math.floor(gapPosition)));
+	const highIndex = Math.max(0, Math.min(asrSpine.length - 1, lowIndex + 1));
+	const t = Math.max(0, Math.min(1, gapPosition - lowIndex));
+	return asrSpine[lowIndex].timeMs * (1 - t) + asrSpine[highIndex].timeMs * t;
 }
 
 /**

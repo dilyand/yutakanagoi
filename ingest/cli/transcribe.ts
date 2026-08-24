@@ -172,7 +172,16 @@ const staleOutputPattern = /^(chunks\.json|chunk-\d+\.m4a|cut-\d+\.wav)$/;
 const staleOutputs = readdirSync(workDir).filter((f) => staleOutputPattern.test(f));
 if (staleOutputs.length > 0) {
 	console.log(
-		`Clearing ${staleOutputs.length} stale cut output file(s) from a previous ingest:cut run (re-run ingest:plan-chunks and ingest:cut after this completes): ${staleOutputs.join(', ')}`
+		// Deliberately doesn't name which command to re-run — that depends on
+		// whether a chunk_plan.json from the prior run is still here too
+		// (cleanup never touches it), and the guidance printed at the end of
+		// this run already checks that and says exactly what to do. Naming
+		// ingest:plan-chunks unconditionally here (an earlier version did)
+		// was wrong the same way that final guidance used to be wrong before
+		// it checked: plan-chunks.ts refuses to overwrite an existing
+		// chunk_plan.json, so a straight "re-run ingest:plan-chunks" sends a
+		// rerun into a guaranteed failure whenever one is still present.
+		`Clearing ${staleOutputs.length} stale cut output file(s) from a previous ingest:cut run (see the guidance printed below for what to run next): ${staleOutputs.join(', ')}`
 	);
 	for (const f of staleOutputs) rmSync(path.join(workDir, f));
 }

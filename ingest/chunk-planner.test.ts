@@ -90,6 +90,42 @@ describe('splitIntoSentenceUnits', () => {
 });
 
 describe('locateChunks', () => {
+	it('estimates a boundary as the gap between neighboring characters, not the midpoint of the character after it', () => {
+		// Found in code review 2026-08-24: when the transcript's own
+		// non-punctuation character count exactly matches the charTimings
+		// spine length, the old estimateTimeMs rounded a boundary after k
+		// characters to spine index k exactly — the MIDPOINT of the
+		// character *after* the boundary, not the gap after the character
+		// before it. That's a systematic late bias, not occasional rounding
+		// noise. Here charTimings has one entry per character (あ,い,う,え at
+		// 50/150/250/350ms), and the boundary falls after "あい" (2 of 4
+		// chars) — the true gap sits at the midpoint of い(150) and う(250),
+		// i.e. 200ms. A "trap" pause at 260-280ms sits close to the OLD
+		// biased estimate (250, う's own midpoint) and would have won under
+		// it; the real gap position (190-210ms) must win instead.
+		const transcript = 'あい。うえ。';
+		const plan: ChunkPlanEntry[] = [{ text: 'あい。' }, { text: 'うえ。' }];
+		const charTimings: WhisperSegment[] = [
+			{ startMs: 0, endMs: 100, text: 'あ' },
+			{ startMs: 100, endMs: 200, text: 'い' },
+			{ startMs: 200, endMs: 300, text: 'う' },
+			{ startMs: 300, endMs: 400, text: 'え' }
+		];
+		const silences: SilenceWindow[] = [
+			{ startMs: 190, endMs: 210 }, // the true gap — must win
+			{ startMs: 260, endMs: 280 } // the trap the old bias would have picked
+		];
+
+		const result = locateChunks(plan, transcript, charTimings, [], silences, 400);
+
+		expect(result.ok).toBe(true);
+		expect(result.chunks[0].transcript).toBe('あい。');
+		// Boundary resolved to the true-gap window (190-210), not the trap
+		// (260-280) — chunk 0 ends within the true window's jointBoundary
+		// range, nowhere near the trap window's.
+		expect(result.chunks[0].startMs + result.chunks[0].durationMs).toBeLessThan(230);
+	});
+
 	it('locates a real-recording plan correctly, including a boundary a human grouped that the old automatic planner never could', () => {
 		// Real recording (hellotalk-260813-1454-1, 2026-08-23): a human
 		// reading this transcript for meaning would group "大丈夫？" with the
