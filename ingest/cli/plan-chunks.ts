@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs, requireString, requireSafePathComponent } from '../args.ts';
-import { splitIntoSentenceUnits } from '../chunk-planner.ts';
+import { splitIntoSentenceUnits, normalizeMarkWidth } from '../chunk-planner.ts';
 
 const USAGE = `Usage: npm run ingest:plan-chunks -- --slug <slug> --user <username>
 
@@ -40,12 +40,18 @@ interface TranscriptManifest {
 
 const manifest: TranscriptManifest = JSON.parse(readFileSync(transcriptPath, 'utf8'));
 
-// Same guard as ingest:cut used to run before cutting — splitting an
-// unpunctuated transcript produces one giant unit, which is a scaffold
-// with nothing to actually group.
-if (!/[。！？]/.test(manifest.transcript)) {
+// Checked against the width-normalized text, not the raw field — a
+// transcript whose sentence-final marks are all half-width (ASCII) ?/!
+// would otherwise be rejected here even though splitIntoSentenceUnits
+// below normalizes width itself and would handle it fine (found in code
+// review 2026-08-24: this guard predates that normalization and was never
+// updated to match). Splitting a transcript with no sentence-final mark
+// at all (of either width) produces one giant unit, a scaffold with
+// nothing to actually group — that's what this guard actually protects
+// against.
+if (!/[。！？]/.test(normalizeMarkWidth(manifest.transcript))) {
 	console.error(
-		'transcript.json has no sentence-final punctuation (。！？). Restore punctuation in the "transcript" field first (see PROMPT.md).'
+		'transcript.json has no sentence-final punctuation (。！？, or half-width ?/!). Restore punctuation in the "transcript" field first (see PROMPT.md).'
 	);
 	process.exit(1);
 }

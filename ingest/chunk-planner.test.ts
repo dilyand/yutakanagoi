@@ -27,6 +27,24 @@ describe('normalizeMarkWidth (real-recording regression)', () => {
 		const text = '元気?すごい!です.あと,ふつうのぶん';
 		expect(Array.from(normalizeMarkWidth(text)).length).toBe(Array.from(text).length);
 	});
+
+	it('leaves a "."/"," flanked by digits alone — a decimal point or thousands separator, not a Japanese mark', () => {
+		// Found in code review 2026-08-24: blindly converting every
+		// half-width "."/"," corrupted "3.5キロ" into "3。5キロ" (splitting it
+		// into separate sentence units) and "1,000円" into "1、000円". "?"/"!"
+		// don't need this care — they have no legitimate non-terminal use in
+		// this content.
+		expect(normalizeMarkWidth('3.5キロ走った。')).toBe('3.5キロ走った。');
+		expect(normalizeMarkWidth('1,000円でした。')).toBe('1,000円でした。');
+	});
+
+	it('still converts a "."/"," that is not flanked by digits on both sides', () => {
+		expect(normalizeMarkWidth('今日は晴れです.明日は雨かな,どうかな')).toBe(
+			'今日は晴れです。明日は雨かな、どうかな'
+		);
+		// Digit on only one side (end of a number, not between two digits).
+		expect(normalizeMarkWidth('15分だけ.')).toBe('15分だけ。');
+	});
 });
 
 describe('splitIntoSentenceUnits', () => {
@@ -174,6 +192,30 @@ describe('locateChunks', () => {
 		const result = locateChunks([], 'おはよう。', [], [], [], 3000);
 		expect(result.ok).toBe(false);
 		expect(result.chunks).toEqual([]);
+	});
+
+	it('fails on an entry with empty text rather than publishing a zero-duration, transcript-less chunk', () => {
+		// Found in code review 2026-08-24: chunk_plan.json is hand-edited —
+		// merging two entries can leave the merged-away one behind as
+		// { text: "", ... } instead of being deleted. An empty string still
+		// concatenates correctly, so the reconstruction check alone wouldn't
+		// catch it.
+		const transcript = 'おはよう。今日はいい天気です。';
+		const plan: ChunkPlanEntry[] = [
+			{ text: 'おはよう。' },
+			{ text: '' },
+			{ text: '今日はいい天気です。' }
+		];
+		const whisperSegments: WhisperSegment[] = [
+			{ startMs: 0, endMs: 3000, text: 'おはよう' },
+			{ startMs: 3500, endMs: 8000, text: '今日はいい天気です' }
+		];
+
+		const result = locateChunks(plan, transcript, [], whisperSegments, [], 8000);
+
+		expect(result.ok).toBe(false);
+		expect(result.chunks).toEqual([]);
+		expect(result.failures[0]).toMatch(/empty "text"/);
 	});
 });
 
@@ -340,6 +382,33 @@ describe('findBestSilence (code review regression)', () => {
 		const window: SilenceWindow = { startMs: 1200, endMs: 1400 };
 		const result = findBestSilence(1300, [window], 1000, 1500);
 		expect(result).toEqual(window);
+	});
+
+	it('prefers the closest qualifying window over the longest one', () => {
+		// Found in code review 2026-08-24: the original rule picked whichever
+		// qualifying window was longest, so a real 150ms pause sitting right
+		// at expectedMs could lose to an unrelated 2s+ silence elsewhere in
+		// the margin — resolving a precisely-estimated boundary to the wrong
+		// pause, which then cuts and verifies cleanly (content-match/coverage
+		// are audio-to-audio checks, with no way to catch a wrong-but-valid
+		// boundary) while actually containing the wrong span.
+		const near: SilenceWindow = { startMs: 4950, endMs: 5100 }; // 150ms, close
+		const far: SilenceWindow = { startMs: 2000, endMs: 4200 }; // 2200ms, far
+		const result = findBestSilence(5000, [far, near], 0, 6000, 2500);
+		expect(result).toEqual(near);
+	});
+
+	it('falls back to the longest window only when two candidates are equidistant', () => {
+		const a: SilenceWindow = { startMs: 4800, endMs: 4900 }; // 100ms, midpoint 150ms from expected
+		const b: SilenceWindow = { startMs: 5000, endMs: 5300 }; // 300ms, midpoint also 150ms from expected
+		const result = findBestSilence(5000, [a, b], 0, 6000, 2500);
+		expect(result).toEqual(b);
+	});
+
+	it('accepts an explicit marginMs tighter than the default, rejecting anything outside it', () => {
+		const window: SilenceWindow = { startMs: 1900, endMs: 2000 };
+		expect(findBestSilence(1000, [window], 0, 3000, 800)).toBeNull();
+		expect(findBestSilence(1000, [window], 0, 3000, 1200)).toEqual(window);
 	});
 });
 

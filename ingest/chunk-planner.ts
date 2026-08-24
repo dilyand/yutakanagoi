@@ -44,16 +44,30 @@ export interface PlannedChunk {
 }
 
 // How far, in either direction, an ASR-estimated boundary time may be from
-// a real silence window and still count as "the same boundary". Wide
-// because whisper's own SEGMENT timestamps were found to be off by up to
-// ~1.9s on real data even after DTW refinement (up to ~4.2s on one
-// recording with an unusually long lead-in silence) — see
-// notes/shadowing-practice-design.md's "Key finding" section.
-// locateChunks prefers the much finer per-character DTW spine
-// (transcribeWavCharTimings) when available, which needs far less slack
-// than this in practice, but the margin stays wide to cover the
-// whisperSegments-only fallback path too.
-const BOUNDARY_SEARCH_MARGIN_MS = 2_500;
+// a real silence window and still count as "the same boundary" when only
+// the coarse per-segment whisperSegments spine is available (no charTimings
+// for this recording). Wide because whisper's own SEGMENT timestamps were
+// found to be off by up to ~1.9s on real data even after DTW refinement
+// (up to ~4.2s on one recording with an unusually long lead-in silence) —
+// see notes/shadowing-practice-design.md's "Key finding" section.
+const COARSE_BOUNDARY_SEARCH_MARGIN_MS = 2_500;
+
+// Same margin, but for when the much finer per-character DTW spine
+// (transcribeWavCharTimings) is available. Measured directly against
+// every internal boundary in a real 9-recording, 18-boundary batch
+// (2026-08-24): estimate-to-actual-window distance ranged 67-1345ms,
+// median ~500ms — nowhere near needing the coarse margin above, but an
+// earlier guess of 800ms here (based on eyeballing only 2 boundaries
+// during design work, not measuring the real distribution) broke 7 of
+// those 18 real, already-verified-correct boundaries. Set with real
+// margin above the observed 1345ms max, not another guess. Kept tighter
+// than the coarse fallback deliberately: findBestSilence still prefers
+// the CLOSEST qualifying window, not the longest (see its own comment),
+// but a wide margin still means more distant candidates to choose between
+// in the first place — tightening this reduces how often a genuinely
+// unrelated pause can even be a candidate when no real match exists
+// nearby at all.
+const CHAR_TIMING_BOUNDARY_SEARCH_MARGIN_MS = 1_800;
 
 // Pull a chunk's start back into the preceding quiet zone before the
 // fade-in ramps through it, and extend its end into the following quiet
@@ -79,18 +93,48 @@ const CLOSING_BRACKET_MARKS = new Set(['」', '』']);
 // forms), producing splits that looked arbitrary. Both splitIntoSentence
 // Units and locateChunks normalize their transcript through this map
 // before anything else runs — extend this map, not the mark sets above,
-// if another half-width variant turns up.
+// if another half-width variant turns up. "?"/"!" have no legitimate
+// non-terminal use in this content, so they're always converted; "."/","
+// are NOT in this map — see normalizeMarkWidth below for why they need
+// context, not a blind substitution.
 const WIDTH_NORMALIZE_MAP: Record<string, string> = {
 	'?': '？',
-	'!': '！',
-	'.': '。',
-	',': '、'
+	'!': '！'
 };
 
-/** 1:1 character substitution only (no multi-char expansion), so char indices into the result stay perfectly aligned with the original text. */
+const ASCII_DIGIT = /[0-9]/;
+
+/**
+ * 1:1 character substitution only (no multi-char expansion), so char
+ * indices into the result stay perfectly aligned with the original text.
+ *
+ * "."/"," get contextual treatment, not the blind map "?"/"!" use: a
+ * half-width period or comma between two digits is a decimal point or a
+ * thousands separator (3.5キロ, 1,000円), not a sentence/clause mark —
+ * found in code review 2026-08-24, since blindly converting every one
+ * would corrupt "3.5キロ" into "3。5キロ" (and split it into separate
+ * sentence units) and "1,000円" into "1、000円", with the corrupted text
+ * persisted into chunk_plan.json and ultimately shown to learners. Only
+ * a "."/"," with a non-digit (or nothing) on either side is treated as
+ * the Japanese mark it's standing in for.
+ */
 export function normalizeMarkWidth(text: string): string {
-	return Array.from(text)
-		.map((ch) => WIDTH_NORMALIZE_MAP[ch] ?? ch)
+	const chars = Array.from(text);
+	return chars
+		.map((ch, i) => {
+			if (ch === '.' || ch === ',') {
+				const prev = chars[i - 1];
+				const next = chars[i + 1];
+				const isNumericSeparator =
+					prev !== undefined &&
+					next !== undefined &&
+					ASCII_DIGIT.test(prev) &&
+					ASCII_DIGIT.test(next);
+				if (isNumericSeparator) return ch;
+				return ch === '.' ? '。' : '、';
+			}
+			return WIDTH_NORMALIZE_MAP[ch] ?? ch;
+		})
 		.join('');
 }
 
@@ -230,9 +274,20 @@ function estimateTimeMs(
 }
 
 /**
- * Longest silence window whose midpoint falls within the search margin of
- * expectedMs and whose FULL span — not just its midpoint — lies within
- * [rangeStartMs, rangeEndMs], or null if none qualifies.
+ * Closest-to-expectedMs silence window (by midpoint distance, ties broken
+ * by longest) whose midpoint falls within marginMs of expectedMs and whose
+ * FULL span — not just its midpoint — lies within [rangeStartMs,
+ * rangeEndMs], or null if none qualifies.
+ *
+ * Proximity-first, not longest-first: found in code review 2026-08-24 that
+ * preferring the longest qualifying window (the original rule) can pick an
+ * unrelated pause over the actually-correct one — e.g. a real 150ms pause
+ * right at expectedMs losing to an unrelated 2s+ silence elsewhere in the
+ * margin. That's a real risk for a boundary that was deliberately decided
+ * (locateChunks' callers), not just a candidate that can be safely dropped:
+ * the wrong window still produces a chunk whose audio cuts cleanly (passes
+ * content-match/coverage — both are audio-to-audio checks with no concept
+ * of transcript correspondence) while actually containing the wrong span.
  *
  * A midpoint-only containment check would let a window straddle the
  * boundary: a window whose midpoint falls just inside the range but whose
@@ -244,14 +299,25 @@ export function findBestSilence(
 	expectedMs: number,
 	silences: SilenceWindow[],
 	rangeStartMs: number,
-	rangeEndMs: number
+	rangeEndMs: number,
+	marginMs: number = COARSE_BOUNDARY_SEARCH_MARGIN_MS
 ): SilenceWindow | null {
 	let best: SilenceWindow | null = null;
+	let bestDistanceMs = Infinity;
 	for (const w of silences) {
 		if (w.startMs < rangeStartMs || w.endMs > rangeEndMs) continue;
 		const mid = (w.startMs + w.endMs) / 2;
-		if (Math.abs(mid - expectedMs) > BOUNDARY_SEARCH_MARGIN_MS) continue;
-		if (!best || w.endMs - w.startMs > best.endMs - best.startMs) best = w;
+		const distanceMs = Math.abs(mid - expectedMs);
+		if (distanceMs > marginMs) continue;
+		const isCloser = distanceMs < bestDistanceMs;
+		const isTiedButLonger =
+			best !== null &&
+			distanceMs === bestDistanceMs &&
+			w.endMs - w.startMs > best.endMs - best.startMs;
+		if (!best || isCloser || isTiedButLonger) {
+			best = w;
+			bestDistanceMs = distanceMs;
+		}
 	}
 	return best;
 }
@@ -343,8 +409,9 @@ export interface LocateChunksResult {
  * Every INTERNAL boundary (between two consecutive planned chunks) is
  * resolved the same way the old planChunks's sentence candidates were:
  * estimate its time via the ASR spine (charTimings preferred over the
- * coarser whisperSegments when available — see buildAsrSpine), then
- * require a real nearby silence window to cut cleanly on, trimmed with
+ * coarser whisperSegments when available — see buildAsrSpine, and the
+ * correspondingly tighter search margin used with it), then require a
+ * real nearby silence window to cut cleanly on, trimmed with
  * the same PRE_ATTACK_MS/TAIL_MS via jointBoundary. Unlike the old
  * design, a boundary that can't find a real silence window nearby is
  * NOT silently dropped — it's reported as a failure, since every
@@ -367,6 +434,21 @@ export function locateChunks(
 	if (plan.length === 0) {
 		return { ok: false, failures: ['chunk_plan.json has zero planned chunks.'], chunks: [] };
 	}
+	// A manually-edited chunk_plan.json can leave a merged-away entry behind
+	// as { text: "", ... } — the reconstruction check below wouldn't catch
+	// this on its own (an empty string still concatenates correctly), so a
+	// zero-duration, empty-transcript chunk could otherwise reach cutting
+	// and publishing. Found in code review 2026-08-24.
+	const emptyEntries = plan.filter((entry) => entry.text.trim() === '');
+	if (emptyEntries.length > 0) {
+		return {
+			ok: false,
+			failures: [
+				`${emptyEntries.length} chunk_plan.json entr${emptyEntries.length === 1 ? 'y has' : 'ies have'} empty "text" — remove the leftover entr${emptyEntries.length === 1 ? 'y' : 'ies'} (likely left behind by a merge) and re-run.`
+			],
+			chunks: []
+		};
+	}
 
 	let cursor = 0;
 	const ranges = plan.map((entry) => {
@@ -387,9 +469,12 @@ export function locateChunks(
 		};
 	}
 
-	const spine =
-		charTimings.length > 0 ? buildAsrSpine(charTimings) : buildAsrSpine(whisperSegments);
+	const usingCharTimings = charTimings.length > 0;
+	const spine = usingCharTimings ? buildAsrSpine(charTimings) : buildAsrSpine(whisperSegments);
 	const transcriptSpineLength = spineLength(transcript);
+	const marginMs = usingCharTimings
+		? CHAR_TIMING_BOUNDARY_SEARCH_MARGIN_MS
+		: COARSE_BOUNDARY_SEARCH_MARGIN_MS;
 
 	const internalCharIndices = ranges.slice(0, -1).map((r) => r.charEnd);
 	const resolved = internalCharIndices.map((charIndex) => {
@@ -400,7 +485,7 @@ export function locateChunks(
 			transcriptSpineLength,
 			durationMs
 		);
-		return { charIndex, window: findBestSilence(expected, silences, 0, durationMs) };
+		return { charIndex, window: findBestSilence(expected, silences, 0, durationMs, marginMs) };
 	});
 
 	const failures: string[] = [];

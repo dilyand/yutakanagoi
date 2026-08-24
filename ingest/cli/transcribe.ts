@@ -12,6 +12,7 @@ import path from 'node:path';
 import { parseArgs, requireString, requireSafePathComponent } from '../args.ts';
 import { toAnalysisWav, probeDurationMs } from '../audio-tools.ts';
 import { transcribeWav, transcribeWavCharTimings } from '../transcribe.ts';
+import { normalizeMarkWidth } from '../chunk-planner.ts';
 import { compareTranscripts } from '../transcript-diff.ts';
 import { deriveListName } from '../../src/lib/list-naming.ts';
 import { createAdminClient } from '../../scripts/lib/supabase-admin.ts';
@@ -171,7 +172,7 @@ const staleOutputPattern = /^(chunks\.json|chunk-\d+\.m4a|cut-\d+\.wav)$/;
 const staleOutputs = readdirSync(workDir).filter((f) => staleOutputPattern.test(f));
 if (staleOutputs.length > 0) {
 	console.log(
-		`Clearing ${staleOutputs.length} stale cut output file(s) from a previous ingest:cut run (re-run ingest:cut after this completes): ${staleOutputs.join(', ')}`
+		`Clearing ${staleOutputs.length} stale cut output file(s) from a previous ingest:cut run (re-run ingest:plan-chunks and ingest:cut after this completes): ${staleOutputs.join(', ')}`
 	);
 	for (const f of staleOutputs) rmSync(path.join(workDir, f));
 }
@@ -211,16 +212,20 @@ console.log(`\nWrote ${path.join(workDir, 'transcript.json')}`);
 // for the next step is whether the transcript text itself has
 // sentence-final punctuation — a supplied file is only trimmed and
 // similarity-checked above, never validated for this, so it can just as
-// easily arrive unpunctuated as ASR output can. ingest:cut's own guard
-// (see cut.ts) checks this regardless of source; this message just
-// reports accurately which case applies instead of assuming "supplied"
-// always means "already punctuated."
-if (/[。！？]/.test(transcript)) {
+// easily arrive unpunctuated as ASR output can. ingest:plan-chunks' own
+// guard (see cli/plan-chunks.ts) checks this regardless of source; this
+// message just reports accurately which case applies instead of assuming
+// "supplied" always means "already punctuated." Points at
+// ingest:plan-chunks next, not straight at ingest:cut — the new sequence
+// always groups chunks by meaning before cutting; found stale in code
+// review 2026-08-24, still pointing at the old two-step (punctuate, cut)
+// sequence from before that split existed.
+if (/[。！？]/.test(normalizeMarkWidth(transcript))) {
 	console.log(
-		'\nNext: the transcript already has sentence-final punctuation — no editing needed. Run ingest:cut.'
+		'\nNext: the transcript already has sentence-final punctuation — no editing needed there. Run ingest:plan-chunks, then group the resulting units into chunks by meaning and fill kana/translation, then ingest:cut. See PROMPT.md.'
 	);
 } else {
 	console.log(
-		'\nNext: restore sentence/clause punctuation (。、！？) in the "transcript" field — the chunk planner cuts on exactly those marks. See PROMPT.md.'
+		'\nNext: restore sentence/clause punctuation (。、！？) in the "transcript" field — ingest:plan-chunks splits on exactly those marks. See PROMPT.md.'
 	);
 }
