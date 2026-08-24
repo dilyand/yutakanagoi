@@ -11,7 +11,7 @@ import {
 import path from 'node:path';
 import { parseArgs, requireString, requireSafePathComponent } from '../args.ts';
 import { toAnalysisWav, probeDurationMs } from '../audio-tools.ts';
-import { transcribeWav } from '../transcribe.ts';
+import { transcribeWav, transcribeWavCharTimings } from '../transcribe.ts';
 import { compareTranscripts } from '../transcript-diff.ts';
 import { deriveListName } from '../../src/lib/list-naming.ts';
 import { createAdminClient } from '../../scripts/lib/supabase-admin.ts';
@@ -108,6 +108,9 @@ const durationMs = probeDurationMs(tempWavPath);
 console.log('Transcribing with whisper (this can take a minute or two)...');
 const { text: asrText, segments } = transcribeWav(tempWavPath);
 
+console.log('Capturing per-character DTW alignment (another minute or two)...');
+const charTimings = transcribeWavCharTimings(tempWavPath);
+
 let transcript: string;
 let transcriptSource: 'supplied' | 'asr';
 
@@ -186,6 +189,8 @@ interface TranscriptManifest {
 	transcript: string;
 	transcriptSource: 'supplied' | 'asr';
 	whisperSegments: { startMs: number; endMs: number; text: string }[];
+	/** Per-character DTW alignment against whisper's own recognized text (see transcribeWavCharTimings) — the spine locateChunk uses to find where a text-decided chunk boundary actually falls in the audio, far more precise than proportional interpolation across whisperSegments alone. */
+	charTimings: { startMs: number; endMs: number; text: string }[];
 }
 
 const manifest: TranscriptManifest = {
@@ -195,7 +200,8 @@ const manifest: TranscriptManifest = {
 	durationMs,
 	transcript,
 	transcriptSource,
-	whisperSegments: segments
+	whisperSegments: segments,
+	charTimings
 };
 
 writeFileSync(path.join(workDir, 'transcript.json'), JSON.stringify(manifest, null, 2));

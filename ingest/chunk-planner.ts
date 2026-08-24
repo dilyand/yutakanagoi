@@ -1,10 +1,29 @@
 /**
- * Pure boundary-selection logic for the shadowing ingest pipeline: given a
- * transcript, whisper's own segment timings, and the source's detected
- * silence windows, decides where to cut. No I/O — everything that shells
- * out (whisper, ffmpeg) lives in transcribe.ts/audio-tools.ts, which call
- * into this module with already-gathered data. See chunk-planner.test.ts
- * for the regression cases this encodes.
+ * Pure text/audio-alignment logic for the shadowing ingest pipeline, split
+ * into two deliberately separate concerns:
+ *
+ * - splitIntoSentenceUnits: text only, no audio at all. Splits a
+ *   transcript into its atomic sentence-final-mark-bounded units — the
+ *   scaffold plan-chunks.ts writes to chunk_plan.json for a human (or
+ *   Claude) to group into final chunks by meaning.
+ * - locateChunks: audio only, no grouping decisions. Given chunk_plan.json
+ *   groupings that have already been decided, finds where each one
+ *   actually falls in the real audio and where it's safe to cut cleanly.
+ *
+ * Earlier versions of this file made both decisions in one pass
+ * (`planChunks`), gated on whether a text candidate happened to land near
+ * a detected silence window — which conflated "do these sentences belong
+ * together" with "is there a pause here," and produced boundaries that
+ * looked arbitrary because they effectively were (see chunk-planner.test.ts
+ * git history for the specific real-recording regressions this caused).
+ * Splitting the two concerns means grouping is decided by something that
+ * actually understands the content, and location/cutting is decided by
+ * real audio data — each concern using the tool actually suited to it.
+ *
+ * No I/O in this file — everything that shells out (whisper, ffmpeg) lives
+ * in transcribe.ts/audio-tools.ts, which callers combine with this
+ * module's pure functions. See chunk-planner.test.ts for the regression
+ * cases this encodes.
  */
 
 export interface WhisperSegment {
@@ -24,41 +43,16 @@ export interface PlannedChunk {
 	transcript: string;
 }
 
-export interface ChunkPlannerInput {
-	transcript: string;
-	durationMs: number;
-	whisperSegments: WhisperSegment[];
-	silences: SilenceWindow[];
-}
-
-// --- Tuning constants ---------------------------------------------------
-//
-// TARGET_MS/MAX_MS/MIN_MS and the pre-attack/tail buffers below are an
-// UNTESTED GUESS, extrapolated from exactly one human judgement call (see
-// notes/shadowing-practice-design.md's "Revised again, same day" entry —
-// re-merging three comma-split fragments into one ~12s chunk on one real
-// recording, while a neighboring similarly-sized fragment stayed split).
-// They are NOT expected to reproduce that exact hand-merged grouping, or
-// any other specific hand-cut result, on a new recording — going fully
-// automatic means accepting that cost in exchange for never needing a
-// human review step per recording. If real usage shows chunks consistently
-// too long, too short, or too choppy, retune the constants here and
-// re-chunk — `chunking_version` in the DB schema is what makes a
-// re-chunk safe to run at all (new chunk ids never collide with the
-// previous version's), NOT progress-preserving: re-chunking still resets
-// a user's progress on that recording's chunks, an accepted downside (see
-// supabase/README.md's "Shadowing tables" section for why).
-export const TARGET_MS = 8_000;
-export const MAX_MS = 14_000;
-export const MIN_MS = 2_500;
-
 // How far, in either direction, an ASR-estimated boundary time may be from
 // a real silence window and still count as "the same boundary". Wide
-// because whisper's own timestamps were found to be off by up to ~1.9s on
-// real data even after DTW refinement — see notes/shadowing-practice-
-// design.md's "Key finding" section. The proportional-position estimate
-// this module uses (see estimateTimeMs) adds its own slack on top, which
-// is exactly what this margin exists to absorb.
+// because whisper's own SEGMENT timestamps were found to be off by up to
+// ~1.9s on real data even after DTW refinement (up to ~4.2s on one
+// recording with an unusually long lead-in silence) — see
+// notes/shadowing-practice-design.md's "Key finding" section.
+// locateChunks prefers the much finer per-character DTW spine
+// (transcribeWavCharTimings) when available, which needs far less slack
+// than this in practice, but the margin stays wide to cover the
+// whisperSegments-only fallback path too.
 const BOUNDARY_SEARCH_MARGIN_MS = 2_500;
 
 // Pull a chunk's start back into the preceding quiet zone before the
@@ -77,13 +71,28 @@ const CLAUSE_COMMA_MARKS = new Set(['、']);
 const BRACKET_MARKS = new Set(['「', '」', '『', '』']);
 const CLOSING_BRACKET_MARKS = new Set(['」', '』']);
 
-// Forces a merge across the boundary regardless of whether a real pause
-// exists there — confirmed necessary in testing: whisper's own
-// segmentation broke at a natural breath pause mid-sentence (before a
-// comma, not a period) that would have made a bad shadowing-chunk boundary
-// if cut there. Subject to the MAX_MS cap like any other merge, via the
-// same comma-split fallback applied to any other over-long chunk.
-const DISCOURSE_CONNECTORS = ['そして', 'だけど', 'でも', 'だから', 'それで', 'なので', 'けど'];
+// A human- or ASR-generated transcript can type the half-width (ASCII)
+// form of a mark instead of switching back to full-width IME input
+// mid-sentence — found 2026-08-23 on a real recovered-audio batch: 4 of 9
+// recordings had a half-width "?" or "!" that was silently invisible to
+// SENTENCE_FINAL_MARKS entirely (which only ever matched the full-width
+// forms), producing splits that looked arbitrary. Both splitIntoSentence
+// Units and locateChunks normalize their transcript through this map
+// before anything else runs — extend this map, not the mark sets above,
+// if another half-width variant turns up.
+const WIDTH_NORMALIZE_MAP: Record<string, string> = {
+	'?': '？',
+	'!': '！',
+	'.': '。',
+	',': '、'
+};
+
+/** 1:1 character substitution only (no multi-char expansion), so char indices into the result stay perfectly aligned with the original text. */
+export function normalizeMarkWidth(text: string): string {
+	return Array.from(text)
+		.map((ch) => WIDTH_NORMALIZE_MAP[ch] ?? ch)
+		.join('');
+}
 
 function isPunctuationOrSpace(ch: string): boolean {
 	return (
@@ -148,6 +157,27 @@ export function findCandidates(text: string, marks: Set<string>): CandidateBound
 	return boundaries;
 }
 
+/**
+ * Splits a transcript into its atomic sentence-final-mark-bounded units —
+ * text only, no audio, no grouping decision. Each unit is an exact,
+ * untrimmed slice of the (width-normalized) transcript, so concatenating
+ * every returned unit reproduces the transcript exactly — locateChunks
+ * relies on that same invariant holding for however plan-chunks.json's
+ * entries get grouped afterward.
+ */
+export function splitIntoSentenceUnits(rawTranscript: string): string[] {
+	const transcript = normalizeMarkWidth(rawTranscript);
+	const candidates = findCandidates(transcript, SENTENCE_FINAL_MARKS);
+	const units: string[] = [];
+	let cursor = 0;
+	for (const c of candidates) {
+		units.push(transcript.slice(cursor, c.charIndex));
+		cursor = c.charIndex;
+	}
+	if (cursor < transcript.length) units.push(transcript.slice(cursor));
+	return units;
+}
+
 function spineLength(text: string): number {
 	let count = 0;
 	for (const ch of text) if (!isPunctuationOrSpace(ch)) count++;
@@ -158,7 +188,7 @@ interface AsrSpineChar {
 	timeMs: number;
 }
 
-/** One entry per non-punctuation character across all segments, each carrying an interpolated time within its segment's span. */
+/** One entry per non-punctuation character across all segments, each carrying an interpolated time within its segment's span. Works equally well fed coarse multi-sentence whisperSegments or fine per-character charTimings — a finer input segment just means less interpolation is needed per character. */
 function buildAsrSpine(segments: WhisperSegment[]): AsrSpineChar[] {
 	const spine: AsrSpineChar[] = [];
 	for (const seg of segments) {
@@ -174,11 +204,11 @@ function buildAsrSpine(segments: WhisperSegment[]): AsrSpineChar[] {
 
 /**
  * Approximate expected time for a transcript character position, via
- * proportional-position lookup into the whisper segment spine —
- * deliberately not a strict character-index alignment, since the final
- * transcript's wording (disfluencies kept, hallucinations removed) doesn't
- * always match whisper's own independent transcription exactly. Proportional
- * position degrades gracefully under that kind of small length mismatch;
+ * proportional-position lookup into an ASR spine — deliberately not a
+ * strict character-index alignment, since the final transcript's wording
+ * (disfluencies kept, hallucinations removed) doesn't always match
+ * whisper's own independent transcription exactly. Proportional position
+ * degrades gracefully under that kind of small length mismatch;
  * BOUNDARY_SEARCH_MARGIN_MS absorbs the rest.
  */
 function estimateTimeMs(
@@ -204,14 +234,11 @@ function estimateTimeMs(
  * expectedMs and whose FULL span — not just its midpoint — lies within
  * [rangeStartMs, rangeEndMs], or null if none qualifies.
  *
- * A midpoint-only containment check let a window straddle the boundary:
- * for splitAtCommas, rangeStartMs/rangeEndMs is the fragment being split
- * (not the whole recording), so a window whose midpoint fell just inside
- * but whose startMs/endMs extended past the fragment's own edge could
- * still get selected — producing a piece whose boundary doesn't
- * correspond to silence actually contained within that fragment,
- * potentially a negative or near-zero piece that Math.max(..., 1) later
- * masks as a tiny "valid" chunk.
+ * A midpoint-only containment check would let a window straddle the
+ * boundary: a window whose midpoint falls just inside the range but whose
+ * startMs/endMs extends past it could still get selected — producing a
+ * boundary that doesn't correspond to silence actually contained within
+ * the requested range.
  */
 export function findBestSilence(
 	expectedMs: number,
@@ -236,16 +263,14 @@ export function findBestSilence(
  * found window is shared with, or falls before, one already accepted.
  *
  * findBestSilence resolves each candidate boundary independently, so two
- * nearby candidates (two sentence-final marks close together, or the ASR
+ * nearby candidates (two decided boundaries close together, or the ASR
  * time estimate being imprecise) can both match the same real silence
  * window, or resolve to windows out of chronological order. Left
- * unfiltered, the caller's cursor-based loop then builds a fragment whose
- * end is before its start (or overlaps the next one) — not silently wrong
- * data, since verifyCoverage's non-positive-duration/overlap checks catch
- * it, but a real recording that should ingest cleanly aborts instead. A
- * dropped candidate here is treated exactly like one findBestSilence
- * already couldn't resolve: not a cut opportunity at this pass, not an
- * error.
+ * unfiltered, a cursor-based build then produces a fragment whose end is
+ * before its start (or overlaps the next one). Unlike the old planChunks
+ * (where a dropped candidate simply wasn't used, silently), locateChunks
+ * below treats anything dropped here as a real failure to report — every
+ * boundary reaching this point was already decided on purpose.
  */
 export function enforceMonotonicWindows<T extends { window: SilenceWindow }>(cuts: T[]): T[] {
 	const accepted: T[] = [];
@@ -254,134 +279,13 @@ export function enforceMonotonicWindows<T extends { window: SilenceWindow }>(cut
 		// Strictly greater, not just non-overlapping: a later window that
 		// starts exactly where the previous one ends still produces a
 		// zero-duration fragment for the transcript text between the two
-		// cuts — which the caller's cursor loop builds as [prevEnd,
-		// nextStart] = [X, X] — silently attaching that text to whichever
-		// neighbor it merges into even though no audio span represents it.
+		// cuts — silently attaching that text to whichever neighbor it
+		// merges into even though no audio span represents it.
 		if (cut.window.startMs <= lastAcceptedEndMs) continue;
 		accepted.push(cut);
 		lastAcceptedEndMs = cut.window.endMs;
 	}
 	return accepted;
-}
-
-function startsWithDiscourseConnector(text: string): boolean {
-	const trimmed = text.trimStart();
-	return DISCOURSE_CONNECTORS.some((c) => trimmed.startsWith(c));
-}
-
-interface Fragment {
-	startMs: number;
-	endMs: number;
-	/** Index into the full transcript where this fragment's text begins — threaded through every merge below so a later comma-split can map its local cut positions back to absolute time estimates without re-searching the full transcript. */
-	charStart: number;
-	transcript: string;
-	/** The silence window whose end defined this fragment's raw start, or null for the very first fragment. */
-	leadingSilence: SilenceWindow | null;
-	/** The silence window whose start defined this fragment's raw end, or null for the very last fragment. */
-	trailingSilence: SilenceWindow | null;
-}
-
-/**
- * Greedily merges adjacent fragments toward TARGET_MS, never past MAX_MS,
- * and always pulls in a fragment that would otherwise stand alone below
- * MIN_MS — even once the accumulator has already reached target — as long
- * as the pull still fits under MAX_MS. Without that last clause a small
- * trailing fragment could be stranded below MIN_MS just because its
- * predecessor happened to already be at target size.
- */
-function greedyMergeToward(fragments: Fragment[]): Fragment[] {
-	if (fragments.length === 0) return [];
-	const merged: Fragment[] = [];
-	let acc = fragments[0];
-	for (let i = 1; i < fragments.length; i++) {
-		const next = fragments[i];
-		const accDuration = acc.endMs - acc.startMs;
-		const nextDuration = next.endMs - next.startMs;
-		const combinedDuration = next.endMs - acc.startMs;
-		const shouldPull = accDuration < TARGET_MS || accDuration < MIN_MS || nextDuration < MIN_MS;
-		if (shouldPull && combinedDuration <= MAX_MS) {
-			acc = {
-				startMs: acc.startMs,
-				endMs: next.endMs,
-				charStart: acc.charStart,
-				transcript: acc.transcript + next.transcript,
-				leadingSilence: acc.leadingSilence,
-				trailingSilence: next.trailingSilence
-			};
-		} else {
-			merged.push(acc);
-			acc = next;
-		}
-	}
-	merged.push(acc);
-	return merged;
-}
-
-/**
- * Splits an over-long fragment at commas it actually contains (never an
- * invented pause boundary), each resolved to a real silence window within
- * the fragment's own time span — then re-merges just those pieces toward
- * the target, scoped to this fragment alone so the re-merge can't pull in
- * a chunk from elsewhere in the recording. Returns the original fragment
- * unchanged, still over MAX_MS, if it has no comma with a nearby silence
- * window to cut on — accepting an over-length chunk is preferable to
- * fabricating a cut with nothing real to anchor it to; the in-app Flag
- * button is the safety net for a chunk that turns out uncomfortable to
- * shadow.
- */
-function splitAtCommas(
-	fragment: Fragment,
-	silences: SilenceWindow[],
-	asrSpine: AsrSpineChar[],
-	fullTranscript: string,
-	transcriptSpineLength: number,
-	durationMs: number
-): Fragment[] {
-	const candidates = findCandidates(fragment.transcript, CLAUSE_COMMA_MARKS);
-	const cuts: { localCharIndex: number; window: SilenceWindow }[] = [];
-	for (const c of candidates) {
-		const absoluteCharIndex = fragment.charStart + c.charIndex;
-		const expected = estimateTimeMs(
-			absoluteCharIndex,
-			fullTranscript,
-			asrSpine,
-			transcriptSpineLength,
-			durationMs
-		);
-		const window = findBestSilence(expected, silences, fragment.startMs, fragment.endMs);
-		if (window) cuts.push({ localCharIndex: c.charIndex, window });
-	}
-	if (cuts.length === 0) return [fragment];
-
-	cuts.sort((a, b) => a.localCharIndex - b.localCharIndex);
-	const monotonicCuts = enforceMonotonicWindows(cuts);
-	if (monotonicCuts.length === 0) return [fragment];
-	const pieces: Fragment[] = [];
-	let cursorMs = fragment.startMs;
-	let cursorChar = 0;
-	let leading = fragment.leadingSilence;
-	for (const cut of monotonicCuts) {
-		pieces.push({
-			startMs: cursorMs,
-			endMs: cut.window.startMs,
-			charStart: fragment.charStart + cursorChar,
-			transcript: fragment.transcript.slice(cursorChar, cut.localCharIndex),
-			leadingSilence: leading,
-			trailingSilence: cut.window
-		});
-		cursorMs = cut.window.endMs;
-		cursorChar = cut.localCharIndex;
-		leading = cut.window;
-	}
-	pieces.push({
-		startMs: cursorMs,
-		endMs: fragment.endMs,
-		charStart: fragment.charStart + cursorChar,
-		transcript: fragment.transcript.slice(cursorChar),
-		leadingSilence: leading,
-		trailingSilence: fragment.trailingSilence
-	});
-	return pieces;
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -398,8 +302,7 @@ interface JointBoundary {
 /**
  * Resolves one internal silence window's boundary for the two chunks that
  * share it, computed jointly so they can never cross. Wide enough
- * (>= PRE_ATTACK_MS + TAIL_MS) for both adjustments in full: reproduces the
- * original independent-clamp behavior exactly, which deliberately leaves a
+ * (>= PRE_ATTACK_MS + TAIL_MS) for both adjustments in full: leaves a
  * small gap of untouched silence between the two chunks. Narrower than
  * that: splits whatever width is actually available between the two sides
  * in the same TAIL_MS:PRE_ATTACK_MS ratio as the constants themselves, so
@@ -419,112 +322,117 @@ export function jointBoundary(window: SilenceWindow): JointBoundary {
 	return { chunkEndMs: boundary, nextStartMs: boundary };
 }
 
-export function planChunks(input: ChunkPlannerInput): PlannedChunk[] {
-	const { transcript, durationMs, whisperSegments, silences } = input;
-	const asrSpine = buildAsrSpine(whisperSegments);
-	const transcriptSpineLength = spineLength(transcript);
+export interface ChunkPlanEntry {
+	text: string;
+}
 
-	// Phase A: sentence-final candidates, each resolved to a real silence
-	// window if one exists nearby, dropped otherwise — a dropped candidate
-	// simply isn't a cut opportunity yet; it may still become one via
-	// phase D's comma-splitting if it ends up part of an over-long chunk.
-	const sentenceCandidates = findCandidates(transcript, SENTENCE_FINAL_MARKS);
-	const resolvedCuts: { charIndex: number; window: SilenceWindow }[] = [];
-	for (const c of sentenceCandidates) {
-		const expected = estimateTimeMs(
-			c.charIndex,
-			transcript,
-			asrSpine,
-			transcriptSpineLength,
-			durationMs
-		);
-		const window = findBestSilence(expected, silences, 0, durationMs);
-		if (window) resolvedCuts.push({ charIndex: c.charIndex, window });
-	}
-	const monotonicResolvedCuts = enforceMonotonicWindows(resolvedCuts);
+export interface LocateChunksResult {
+	ok: boolean;
+	/** Human-readable, one per unresolvable boundary — each names what to do (merge the two affected chunks in chunk_plan.json and re-run). Empty when ok. */
+	failures: string[];
+	/** Empty when !ok — a partial result would be more misleading than none, since every boundary in the plan was equally intentional. */
+	chunks: PlannedChunk[];
+}
 
-	const fragments: Fragment[] = [];
-	let cursorMs = 0;
-	let cursorChar = 0;
-	let leading: SilenceWindow | null = null;
-	for (const cut of monotonicResolvedCuts) {
-		fragments.push({
-			startMs: cursorMs,
-			endMs: cut.window.startMs,
-			charStart: cursorChar,
-			transcript: transcript.slice(cursorChar, cut.charIndex),
-			leadingSilence: leading,
-			trailingSilence: cut.window
-		});
-		cursorMs = cut.window.endMs;
-		cursorChar = cut.charIndex;
-		leading = cut.window;
+/**
+ * Takes chunk groupings already decided from the transcript's meaning
+ * (chunk_plan.json, produced as a scaffold by plan-chunks.ts and then
+ * grouped/enriched by hand) and finds where each one actually falls in
+ * the real audio. No grouping decision happens here — only location.
+ *
+ * Every INTERNAL boundary (between two consecutive planned chunks) is
+ * resolved the same way the old planChunks's sentence candidates were:
+ * estimate its time via the ASR spine (charTimings preferred over the
+ * coarser whisperSegments when available — see buildAsrSpine), then
+ * require a real nearby silence window to cut cleanly on, trimmed with
+ * the same PRE_ATTACK_MS/TAIL_MS via jointBoundary. Unlike the old
+ * design, a boundary that can't find a real silence window nearby is
+ * NOT silently dropped — it's reported as a failure, since every
+ * boundary here was put there on purpose by whoever grouped the plan.
+ * The expected recovery is editing chunk_plan.json to merge the two
+ * chunks that boundary would have separated, then re-running — not
+ * forcing a cut with nothing real to anchor it to (verify.ts's attack
+ * check would catch that anyway).
+ */
+export function locateChunks(
+	plan: ChunkPlanEntry[],
+	rawTranscript: string,
+	charTimings: WhisperSegment[],
+	whisperSegments: WhisperSegment[],
+	silences: SilenceWindow[],
+	durationMs: number
+): LocateChunksResult {
+	const transcript = normalizeMarkWidth(rawTranscript);
+
+	if (plan.length === 0) {
+		return { ok: false, failures: ['chunk_plan.json has zero planned chunks.'], chunks: [] };
 	}
-	fragments.push({
-		startMs: cursorMs,
-		endMs: durationMs,
-		charStart: cursorChar,
-		transcript: transcript.slice(cursorChar),
-		leadingSilence: leading,
-		trailingSilence: null
+
+	let cursor = 0;
+	const ranges = plan.map((entry) => {
+		const text = normalizeMarkWidth(entry.text);
+		const charStart = cursor;
+		cursor += text.length;
+		return { text, charStart, charEnd: cursor };
 	});
 
-	// Phase B: discourse-connector merge.
-	const connectorMerged: Fragment[] = [];
-	for (const fragment of fragments) {
-		const prev = connectorMerged[connectorMerged.length - 1];
-		if (prev && startsWithDiscourseConnector(fragment.transcript)) {
-			connectorMerged[connectorMerged.length - 1] = {
-				startMs: prev.startMs,
-				endMs: fragment.endMs,
-				charStart: prev.charStart,
-				transcript: prev.transcript + fragment.transcript,
-				leadingSilence: prev.leadingSilence,
-				trailingSilence: fragment.trailingSilence
-			};
-		} else {
-			connectorMerged.push({ ...fragment });
-		}
+	const reconstructed = ranges.map((r) => r.text).join('');
+	if (reconstructed !== transcript) {
+		return {
+			ok: false,
+			failures: [
+				'Planned chunk texts do not reconstruct transcript.json\'s "transcript" field exactly — a chunk was edited, reordered, or had text dropped while grouping. Fix chunk_plan.json so its texts concatenate back word-for-word, then re-run.'
+			],
+			chunks: []
+		};
 	}
 
-	// Phase C: greedy duration-target merge.
-	const targetMerged = greedyMergeToward(connectorMerged);
+	const spine =
+		charTimings.length > 0 ? buildAsrSpine(charTimings) : buildAsrSpine(whisperSegments);
+	const transcriptSpineLength = spineLength(transcript);
 
-	// Phase D: comma-split anything still over MAX_MS, then re-merge just
-	// those pieces toward the target.
-	const final: Fragment[] = [];
-	for (const chunk of targetMerged) {
-		if (chunk.endMs - chunk.startMs <= MAX_MS) {
-			final.push(chunk);
-			continue;
-		}
-		const pieces = splitAtCommas(
-			chunk,
-			silences,
-			asrSpine,
+	const internalCharIndices = ranges.slice(0, -1).map((r) => r.charEnd);
+	const resolved = internalCharIndices.map((charIndex) => {
+		const expected = estimateTimeMs(
+			charIndex,
 			transcript,
+			spine,
 			transcriptSpineLength,
 			durationMs
 		);
-		if (pieces.length === 1) {
-			final.push(chunk);
-		} else {
-			final.push(...greedyMergeToward(pieces));
+		return { charIndex, window: findBestSilence(expected, silences, 0, durationMs) };
+	});
+
+	const failures: string[] = [];
+	for (const r of resolved) {
+		if (r.window !== null) continue;
+		const before = transcript.slice(Math.max(0, r.charIndex - 12), r.charIndex);
+		const after = transcript.slice(r.charIndex, r.charIndex + 12);
+		failures.push(
+			`No real pause found near the boundary between "...${before}" and "${after}..." — merge these two chunks in chunk_plan.json (there's no clean audio cut point there) and re-run.`
+		);
+	}
+
+	const resolvedWithWindow = resolved.filter(
+		(r): r is { charIndex: number; window: SilenceWindow } => r.window !== null
+	);
+	const monotonic = enforceMonotonicWindows(resolvedWithWindow);
+	if (monotonic.length < resolvedWithWindow.length) {
+		const monotonicSet = new Set(monotonic);
+		for (const r of resolvedWithWindow) {
+			if (monotonicSet.has(r)) continue;
+			const before = transcript.slice(Math.max(0, r.charIndex - 12), r.charIndex);
+			failures.push(
+				`The boundary right after "...${before}" resolves to the same (or an out-of-order) real pause as a neighboring boundary — the audio doesn't have two distinct gaps there. Merge the affected chunks in chunk_plan.json and re-run.`
+			);
 		}
 	}
 
-	// Phase E: pre-attack/tail adjustment on every surviving boundary. An
-	// internal boundary is a silence window shared between the chunk before
-	// it (whose end extends TAIL_MS into it) and the chunk after it (whose
-	// start pulls PRE_ATTACK_MS back into it) — resolved jointly per window
-	// via jointBoundary below, not independently per chunk, so a window
-	// narrower than PRE_ATTACK_MS + TAIL_MS can never make the two sides
-	// cross (found 2026-08-22, code review: detectSilences accepts windows
-	// as short as DEFAULT_SILENCE_MIN_DURATION_S=150ms, well under the
-	// 275ms both adjustments need in full — an independent clamp on each
-	// side let them overlap, which verifyCoverage then aborted on). The
-	// first chunk's start and the last chunk's end are left untouched:
-	// there is no preceding/following audio there to adjust into.
+	if (failures.length > 0) {
+		return { ok: false, failures, chunks: [] };
+	}
+
+	const windows = monotonic.map((m) => m.window);
 	const jointBoundaryCache = new Map<SilenceWindow, JointBoundary>();
 	function cachedJointBoundary(window: SilenceWindow): JointBoundary {
 		const cached = jointBoundaryCache.get(window);
@@ -534,19 +442,13 @@ export function planChunks(input: ChunkPlannerInput): PlannedChunk[] {
 		return result;
 	}
 
-	return final.map((chunk, i) => {
-		const startMs =
-			i === 0 || !chunk.leadingSilence
-				? chunk.startMs
-				: cachedJointBoundary(chunk.leadingSilence).nextStartMs;
-		const endMs =
-			i === final.length - 1 || !chunk.trailingSilence
-				? chunk.endMs
-				: cachedJointBoundary(chunk.trailingSilence).chunkEndMs;
-		return {
-			startMs,
-			durationMs: Math.max(endMs - startMs, 1),
-			transcript: chunk.transcript.trim()
-		};
+	const chunks: PlannedChunk[] = ranges.map((r, i) => {
+		const leadingWindow = i === 0 ? null : windows[i - 1];
+		const trailingWindow = i === ranges.length - 1 ? null : windows[i];
+		const startMs = leadingWindow ? cachedJointBoundary(leadingWindow).nextStartMs : 0;
+		const endMs = trailingWindow ? cachedJointBoundary(trailingWindow).chunkEndMs : durationMs;
+		return { startMs, durationMs: Math.max(endMs - startMs, 1), transcript: r.text };
 	});
+
+	return { ok: true, failures: [], chunks };
 }

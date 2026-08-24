@@ -51,8 +51,8 @@ root `CLAUDE.md`).
 
 ## Usage
 
-The core ingestion sequence is three commands (`transcribe`, `cut`,
-`publish`) plus two manual editing steps in between — `flagged` and
+The core ingestion sequence is four commands (`transcribe`, `plan-chunks`,
+`cut`, `publish`) plus two manual editing steps in between — `flagged` and
 `cleanup-old-versions` are separate, occasional maintenance commands, not
 part of the sequence. The sequence — including the editing steps — is
 designed to be run as **one Claude Code session**, driven by `PROMPT.md`:
@@ -68,6 +68,7 @@ session is doing.
 
 ```sh
 npm run ingest:transcribe          -- --audio <file> --user <username> [--transcript <file>] [--accept-transcript]
+npm run ingest:plan-chunks         -- --slug <slug> --user <username>
 npm run ingest:cut                 -- --slug <slug> --user <username>
 npm run ingest:publish             -- --slug <slug> --user <username> [--dry-run]
 npm run ingest:flagged             -- --user <username>
@@ -80,7 +81,12 @@ scratch space, not committed).
 ### 1. `ingest:transcribe`
 
 Converts the audio to a 16k mono analysis wav, transcribes it with
-whisper, and writes `transcript.json`.
+whisper twice, and writes `transcript.json`. The first pass produces the
+usual multi-sentence `whisperSegments` (readable, used as a fallback);
+the second, with `-ml 1`, produces `charTimings` — real per-character DTW
+alignment against the audio, which is what `ingest:cut` later uses to
+locate a decided chunk boundary precisely rather than estimating it off
+coarse segment timing. Roughly doubles this step's running time.
 
 - **With `--transcript <file>`**: cross-checks the supplied text against
   whisper's own independent pass (this is what catches a genuine ASR
@@ -93,50 +99,76 @@ whisper, and writes `transcript.json`.
   the safety net for a bad transcript here is the in-app Flag button, not
   this step.
 
-### 2. Restore punctuation (manual/agent step)
+### 2. Restore punctuation and fix small errors (manual/agent step)
 
 Edit `transcript.json`'s `transcript` field to add sentence-final marks
-(`。！？`) and clause commas (`、`). **Required whenever the transcript
-lacks sentence-final marks** — the next step's chunk planner aligns cuts on
-exactly those marks, so an unpunctuated transcript produces one giant,
-unusably long chunk, and `ingest:cut` now refuses to proceed past that
-regardless of `transcriptSource`. Not necessarily a no-op on the
-supplied-transcript path: `ingest:transcribe --transcript` only trims the
-supplied text and cross-checks it against whisper's own pass for
-divergence — it never validates or requires punctuation, so a supplied
-transcript can arrive just as unpunctuated as raw ASR output. If it
-already has real punctuation, there's nothing to do here; check the actual
-text rather than assuming from the source.
+(`。！？`) and clause commas (`、`), and fix an occasional ASR typo,
+hallucinated word, or mangled name. **Punctuation is required whenever the
+transcript lacks sentence-final marks** — the next step splits purely on
+those marks, so an unpunctuated transcript produces one giant, meaningless
+unit, and `ingest:plan-chunks` refuses to proceed past that regardless of
+`transcriptSource`. Not necessarily a no-op on the supplied-transcript
+path: `ingest:transcribe --transcript` only trims the supplied text and
+cross-checks it against whisper's own pass for divergence — it never
+validates or requires punctuation, so a supplied transcript can arrive
+just as unpunctuated as raw ASR output. If it already has real
+punctuation, this is mostly a proofread — check the actual text rather
+than assuming from the source.
 
 Preserve disfluencies, false starts, and repeated words as spoken — the
 point of shadowing practice is how someone actually talks, not a
-cleaned-up version of it. Don't reword.
+cleaned-up version of it. Don't reword beyond fixing a genuine
+transcription error.
 
-### 3. `ingest:cut`
+### 3. `ingest:plan-chunks`
 
-Plans chunk boundaries (transcript-guided, automatic — see
-`chunk-planner.ts`'s header comment for the algorithm and its known
-limits), cuts and fades every chunk, and verifies each one — content
-match against the source, no cut landing on a consonant attack, fades
-actually applied, every chunk distinct, full coverage of the recording.
-**Any verification failure aborts** — `chunks.json` is still written (for
-inspection), with `verified: false` on the failing per-chunk check(s) and
-any recording-wide failure (distinctness, coverage — these run once across
-the whole recording, not per chunk) listed in `chunks.json`'s
-`recordingVerifyFailures`. `ingest:publish` refuses to run until every
-chunk shows clean **and** `recordingVerifyFailures` is empty.
+Mechanical scaffold step — splits `transcript.json`'s transcript purely on
+sentence-final marks (`splitIntoSentenceUnits` in `chunk-planner.ts`, no
+audio input at all) and writes `chunk_plan.json`: one entry per atomic
+unit, `kana`/`translation` blank. Refuses to overwrite an existing
+`chunk_plan.json` — remove it by hand first if you actually want to
+regenerate from scratch (a guard against silently destroying grouping/
+enrichment work already done).
 
-Writes `chunks.json` with `kana`/`translation` left blank per chunk.
+### 4. Group into chunks and fill kana/translation (manual/agent step)
 
-### 4. Fill kana and translation (manual/agent step)
-
-For each chunk in `chunks.json`, fill in:
+This is where grouping actually gets decided — by meaning, not by an
+algorithm. For each entry in `chunk_plan.json`, in order: merge it into a
+neighbor (concatenate `text`, delete the merged-away entry) if it's too
+short to stand alone or belongs with that neighbor by meaning, until every
+remaining entry reads as a sensible, self-contained chunk. Then fill, for
+each final entry:
 
 - `kana` — a kana-only rendering of the chunk's Japanese text (hint rung 2
   in the drill's hint ladder).
 - `translation` — an English translation (hint rung 3).
 
-### 5. `ingest:publish`
+Every entry's `text` must stay an exact substring of the transcript —
+`ingest:cut` verifies the full set concatenates back to `transcript.json`
+word-for-word and aborts if it doesn't.
+
+### 5. `ingest:cut`
+
+Purely mechanical from here — no grouping decisions. Locates each
+`chunk_plan.json` entry in the real audio (`locateChunks` in
+`chunk-planner.ts`: estimates each boundary's time via the char-timing DTW
+spine, requires a real nearby silence window to cut on, trims with the
+same pre-attack/tail buffers as before), cuts and fades every chunk, and
+verifies each one — content match against the source, no cut landing on a
+consonant attack, fades actually applied, every chunk distinct, full
+coverage of the recording. **A boundary with no real pause nearby aborts
+before any cutting happens** — the fix is to merge those two chunks in
+`chunk_plan.json`, not to force a cut with nothing to anchor it to.
+**Any verification failure aborts** too — `chunks.json` is still written
+(for inspection), with `verified: false` on the failing per-chunk check(s)
+and any recording-wide failure (distinctness, coverage) listed in
+`chunks.json`'s `recordingVerifyFailures`. `ingest:publish` refuses to run
+until every chunk shows clean **and** `recordingVerifyFailures` is empty.
+
+Writes `chunks.json` with `kana`/`translation` copied straight from
+`chunk_plan.json` — already filled by step 4, not left blank.
+
+### 6. `ingest:publish`
 
 Checks every chunk verified clean and has non-empty `kana`/`translation`,
 then uploads audio to the `shadowing-audio` Storage bucket and
@@ -177,15 +209,15 @@ what would be removed.
 
 ## Files
 
-| File                 | What it is                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------- |
-| `chunk-planner.ts`   | Pure, unit-tested boundary-selection logic. No I/O.                                         |
-| `audio-tools.ts`     | ffmpeg/ffprobe primitives — one function per real gotcha found during the feasibility work. |
-| `transcribe.ts`      | whisper-cli wrapper.                                                                        |
-| `transcript-diff.ts` | The supplied-vs-ASR cross-check gate.                                                       |
-| `verify.ts`          | The five per-chunk/per-recording verification checks.                                       |
-| `args.ts`            | Minimal `--flag value` argv parsing, no dependency.                                         |
-| `cli/*.ts`           | The five command entry points (`npm run ingest:*`).                                         |
+| File                 | What it is                                                                                                                                |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `chunk-planner.ts`   | Pure, unit-tested text/audio-alignment logic, split in two: `splitIntoSentenceUnits` (text only) and `locateChunks` (audio only). No I/O. |
+| `audio-tools.ts`     | ffmpeg/ffprobe primitives — one function per real gotcha found during the feasibility work.                                               |
+| `transcribe.ts`      | whisper-cli wrapper — `transcribeWav` (coarse segments) and `transcribeWavCharTimings` (per-character DTW via `-ml 1`).                   |
+| `transcript-diff.ts` | The supplied-vs-ASR cross-check gate.                                                                                                     |
+| `verify.ts`          | The five per-chunk/per-recording verification checks.                                                                                     |
+| `args.ts`            | Minimal `--flag value` argv parsing, no dependency.                                                                                       |
+| `cli/*.ts`           | The six command entry points (`npm run ingest:*`).                                                                                        |
 
 The `cli/*.ts` commands reuse `src/lib/list-naming.ts`'s `deriveListName`
 for slug derivation and `scripts/lib/supabase-admin.ts`'s

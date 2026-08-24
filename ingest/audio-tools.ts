@@ -155,9 +155,9 @@ export function encodeWithoutFade(inWav: string, outM4a: string): void {
 	]);
 }
 
-// -30dB / d=0.15: validated 2026-08-16 against all three real recordings
-// from the feasibility work (test-aya, hellotalk-260812-0944-{1,2}) —
-// every one of the 13 chunks these settings' silence windows produced
+// -30dB / d=0.15: validated 2026-08-16 against the three real recordings
+// used during the feasibility work — every one of the 13 chunks these
+// settings' silence windows produced
 // passed content-match verification (see verify.ts) with a perfect
 // correlation of 1.000 and 0.0ms lag. The design notes flagged this
 // combination as untested and possibly too permissive mid-clip / too

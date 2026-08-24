@@ -46,8 +46,11 @@ export interface TranscribeResult {
  * wrong preset name only errors with "unknown DTW preset" rather than
  * listing the valid options.
  */
-export function transcribeWav(wavPath: string, opts?: { modelPath?: string }): TranscribeResult {
-	const modelPath = opts?.modelPath ?? process.env[WHISPER_MODEL_ENV] ?? DEFAULT_MODEL_PATH;
+function runWhisperCli(
+	wavPath: string,
+	modelPath: string,
+	extraArgs: string[]
+): WhisperJsonSegment[] {
 	const workDir = mkdtempSync(path.join(tmpdir(), 'shadowing-whisper-'));
 	const outputBase = path.join(workDir, 'transcript');
 	try {
@@ -66,7 +69,8 @@ export function transcribeWav(wavPath: string, opts?: { modelPath?: string }): T
 				'-oj',
 				'-of',
 				outputBase,
-				'-np'
+				'-np',
+				...extraArgs
 			],
 			{ encoding: 'utf8' }
 		);
@@ -75,19 +79,52 @@ export function transcribeWav(wavPath: string, opts?: { modelPath?: string }): T
 		}
 		const raw = readFileSync(`${outputBase}.json`, 'utf8');
 		const parsed: WhisperJson = JSON.parse(raw);
-		const segments: WhisperSegment[] = parsed.transcription.map((s) => ({
-			startMs: s.offsets.from,
-			endMs: s.offsets.to,
-			text: s.text.trim()
-		}));
-		return {
-			text: segments
-				.map((s) => s.text)
-				.join('')
-				.trim(),
-			segments
-		};
+		return parsed.transcription;
 	} finally {
 		rmSync(workDir, { recursive: true, force: true });
 	}
+}
+
+export function transcribeWav(wavPath: string, opts?: { modelPath?: string }): TranscribeResult {
+	const modelPath = opts?.modelPath ?? process.env[WHISPER_MODEL_ENV] ?? DEFAULT_MODEL_PATH;
+	const raw = runWhisperCli(wavPath, modelPath, []);
+	const segments: WhisperSegment[] = raw.map((s) => ({
+		startMs: s.offsets.from,
+		endMs: s.offsets.to,
+		text: s.text.trim()
+	}));
+	return {
+		text: segments
+			.map((s) => s.text)
+			.join('')
+			.trim(),
+		segments
+	};
+}
+
+/**
+ * Same whisper-cli pass, but with `-ml 1` (max segment length 1 char) —
+ * this is what actually surfaces the per-token DTW alignment `-dtw`
+ * already computes internally: without `-ml 1`, that alignment only ever
+ * shows up as ordinary multi-second segment boundaries (still refined by
+ * DTW, but only at the segment level whisper's own VAD chose). With it,
+ * every output "segment" is ~1 character, so its offsets ARE real
+ * per-character audio timing — confirmed on real data during design work
+ * (e.g. 大 at 7210-7800ms, 丈夫 at 7800-9240ms, both individually
+ * resolved). This is a second, separate whisper-cli invocation (roughly
+ * doubling transcribe time) rather than a flag added to the call above,
+ * because `-ml 1` fragments the JSON's normal multi-sentence segments —
+ * transcribeWav's own segments stay coarse/readable on purpose, for
+ * debugging and as a fallback spine if this pass is ever sparse/missing
+ * for a given span.
+ */
+export function transcribeWavCharTimings(
+	wavPath: string,
+	opts?: { modelPath?: string }
+): WhisperSegment[] {
+	const modelPath = opts?.modelPath ?? process.env[WHISPER_MODEL_ENV] ?? DEFAULT_MODEL_PATH;
+	const raw = runWhisperCli(wavPath, modelPath, ['-ml', '1']);
+	return raw
+		.map((s) => ({ startMs: s.offsets.from, endMs: s.offsets.to, text: s.text.trim() }))
+		.filter((s) => s.text.length > 0);
 }

@@ -2,18 +2,21 @@ import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'nod
 import path from 'node:path';
 import { parseArgs, requireString, requireSafePathComponent } from '../args.ts';
 import { cutChunk, applyFades, detectSilences } from '../audio-tools.ts';
-import { planChunks, type WhisperSegment } from '../chunk-planner.ts';
+import { locateChunks, type WhisperSegment, type ChunkPlanEntry } from '../chunk-planner.ts';
 import { verifyChunk, verifyDistinct, verifyCoverage } from '../verify.ts';
 
 const USAGE = `Usage: npm run ingest:cut -- --slug <slug> --user <username>
 
-Reads ingest/work/<user>/<slug>/transcript.json, plans chunk boundaries,
-cuts and fades each chunk, verifies every one (content match, no cut on an
-attack, fades applied, distinctness, coverage), and writes chunks.json with
-"kana"/"translation" left blank for the next step. On a verification
+Reads ingest/work/<user>/<slug>/transcript.json and chunk_plan.json (see
+ingest:plan-chunks), locates each already-grouped chunk in the real audio,
+cuts and fades it, verifies every one (content match, no cut on an attack,
+fades applied, distinctness, coverage), and writes chunks.json with kana/
+translation copied straight from chunk_plan.json. On a verification
 failure, chunks.json is still written (with "verified": false and
 "verifyFailures" on the affected chunk(s)) for inspection, and the command
-exits nonzero rather than proceeding to the next step.`;
+exits nonzero rather than proceeding to the next step. cut.ts does not
+decide chunk groupings — that's chunk_plan.json's job, done by hand — it
+only locates and cuts what's already been decided.`;
 
 const FADE_MS = 30;
 
@@ -30,6 +33,11 @@ if (!existsSync(transcriptPath)) {
 	console.error(`No transcript.json at ${transcriptPath} — run ingest:transcribe first.`);
 	process.exit(1);
 }
+const chunkPlanPath = path.join(workDir, 'chunk_plan.json');
+if (!existsSync(chunkPlanPath)) {
+	console.error(`No chunk_plan.json at ${chunkPlanPath} — run ingest:plan-chunks first.`);
+	process.exit(1);
+}
 
 interface TranscriptManifest {
 	slug: string;
@@ -39,19 +47,22 @@ interface TranscriptManifest {
 	transcript: string;
 	transcriptSource: 'supplied' | 'asr';
 	whisperSegments: WhisperSegment[];
+	charTimings: WhisperSegment[];
+}
+
+interface RawChunkPlanEntry {
+	text: string;
+	kana: string;
+	translation: string;
 }
 
 const manifest: TranscriptManifest = JSON.parse(readFileSync(transcriptPath, 'utf8'));
+const rawPlan: RawChunkPlanEntry[] = JSON.parse(readFileSync(chunkPlanPath, 'utf8'));
 
-// Source-independent: a *supplied* transcript is only trimmed and
-// similarity-checked in ingest:transcribe, never validated for
-// punctuation — it can arrive unpunctuated just as easily as raw ASR
-// output can, and hits exactly the same failure (one giant unplanned
-// chunk) if it does. This used to only check transcriptSource === 'asr',
-// letting an unpunctuated supplied transcript bypass the guard entirely.
-if (!/[。！？]/.test(manifest.transcript)) {
+const unenriched = rawPlan.filter((p) => p.kana.trim() === '' || p.translation.trim() === '');
+if (unenriched.length > 0) {
 	console.error(
-		'transcript.json has no sentence-final punctuation (。！？). Restore punctuation in the "transcript" field before cutting (see PROMPT.md); cutting an unpunctuated transcript produces one giant unplanned chunk at best.'
+		`${unenriched.length} entr${unenriched.length === 1 ? 'y' : 'ies'} in chunk_plan.json still ha${unenriched.length === 1 ? 's' : 've'} an empty "kana" or "translation" — fill those in before cutting. First: ${JSON.stringify(unenriched[0].text)}`
 	);
 	process.exit(1);
 }
@@ -60,13 +71,22 @@ const sourceWavPath = path.join(workDir, 'source.wav');
 console.log('Detecting silences...');
 const silences = detectSilences(sourceWavPath);
 
-const plan = planChunks({
-	transcript: manifest.transcript,
-	durationMs: manifest.durationMs,
-	whisperSegments: manifest.whisperSegments,
-	silences
-});
-console.log(`Planned ${plan.length} chunk(s).`);
+const planEntries: ChunkPlanEntry[] = rawPlan.map((p) => ({ text: p.text }));
+const located = locateChunks(
+	planEntries,
+	manifest.transcript,
+	manifest.charTimings ?? [],
+	manifest.whisperSegments,
+	silences,
+	manifest.durationMs
+);
+if (!located.ok) {
+	console.error('Could not locate every planned chunk in the audio:');
+	for (const f of located.failures) console.error(`  - ${f}`);
+	process.exit(1);
+}
+const plan = located.chunks;
+console.log(`Located ${plan.length} planned chunk(s) in the audio.`);
 
 interface ChunkManifestEntry {
 	index: number;
@@ -132,8 +152,8 @@ plan.forEach((chunk, i) => {
 		startMs: chunk.startMs,
 		durationMs: chunk.durationMs,
 		transcript: chunk.transcript,
-		kana: '',
-		translation: '',
+		kana: rawPlan[i].kana,
+		translation: rawPlan[i].translation,
 		verified: result.ok,
 		verifyFailures: result.failures
 	});
@@ -169,10 +189,7 @@ interface ChunkManifest {
 	// the whole timeline) aren't per-chunk — persisted here rather than
 	// only printed to the console, so ingest:publish's verification gate
 	// (which only reads this file, never a prior command's console output
-	// or exit code) can actually see a failure here too. Previously these
-	// checks correctly made ingest:cut itself exit nonzero, but a chunk
-	// could still show "verified": true individually while the recording
-	// as a whole had a real problem — publish's gate never looked at this.
+	// or exit code) can actually see a failure here too.
 	recordingVerifyFailures: string[];
 	chunks: ChunkManifestEntry[];
 }
@@ -219,11 +236,9 @@ console.log(`\nWrote ${chunksJsonPath}`);
 
 if (anyFailed) {
 	console.error(
-		"\nOne or more chunks failed verification (see above) — chunks.json was written for inspection, but ingest:publish will refuse to run until every chunk verifies clean. Re-tune and re-run ingest:cut (e.g. adjust the transcript's punctuation, or retune chunk-planner.ts's constants) rather than editing chunks.json by hand to force it through."
+		"\nOne or more chunks failed verification (see above) — chunks.json was written for inspection, but ingest:publish will refuse to run until every chunk verifies clean. This traces to the audio, not the grouping — chunk_plan.json's groupings already located cleanly (locateChunks succeeded) but the actual cut/fade came out wrong; re-run ingest:cut, and if it keeps failing, treat it as a real bug worth reporting rather than editing chunks.json by hand to force it through."
 	);
 	process.exit(1);
 }
 
-console.log(
-	'\nAll chunks verified. Next: fill "kana" and "translation" for each chunk in chunks.json, then run ingest:publish. See PROMPT.md.'
-);
+console.log('\nAll chunks verified. Next: run ingest:publish. See PROMPT.md.');
