@@ -208,6 +208,30 @@ const manifest: TranscriptManifest = {
 writeFileSync(path.join(workDir, 'transcript.json'), JSON.stringify(manifest, null, 2));
 
 console.log(`\nWrote ${path.join(workDir, 'transcript.json')}`);
+// A chunk_plan.json from a PRIOR run in this same workDir isn't touched by
+// the stale-output cleanup above (deliberately — see that block's comment;
+// it may hold real hand-authored grouping/kana/translation work) and isn't
+// deleted just because transcript.json changed. But pointing straight at
+// "run ingest:plan-chunks" when one already exists sends the operator into
+// a guaranteed failure — plan-chunks.ts refuses to overwrite it. Found in
+// code review 2026-08-24: an earlier version of this message always said
+// "run ingest:plan-chunks" unconditionally, missing exactly this case
+// (this transcribe run itself is commonly a re-run — fixing a transcript
+// error found only after already grouping once).
+const chunkPlanPath = path.join(workDir, 'chunk_plan.json');
+const chunkPlanAlreadyExists = existsSync(chunkPlanPath);
+function nextStepAfterPunctuation(): string {
+	if (!chunkPlanAlreadyExists) {
+		return 'Run ingest:plan-chunks, then group the resulting units into chunks by meaning and fill kana/translation, then ingest:cut.';
+	}
+	return (
+		`A chunk_plan.json from a previous run is still at ${chunkPlanPath} — it won't reconstruct this transcript anymore, so ingest:cut would reject it and ingest:plan-chunks refuses to overwrite it automatically. ` +
+		'If the grouping/kana/translation work in it is still what you want (only a small text fix happened above), edit its "text" fields to match the new wording and re-run ingest:cut directly. ' +
+		'Otherwise remove it (rm ' +
+		chunkPlanPath +
+		') and run ingest:plan-chunks fresh.'
+	);
+}
 // Whether transcriptSource is 'asr' or 'supplied', what actually matters
 // for the next step is whether the transcript text itself has
 // sentence-final punctuation — a supplied file is only trimmed and
@@ -215,17 +239,16 @@ console.log(`\nWrote ${path.join(workDir, 'transcript.json')}`);
 // easily arrive unpunctuated as ASR output can. ingest:plan-chunks' own
 // guard (see cli/plan-chunks.ts) checks this regardless of source; this
 // message just reports accurately which case applies instead of assuming
-// "supplied" always means "already punctuated." Points at
-// ingest:plan-chunks next, not straight at ingest:cut — the new sequence
-// always groups chunks by meaning before cutting; found stale in code
-// review 2026-08-24, still pointing at the old two-step (punctuate, cut)
-// sequence from before that split existed.
+// "supplied" always means "already punctuated."
 if (/[。！？]/.test(normalizeMarkWidth(transcript))) {
 	console.log(
-		'\nNext: the transcript already has sentence-final punctuation — no editing needed there. Run ingest:plan-chunks, then group the resulting units into chunks by meaning and fill kana/translation, then ingest:cut. See PROMPT.md.'
+		`\nNext: the transcript already has sentence-final punctuation — no editing needed there. ${nextStepAfterPunctuation()} See PROMPT.md.`
 	);
 } else {
+	const staleWarning = chunkPlanAlreadyExists
+		? ` Also: ${chunkPlanPath} still exists from a previous run and won't match this transcript either way — remove it once punctuation is restored, before running ingest:plan-chunks.`
+		: '';
 	console.log(
-		'\nNext: restore sentence/clause punctuation (。、！？) in the "transcript" field — ingest:plan-chunks splits on exactly those marks. See PROMPT.md.'
+		`\nNext: restore sentence/clause punctuation (。、！？) in the "transcript" field — ingest:plan-chunks splits on exactly those marks.${staleWarning} See PROMPT.md.`
 	);
 }
