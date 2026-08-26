@@ -109,9 +109,6 @@ const durationMs = probeDurationMs(tempWavPath);
 console.log('Transcribing with whisper (this can take a minute or two)...');
 const { text: asrText, segments } = transcribeWav(tempWavPath);
 
-console.log('Capturing per-character DTW alignment (another minute or two)...');
-const charTimings = transcribeWavCharTimings(tempWavPath);
-
 let transcript: string;
 let transcriptSource: 'supplied' | 'asr';
 
@@ -145,6 +142,17 @@ if (suppliedTranscriptPath) {
 	transcript = asrText;
 	transcriptSource = 'asr';
 }
+
+// Deferred until after the divergence gate above, not run alongside the
+// coarse pass — this second whisper invocation is the expensive one
+// ("another minute or two"), and the divergence gate doesn't need it (it
+// only compares the supplied transcript against the coarse asrText/
+// segments). Running it unconditionally before the gate meant an aborted
+// divergence check discarded that work every time, and a retry (fixed
+// transcript, or --accept-transcript) redid it from scratch. Found in code
+// review 2026-08-26.
+console.log('Capturing per-character DTW alignment (another minute or two)...');
+const charTimings = transcribeWavCharTimings(tempWavPath);
 
 // Everything fallible (conversion, whisper, the divergence gate) has now
 // succeeded — safe to commit. Invalidate a prior ingest:cut run's output

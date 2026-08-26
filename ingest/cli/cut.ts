@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { z } from 'zod';
 import { parseArgs, requireString, requireSafePathComponent } from '../args.ts';
 import { cutChunk, applyFades, detectSilences } from '../audio-tools.ts';
 import { locateChunks, type WhisperSegment, type ChunkPlanEntry } from '../chunk-planner.ts';
@@ -79,14 +80,28 @@ interface TranscriptManifest {
 	charTimings: WhisperSegment[];
 }
 
-interface RawChunkPlanEntry {
-	text: string;
-	kana: string;
-	translation: string;
-}
+// A runtime-validated schema, not just a TypeScript type assertion — found
+// in code review 2026-08-26: chunk_plan.json is explicitly hand-edited
+// (that's step 4's whole job), and a plausible slip (a missing field, a
+// null where a string was expected, the array replaced with something
+// else) used to crash on the first .filter/.trim below with a raw
+// TypeError instead of this file's usual actionable recovery guidance.
+const RawChunkPlanEntrySchema = z.object({
+	text: z.string(),
+	kana: z.string(),
+	translation: z.string()
+});
+const ChunkPlanSchema = z.array(RawChunkPlanEntrySchema);
 
 const manifest: TranscriptManifest = JSON.parse(readFileSync(transcriptPath, 'utf8'));
-const rawPlan: RawChunkPlanEntry[] = JSON.parse(readFileSync(chunkPlanPath, 'utf8'));
+const parsedChunkPlan = ChunkPlanSchema.safeParse(JSON.parse(readFileSync(chunkPlanPath, 'utf8')));
+if (!parsedChunkPlan.success) {
+	console.error(
+		`${chunkPlanPath} isn't shaped as expected — it should be an array of entries with string "text", "kana", and "translation" fields. Check for a broken hand-edit and fix it, then re-run. Details: ${parsedChunkPlan.error.message}`
+	);
+	process.exit(1);
+}
+const rawPlan = parsedChunkPlan.data;
 
 // Checked before enrichment, not after: a leftover merged-away entry
 // ({ text: "", kana: "", translation: "" }) also has empty kana/

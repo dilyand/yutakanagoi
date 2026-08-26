@@ -318,37 +318,51 @@ function hasSufficientCharTimingCoverage(
 }
 
 // Calibrated against this session's real production batch: every
-// legitimately-transcribed recording measured 90-100% coverage by this
-// ratio; the one confirmed-bad recording (see hasSufficientContentCoverage)
-// measured 39%. Set well below the real floor, well above the real failure.
+// legitimately-transcribed recording measured 90-102% coverage by this
+// ratio; the one confirmed-bad (under-recognized) recording measured 39%.
+// MIN is set well below the real floor, well above the real failure. MAX
+// exists for the symmetric failure mode — a hallucinating ASR pass that
+// over-produces text is just as damaging to the proportional mapping as
+// one that under-produces it (an unbounded ratio would let a spine twice
+// the transcript's length pass as "usable"), even though this batch didn't
+// happen to contain a real example of it. Set with the same headroom above
+// the real ceiling (102%) that MIN has below the real floor (90%).
 const MIN_ASR_CONTENT_COVERAGE_RATIO = 0.85;
+const MAX_ASR_CONTENT_COVERAGE_RATIO = 1.15;
 
 /**
- * Whether an ASR pass's own recognized text covers enough of the real
- * (edited) transcript's content to trust estimateTimeMs's proportional
- * character-position mapping against it. Distinct from
- * hasSufficientCharTimingCoverage's time-gap check, which only looks at
- * gaps between charTimings entries and can pass even when the ASR pass
- * badly under-recognized speech throughout an otherwise near-gapless
- * timeline — found in code review 2026-08-26, confirmed against a real
- * recording where whisper's -ml 1 pass produced 78 contiguous-in-time
- * entries spanning the recording's full duration (no gap exceeded 20ms)
- * but had silently skipped over 60% of the actual spoken content, so the
- * fraction-based spine lookup was resolving boundaries against a spine
- * whose characters didn't correspond to the transcript's characters at
- * all past the first few. The SAME recording's coarser whisperSegments
- * pass (the fallback used when charTimings is deemed insufficient) turned
- * out to have independently under-recognized a similar fraction of the
- * content, so this check applies to whichever ASR segments are being
- * considered, not only charTimings — see locateChunks, which aborts the
- * whole recording if neither pass clears this bar rather than silently
- * trusting whichever one happens to pass only the time-gap check.
+ * Whether an ASR pass's own recognized text covers close enough to (not
+ * just at least) the real (edited) transcript's content to trust
+ * estimateTimeMs's proportional character-position mapping against it.
+ * Distinct from hasSufficientCharTimingCoverage's time-gap check, which
+ * only looks at gaps between charTimings entries and can pass even when
+ * the ASR pass badly under-recognized speech throughout an otherwise
+ * near-gapless timeline — found in code review 2026-08-26, confirmed
+ * against a real recording where whisper's -ml 1 pass produced 78
+ * contiguous-in-time entries spanning the recording's full duration (no
+ * gap exceeded 20ms) but had silently skipped over 60% of the actual
+ * spoken content, so the fraction-based spine lookup was resolving
+ * boundaries against a spine whose characters didn't correspond to the
+ * transcript's characters at all past the first few. The SAME recording's
+ * coarser whisperSegments pass (the fallback used when charTimings is
+ * deemed insufficient) turned out to have independently under-recognized a
+ * similar fraction of the content, so this check applies to whichever ASR
+ * segments are being considered, not only charTimings — see locateChunks,
+ * which aborts the whole recording if neither pass clears this bar rather
+ * than silently trusting whichever one happens to pass only the time-gap
+ * check. The upper bound (found in the same review round, one comment
+ * later) closes the mirror-image gap: an unbounded ratio treated
+ * over-recognition (a hallucinating pass producing MORE text than was
+ * really said) as always "usable" just because it wasn't short, when
+ * fabricated extra content shifts later fractions exactly as badly as
+ * missing content does.
  */
 function hasSufficientContentCoverage(segments: WhisperSegment[], transcript: string): boolean {
 	const transcriptSpineLength = spineLength(transcript);
 	if (transcriptSpineLength === 0) return true;
 	const asrSpineLength = spineLength(segments.map((s) => s.text).join(''));
-	return asrSpineLength / transcriptSpineLength >= MIN_ASR_CONTENT_COVERAGE_RATIO;
+	const ratio = asrSpineLength / transcriptSpineLength;
+	return ratio >= MIN_ASR_CONTENT_COVERAGE_RATIO && ratio <= MAX_ASR_CONTENT_COVERAGE_RATIO;
 }
 
 /**
@@ -623,7 +637,7 @@ export function locateChunks(
 			return {
 				ok: false,
 				failures: [
-					"Neither the per-character DTW pass nor the coarse whisper pass recognized enough of this recording's actual transcript content to reliably locate boundaries (both fall well short of the transcript's real length) — this usually means whisper badly mis-transcribed a stretch of this recording rather than a chunk_plan.json problem. Re-run ingest:transcribe, or manually verify this recording's chunk boundaries instead of trusting locateChunks' estimate."
+					"Neither the per-character DTW pass nor the coarse whisper pass recognized close enough to this recording's actual transcript content to reliably locate boundaries (both fall well short of, or well past, the transcript's real length) — this usually means whisper badly mis-transcribed or hallucinated a stretch of this recording rather than a chunk_plan.json problem. Re-run ingest:transcribe, or manually verify this recording's chunk boundaries instead of trusting locateChunks' estimate."
 				],
 				chunks: []
 			};

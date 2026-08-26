@@ -629,7 +629,41 @@ describe('locateChunks — ASR content-coverage gate (code review regression 202
 
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
-			expect(result.failures.join(' ')).toMatch(/recognized enough of this recording/);
+			expect(result.failures.join(' ')).toMatch(/recognized close enough/);
+		}
+	});
+
+	// Found in code review 2026-08-26, one comment after the under-recognition
+	// case above: the coverage ratio had no upper bound, so a hallucinating
+	// ASR pass that over-produces text (e.g. a spine well past the
+	// transcript's real length) was always treated as "usable" just because
+	// it wasn't short — even though fabricated extra content shifts later
+	// fraction-based estimates exactly as badly as missing content does.
+	it('aborts the whole recording when both ASR passes over-recognized (hallucinated) far past the transcript content, even with a gapless charTimings timeline', () => {
+		const transcript =
+			'一文目はそこそこ長い内容です。二文目もかなり長い内容が続きます。三文目はさらに長い内容になります。';
+		const plan: ChunkPlanEntry[] = [
+			{ text: '一文目はそこそこ長い内容です。' },
+			{ text: '二文目もかなり長い内容が続きます。三文目はさらに長い内容になります。' }
+		];
+		const charTimings: WhisperSegment[] = [];
+		for (let t = 0; t <= 20000; t += 300) {
+			charTimings.push({ startMs: t, endMs: t + 200, text: 'あ' });
+		}
+		const whisperSegments: WhisperSegment[] = [
+			{ startMs: 0, endMs: 10000, text: 'あああああああああああああああああああああああああああ' },
+			{
+				startMs: 10000,
+				endMs: 20000,
+				text: 'いいいいいいいいいいいいいいいいいいいいいいいいいいい'
+			}
+		];
+
+		const result = locateChunks(plan, transcript, charTimings, whisperSegments, [], 20000);
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.failures.join(' ')).toMatch(/recognized close enough/);
 		}
 	});
 
