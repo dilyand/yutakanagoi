@@ -39,6 +39,29 @@ if (!existsSync(chunkPlanPath)) {
 	process.exit(1);
 }
 
+// Invalidate any chunks.json from a PRIOR successful cut as the very first
+// thing this run does, before reading or parsing anything that could
+// throw or fail validation — found in code review 2026-08-26 across two
+// rounds: an earlier fix only cleared it in the !located.ok branch,
+// missing the unenriched check above it; this round found it was still
+// possible to miss even that if chunk_plan.json is malformed JSON (a
+// realistic hand-editing mistake), since JSON.parse throwing happens
+// before either check runs. Placing this before both file reads closes
+// every exit path — thrown, validated, or located — at once, rather than
+// needing a matching invalidation added to each one individually. A
+// stale chunks.json here is still marked "verified": true and no longer
+// describes the current chunk_plan.json; ingest:publish reads only that
+// file and has no way to know it's stale. A successful run regenerates
+// chunks.json fresh regardless, so this costs nothing on the success
+// path either.
+const chunksJsonPath = path.join(workDir, 'chunks.json');
+if (existsSync(chunksJsonPath)) {
+	rmSync(chunksJsonPath);
+	console.log(
+		`Cleared ${chunksJsonPath} from a previous cut — this run will regenerate it if it succeeds.`
+	);
+}
+
 interface TranscriptManifest {
 	slug: string;
 	user: string;
@@ -58,26 +81,6 @@ interface RawChunkPlanEntry {
 
 const manifest: TranscriptManifest = JSON.parse(readFileSync(transcriptPath, 'utf8'));
 const rawPlan: RawChunkPlanEntry[] = JSON.parse(readFileSync(chunkPlanPath, 'utf8'));
-
-// Invalidate any chunks.json from a PRIOR successful cut as the very first
-// thing this run does, before any validation that could exit early —
-// found in code review 2026-08-26: an earlier fix only cleared it in the
-// !located.ok branch below, missing every other early exit (the
-// unenriched check right after this, and any future one). A stale
-// chunks.json here is still marked "verified": true and no longer
-// describes the current chunk_plan.json; ingest:publish reads only that
-// file and has no way to know it's stale. Doing this unconditionally,
-// this early, closes every exit path at once rather than needing a
-// matching invalidation added to each one individually — a successful
-// run regenerates chunks.json fresh regardless, so this costs nothing on
-// the success path either.
-const chunksJsonPath = path.join(workDir, 'chunks.json');
-if (existsSync(chunksJsonPath)) {
-	rmSync(chunksJsonPath);
-	console.log(
-		`Cleared ${chunksJsonPath} from a previous cut — this run will regenerate it if it succeeds.`
-	);
-}
 
 const unenriched = rawPlan.filter((p) => p.kana.trim() === '' || p.translation.trim() === '');
 if (unenriched.length > 0) {

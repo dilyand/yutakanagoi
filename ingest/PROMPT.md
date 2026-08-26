@@ -123,6 +123,17 @@ in transcript order. Your job:
   judgment call about meaning, the same kind you're already making when
   you write a translation for a chunk — there's no mechanical rule to
   fall back on.
+- **Split**, the reverse case: `ingest:plan-chunks` only scaffolds
+  sentence-final-mark units, never clause-comma ones, so a single long
+  sentence with internal 、 (the ones step 2 asked you to place at natural
+  clause breaks) arrives as one entry even where it reads better as two
+  chunks. To split one, replace that one entry with two adjacent entries
+  whose `text` fields concatenate back to the original exactly — cut
+  right after whichever 、 makes the best clause break, same judgment
+  call as grouping. `ingest:cut` locates a split entry exactly like any
+  other boundary: if there's no real pause at that comma, it'll tell you
+  so and you undo the split rather than force it (see "When something
+  aborts" below).
 - **Enrich.** For each final (post-grouping) entry, fill:
   - `kana` — the chunk's Japanese text rendered entirely in kana
     (hiragana for native readings, katakana only where the source word is

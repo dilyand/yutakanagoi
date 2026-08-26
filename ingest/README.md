@@ -136,8 +136,14 @@ This is where grouping actually gets decided — by meaning, not by an
 algorithm. For each entry in `chunk_plan.json`, in order: merge it into a
 neighbor (concatenate `text`, delete the merged-away entry) if it's too
 short to stand alone or belongs with that neighbor by meaning, until every
-remaining entry reads as a sensible, self-contained chunk. Then fill, for
-each final entry:
+remaining entry reads as a sensible, self-contained chunk. The reverse
+also applies: `ingest:plan-chunks` only scaffolds sentence-final-mark
+units, so a long sentence with internal clause commas arrives as one
+entry — split it into two adjacent entries (whose `text` still
+concatenates back exactly) at whichever `、` reads best if it should be
+two chunks; `ingest:cut` locates a split entry the same as any other
+boundary and tells you if there's no real pause to cut it on. Then fill,
+for each final entry:
 
 - `kana` — a kana-only rendering of the chunk's Japanese text (hint rung 2
   in the drill's hint ladder).
