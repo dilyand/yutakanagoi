@@ -28,6 +28,35 @@ const slug = requireSafePathComponent(requireString(args, 'slug', USAGE), 'slug'
 const username = requireSafePathComponent(requireString(args, 'user', USAGE), 'username');
 
 const workDir = path.join(import.meta.dirname, '..', 'work', username, slug);
+
+// Invalidate any chunks.json from a PRIOR successful cut as the very first
+// thing this run does — before even the transcript.json/chunk_plan.json
+// existence guards below, not just before reading or parsing them — found
+// in code review 2026-08-26 across three rounds: the first fix only
+// cleared it in the !located.ok branch, missing the unenriched check above
+// it; the second found it was still possible to miss even that if
+// chunk_plan.json is malformed JSON (a realistic hand-editing mistake),
+// since JSON.parse throwing happens before either check runs; this round
+// found that deleting chunk_plan.json to regenerate it from scratch (an
+// explicitly documented, supported action — see PROMPT.md) and then
+// re-running ingest:cut before finishing that regeneration hit the exact
+// same gap, since the missing-chunk_plan.json guard used to exit before
+// this invalidation ran at all. Placing this before every guard, read, and
+// parse closes every exit path at once, rather than needing a matching
+// invalidation added to each one individually as new ones are found. A
+// stale chunks.json here is still marked "verified": true and no longer
+// describes the current chunk_plan.json (or its absence); ingest:publish
+// reads only that file and has no way to know it's stale. A successful run
+// regenerates chunks.json fresh regardless, so this costs nothing on the
+// success path either.
+const chunksJsonPath = path.join(workDir, 'chunks.json');
+if (existsSync(chunksJsonPath)) {
+	rmSync(chunksJsonPath);
+	console.log(
+		`Cleared ${chunksJsonPath} from a previous cut — this run will regenerate it if it succeeds.`
+	);
+}
+
 const transcriptPath = path.join(workDir, 'transcript.json');
 if (!existsSync(transcriptPath)) {
 	console.error(`No transcript.json at ${transcriptPath} — run ingest:transcribe first.`);
@@ -37,29 +66,6 @@ const chunkPlanPath = path.join(workDir, 'chunk_plan.json');
 if (!existsSync(chunkPlanPath)) {
 	console.error(`No chunk_plan.json at ${chunkPlanPath} — run ingest:plan-chunks first.`);
 	process.exit(1);
-}
-
-// Invalidate any chunks.json from a PRIOR successful cut as the very first
-// thing this run does, before reading or parsing anything that could
-// throw or fail validation — found in code review 2026-08-26 across two
-// rounds: an earlier fix only cleared it in the !located.ok branch,
-// missing the unenriched check above it; this round found it was still
-// possible to miss even that if chunk_plan.json is malformed JSON (a
-// realistic hand-editing mistake), since JSON.parse throwing happens
-// before either check runs. Placing this before both file reads closes
-// every exit path — thrown, validated, or located — at once, rather than
-// needing a matching invalidation added to each one individually. A
-// stale chunks.json here is still marked "verified": true and no longer
-// describes the current chunk_plan.json; ingest:publish reads only that
-// file and has no way to know it's stale. A successful run regenerates
-// chunks.json fresh regardless, so this costs nothing on the success
-// path either.
-const chunksJsonPath = path.join(workDir, 'chunks.json');
-if (existsSync(chunksJsonPath)) {
-	rmSync(chunksJsonPath);
-	console.log(
-		`Cleared ${chunksJsonPath} from a previous cut — this run will regenerate it if it succeeds.`
-	);
 }
 
 interface TranscriptManifest {

@@ -602,27 +602,38 @@ export function locateChunks(
 		};
 	}
 
-	const charTimingsUsable =
-		hasSufficientCharTimingCoverage(charTimings, durationMs, silences) &&
-		hasSufficientContentCoverage(charTimings, transcript);
-	const whisperSegmentsUsable = hasSufficientContentCoverage(whisperSegments, transcript);
-	if (!charTimingsUsable && !whisperSegmentsUsable) {
-		return {
-			ok: false,
-			failures: [
-				"Neither the per-character DTW pass nor the coarse whisper pass recognized enough of this recording's actual transcript content to reliably locate boundaries (both fall well short of the transcript's real length) — this usually means whisper badly mis-transcribed a stretch of this recording rather than a chunk_plan.json problem. Re-run ingest:transcribe, or manually verify this recording's chunk boundaries instead of trusting locateChunks' estimate."
-			],
-			chunks: []
-		};
-	}
-	const usingCharTimings = charTimingsUsable;
-	const spine = usingCharTimings ? buildAsrSpine(charTimings) : buildAsrSpine(whisperSegments);
-	const transcriptSpineLength = spineLength(transcript);
-	const marginMs = usingCharTimings
-		? CHAR_TIMING_BOUNDARY_SEARCH_MARGIN_MS
-		: COARSE_BOUNDARY_SEARCH_MARGIN_MS;
-
+	// A single-chunk plan has no internal boundary to estimate at all — the
+	// mechanical cut is unambiguously the whole recording, so requiring ASR
+	// coverage here would reject a perfectly valid one-chunk recording purely
+	// because whisper's recognition rate was low for unrelated reasons. Found
+	// in code review 2026-08-26: the coverage gates below used to run
+	// unconditionally, before this length check existed.
 	const internalCharIndices = ranges.slice(0, -1).map((r) => r.charEnd);
+
+	let spine: AsrSpineChar[] = [];
+	const transcriptSpineLength = spineLength(transcript);
+	let marginMs = COARSE_BOUNDARY_SEARCH_MARGIN_MS;
+
+	if (internalCharIndices.length > 0) {
+		const charTimingsUsable =
+			hasSufficientCharTimingCoverage(charTimings, durationMs, silences) &&
+			hasSufficientContentCoverage(charTimings, transcript);
+		const whisperSegmentsUsable = hasSufficientContentCoverage(whisperSegments, transcript);
+		if (!charTimingsUsable && !whisperSegmentsUsable) {
+			return {
+				ok: false,
+				failures: [
+					"Neither the per-character DTW pass nor the coarse whisper pass recognized enough of this recording's actual transcript content to reliably locate boundaries (both fall well short of the transcript's real length) — this usually means whisper badly mis-transcribed a stretch of this recording rather than a chunk_plan.json problem. Re-run ingest:transcribe, or manually verify this recording's chunk boundaries instead of trusting locateChunks' estimate."
+				],
+				chunks: []
+			};
+		}
+		spine = charTimingsUsable ? buildAsrSpine(charTimings) : buildAsrSpine(whisperSegments);
+		marginMs = charTimingsUsable
+			? CHAR_TIMING_BOUNDARY_SEARCH_MARGIN_MS
+			: COARSE_BOUNDARY_SEARCH_MARGIN_MS;
+	}
+
 	const resolved = internalCharIndices.map((charIndex) => {
 		const expected = estimateTimeMs(
 			charIndex,

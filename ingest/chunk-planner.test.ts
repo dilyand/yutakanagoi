@@ -604,30 +604,60 @@ describe('locateChunks — ASR content-coverage gate (code review regression 202
 			{ text: '一文目はそこそこ長い内容です。' },
 			{ text: '二文目もかなり長い内容が続きます。三文目はさらに長い内容になります。' }
 		];
-		// Gapless in time (each entry starts right where the last ended) but
-		// only spells out a small fraction of the real transcript's content —
-		// the scenario hasSufficientCharTimingCoverage alone can't catch.
-		const charTimings: WhisperSegment[] = [
-			{ startMs: 0, endMs: 500, text: '一' },
-			{ startMs: 500, endMs: 1000, text: '文' },
-			{ startMs: 1000, endMs: 1500, text: '目' },
-			{ startMs: 28500, endMs: 29000, text: 'り' },
-			{ startMs: 29000, endMs: 29500, text: 'ま' },
-			{ startMs: 29500, endMs: 30000, text: 'す' }
-		];
+		// Every consecutive gap stays under hasSufficientCharTimingCoverage's
+		// 3000ms threshold (so that check alone passes, same as the real
+		// recording's gapless-but-sparse timeline) while the total recognized
+		// text is a small fraction of the transcript's real length — found in
+		// code review 2026-08-26: an earlier version of this fixture had a
+		// 27000ms internal gap, so hasSufficientCharTimingCoverage's own
+		// time-gap check already rejected it before the new content-coverage
+		// condition this test exists to lock down ever mattered — the test
+		// still passed even with that new check deleted entirely.
+		const charTimings: WhisperSegment[] = [];
+		for (let t = 0; t <= 20000; t += 2900) {
+			charTimings.push({ startMs: t, endMs: t + 400, text: 'あ' });
+		}
 		// Also badly under-recognized, same as the real recording's coarse
 		// pass — confirms the abort doesn't depend on which pass is checked.
 		const whisperSegments: WhisperSegment[] = [
-			{ startMs: 0, endMs: 1500, text: '一文目' },
-			{ startMs: 28500, endMs: 30000, text: 'り ます' }
+			{ startMs: 0, endMs: 2000, text: 'いち' },
+			{ startMs: 10000, endMs: 12000, text: 'さん' }
 		];
-		const silences: SilenceWindow[] = [{ startMs: 14900, endMs: 15100 }];
+		const silences: SilenceWindow[] = [];
 
-		const result = locateChunks(plan, transcript, charTimings, whisperSegments, silences, 30000);
+		const result = locateChunks(plan, transcript, charTimings, whisperSegments, silences, 20000);
 
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
 			expect(result.failures.join(' ')).toMatch(/recognized enough of this recording/);
+		}
+	});
+
+	// Found in code review 2026-08-26: a single-chunk plan has no internal
+	// boundary to align at all, so requiring ASR coverage for it was
+	// rejecting a perfectly valid one-chunk recording purely because
+	// whisper's recognition rate happened to be low for unrelated reasons —
+	// the mechanical cut is unambiguously the whole recording regardless.
+	it('locates a single-chunk plan (no internal boundary) even when both ASR passes badly under-recognized the recording', () => {
+		const transcript =
+			'一文目はそこそこ長い内容です。二文目もかなり長い内容が続きます。三文目はさらに長い内容になります。';
+		const plan: ChunkPlanEntry[] = [{ text: transcript }];
+		const charTimings: WhisperSegment[] = [];
+		for (let t = 0; t <= 20000; t += 2900) {
+			charTimings.push({ startMs: t, endMs: t + 400, text: 'あ' });
+		}
+		const whisperSegments: WhisperSegment[] = [
+			{ startMs: 0, endMs: 2000, text: 'いち' },
+			{ startMs: 10000, endMs: 12000, text: 'さん' }
+		];
+
+		const result = locateChunks(plan, transcript, charTimings, whisperSegments, [], 20000);
+
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.chunks.length).toBe(1);
+			expect(result.chunks[0].transcript).toBe(transcript);
+			expect(result.chunks[0].startMs).toBe(0);
 		}
 	});
 
