@@ -84,8 +84,28 @@ const RawChunkPlanEntrySchema = z.object({
 });
 const ChunkPlanSchema = z.array(RawChunkPlanEntrySchema);
 
-const manifest: TranscriptManifest = JSON.parse(readFileSync(transcriptPath, 'utf8'));
-const parsedChunkPlan = ChunkPlanSchema.safeParse(JSON.parse(readFileSync(chunkPlanPath, 'utf8')));
+// Both transcript.json and chunk_plan.json are hand-edited in the
+// workflow steps that precede this command, so a JSON.parse syntax error
+// is a realistic mistake for either — caught explicitly here rather than
+// left to crash uncaught, same as plan-chunks.ts's read of transcript.json.
+// This was still possible to hit for chunk_plan.json even after the zod
+// shape-validation below was added: JSON.parse itself throws on invalid
+// JSON *syntax* before ChunkPlanSchema.safeParse ever runs, since
+// safeParse only validates the shape of an already-parsed value. Found in
+// code review 2026-08-26.
+function parseJsonFile(filePath: string): unknown {
+	try {
+		return JSON.parse(readFileSync(filePath, 'utf8'));
+	} catch (e) {
+		console.error(
+			`${filePath} isn't valid JSON — check for a broken hand-edit (an unescaped quote, a stray trailing comma, unbalanced braces) and fix it, then re-run. Details: ${(e as Error).message}`
+		);
+		process.exit(1);
+	}
+}
+
+const manifest = parseJsonFile(transcriptPath) as TranscriptManifest;
+const parsedChunkPlan = ChunkPlanSchema.safeParse(parseJsonFile(chunkPlanPath));
 if (!parsedChunkPlan.success) {
 	console.error(
 		`${chunkPlanPath} isn't shaped as expected — it should be an array of entries with string "text", "kana", and "translation" fields. Check for a broken hand-edit and fix it, then re-run. Details: ${parsedChunkPlan.error.message}`
