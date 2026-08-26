@@ -59,6 +59,26 @@ interface RawChunkPlanEntry {
 const manifest: TranscriptManifest = JSON.parse(readFileSync(transcriptPath, 'utf8'));
 const rawPlan: RawChunkPlanEntry[] = JSON.parse(readFileSync(chunkPlanPath, 'utf8'));
 
+// Invalidate any chunks.json from a PRIOR successful cut as the very first
+// thing this run does, before any validation that could exit early —
+// found in code review 2026-08-26: an earlier fix only cleared it in the
+// !located.ok branch below, missing every other early exit (the
+// unenriched check right after this, and any future one). A stale
+// chunks.json here is still marked "verified": true and no longer
+// describes the current chunk_plan.json; ingest:publish reads only that
+// file and has no way to know it's stale. Doing this unconditionally,
+// this early, closes every exit path at once rather than needing a
+// matching invalidation added to each one individually — a successful
+// run regenerates chunks.json fresh regardless, so this costs nothing on
+// the success path either.
+const chunksJsonPath = path.join(workDir, 'chunks.json');
+if (existsSync(chunksJsonPath)) {
+	rmSync(chunksJsonPath);
+	console.log(
+		`Cleared ${chunksJsonPath} from a previous cut — this run will regenerate it if it succeeds.`
+	);
+}
+
 const unenriched = rawPlan.filter((p) => p.kana.trim() === '' || p.translation.trim() === '');
 if (unenriched.length > 0) {
 	console.error(
@@ -83,20 +103,6 @@ const located = locateChunks(
 if (!located.ok) {
 	console.error('Could not locate every planned chunk in the audio:');
 	for (const f of located.failures) console.error(`  - ${f}`);
-	// A prior successful cut's chunks.json is still sitting here, still
-	// marked "verified": true, and no longer describes the current
-	// chunk_plan.json — ingest:publish reads only chunks.json and has no
-	// way to know it's stale. Same reasoning, same fix, as
-	// ingest:transcribe's stale-output invalidation: remove it now rather
-	// than leave a manifest that looks trustworthy but isn't. Found in
-	// code review 2026-08-26.
-	const chunksJsonPath = path.join(workDir, 'chunks.json');
-	if (existsSync(chunksJsonPath)) {
-		rmSync(chunksJsonPath);
-		console.error(
-			`Removed stale ${chunksJsonPath} from a previous successful cut — re-run after fixing chunk_plan.json.`
-		);
-	}
 	process.exit(1);
 }
 const plan = located.chunks;
@@ -217,20 +223,23 @@ interface ChunkManifest {
 // previous run's chunks, which is what actually breaks ingest:publish's
 // trust in the manifest.
 //
-// The old chunks.json is invalidated FIRST, before the rename loop below
-// promotes any staged chunk audio — not after. The promotion loop is
-// itself interruptible (a kill signal, a crash between any two renames):
-// if the old manifest were still in place while some chunk-NN.m4a files
-// have already been promoted to this new run's audio and others haven't,
-// ingest:publish would trust the old (now-wrong) transcript/verified
-// status for a manifest describing a mix of old and new chunk audio.
-// Deleting chunks.json first means an interruption at any point from
-// here through the rename loop leaves no manifest at all — publish's own
-// "no chunks.json" gate catches it regardless of exactly where an
+// No chunks.json to invalidate here anymore by the time we reach this
+// point — it was already cleared unconditionally near the top of this
+// script (see chunksJsonPath there), specifically so every early-exit
+// path (not just this success path) starts from "no stale manifest,"
+// rather than needing a matching invalidation at each exit individually.
+// The reasoning for clearing it BEFORE the rename loop below promotes any
+// staged chunk audio still applies, it's just already satisfied: the
+// promotion loop is interruptible (a kill signal, a crash between any two
+// renames), and if a manifest were in place while some chunk-NN.m4a files
+// have already been promoted to this run's audio and others haven't,
+// ingest:publish would trust old (now-wrong) transcript/verified status
+// for a manifest describing a mix of old and new chunk audio. No manifest
+// existing at all from before this loop starts means an interruption at
+// any point through it leaves no manifest at all — publish's own "no
+// chunks.json" gate catches it regardless of exactly where an
 // interruption lands, the same reasoning ingest:transcribe's source
 // commit uses.
-const chunksJsonPath = path.join(workDir, 'chunks.json');
-if (existsSync(chunksJsonPath)) rmSync(chunksJsonPath);
 
 for (const { staged, final } of stagedToFinal) renameSync(staged, final);
 
