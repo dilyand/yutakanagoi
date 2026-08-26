@@ -83,6 +83,20 @@ const located = locateChunks(
 if (!located.ok) {
 	console.error('Could not locate every planned chunk in the audio:');
 	for (const f of located.failures) console.error(`  - ${f}`);
+	// A prior successful cut's chunks.json is still sitting here, still
+	// marked "verified": true, and no longer describes the current
+	// chunk_plan.json — ingest:publish reads only chunks.json and has no
+	// way to know it's stale. Same reasoning, same fix, as
+	// ingest:transcribe's stale-output invalidation: remove it now rather
+	// than leave a manifest that looks trustworthy but isn't. Found in
+	// code review 2026-08-26.
+	const chunksJsonPath = path.join(workDir, 'chunks.json');
+	if (existsSync(chunksJsonPath)) {
+		rmSync(chunksJsonPath);
+		console.error(
+			`Removed stale ${chunksJsonPath} from a previous successful cut — re-run after fixing chunk_plan.json.`
+		);
+	}
 	process.exit(1);
 }
 const plan = located.chunks;
