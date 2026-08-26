@@ -82,6 +82,22 @@ interface RawChunkPlanEntry {
 const manifest: TranscriptManifest = JSON.parse(readFileSync(transcriptPath, 'utf8'));
 const rawPlan: RawChunkPlanEntry[] = JSON.parse(readFileSync(chunkPlanPath, 'utf8'));
 
+// Checked before enrichment, not after: a leftover merged-away entry
+// ({ text: "", kana: "", translation: "" }) also has empty kana/
+// translation, so without this ordering the unenriched check below would
+// catch it first and tell the operator to fill it in — the wrong fix for
+// an entry that should be deleted, not enriched. locateChunks has its own
+// (later) empty-text check for defense in depth, but by then the operator
+// has already been pointed at the wrong recovery. Found in code review
+// 2026-08-26.
+const emptyText = rawPlan.filter((p) => p.text.trim() === '');
+if (emptyText.length > 0) {
+	console.error(
+		`${emptyText.length} entr${emptyText.length === 1 ? 'y has' : 'ies have'} empty "text" in chunk_plan.json — remove the leftover entr${emptyText.length === 1 ? 'y' : 'ies'} (likely left behind by a merge; don't fill it in) and re-run.`
+	);
+	process.exit(1);
+}
+
 const unenriched = rawPlan.filter((p) => p.kana.trim() === '' || p.translation.trim() === '');
 if (unenriched.length > 0) {
 	console.error(

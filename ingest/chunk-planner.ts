@@ -317,6 +317,40 @@ function hasSufficientCharTimingCoverage(
 	return true;
 }
 
+// Calibrated against this session's real production batch: every
+// legitimately-transcribed recording measured 90-100% coverage by this
+// ratio; the one confirmed-bad recording (see hasSufficientContentCoverage)
+// measured 39%. Set well below the real floor, well above the real failure.
+const MIN_ASR_CONTENT_COVERAGE_RATIO = 0.85;
+
+/**
+ * Whether an ASR pass's own recognized text covers enough of the real
+ * (edited) transcript's content to trust estimateTimeMs's proportional
+ * character-position mapping against it. Distinct from
+ * hasSufficientCharTimingCoverage's time-gap check, which only looks at
+ * gaps between charTimings entries and can pass even when the ASR pass
+ * badly under-recognized speech throughout an otherwise near-gapless
+ * timeline — found in code review 2026-08-26, confirmed against a real
+ * recording where whisper's -ml 1 pass produced 78 contiguous-in-time
+ * entries spanning the recording's full duration (no gap exceeded 20ms)
+ * but had silently skipped over 60% of the actual spoken content, so the
+ * fraction-based spine lookup was resolving boundaries against a spine
+ * whose characters didn't correspond to the transcript's characters at
+ * all past the first few. The SAME recording's coarser whisperSegments
+ * pass (the fallback used when charTimings is deemed insufficient) turned
+ * out to have independently under-recognized a similar fraction of the
+ * content, so this check applies to whichever ASR segments are being
+ * considered, not only charTimings — see locateChunks, which aborts the
+ * whole recording if neither pass clears this bar rather than silently
+ * trusting whichever one happens to pass only the time-gap check.
+ */
+function hasSufficientContentCoverage(segments: WhisperSegment[], transcript: string): boolean {
+	const transcriptSpineLength = spineLength(transcript);
+	if (transcriptSpineLength === 0) return true;
+	const asrSpineLength = spineLength(segments.map((s) => s.text).join(''));
+	return asrSpineLength / transcriptSpineLength >= MIN_ASR_CONTENT_COVERAGE_RATIO;
+}
+
 /**
  * Approximate expected time for a transcript character position, via
  * proportional-position lookup into an ASR spine — deliberately not a
@@ -568,7 +602,20 @@ export function locateChunks(
 		};
 	}
 
-	const usingCharTimings = hasSufficientCharTimingCoverage(charTimings, durationMs, silences);
+	const charTimingsUsable =
+		hasSufficientCharTimingCoverage(charTimings, durationMs, silences) &&
+		hasSufficientContentCoverage(charTimings, transcript);
+	const whisperSegmentsUsable = hasSufficientContentCoverage(whisperSegments, transcript);
+	if (!charTimingsUsable && !whisperSegmentsUsable) {
+		return {
+			ok: false,
+			failures: [
+				"Neither the per-character DTW pass nor the coarse whisper pass recognized enough of this recording's actual transcript content to reliably locate boundaries (both fall well short of the transcript's real length) — this usually means whisper badly mis-transcribed a stretch of this recording rather than a chunk_plan.json problem. Re-run ingest:transcribe, or manually verify this recording's chunk boundaries instead of trusting locateChunks' estimate."
+			],
+			chunks: []
+		};
+	}
+	const usingCharTimings = charTimingsUsable;
 	const spine = usingCharTimings ? buildAsrSpine(charTimings) : buildAsrSpine(whisperSegments);
 	const transcriptSpineLength = spineLength(transcript);
 	const marginMs = usingCharTimings

@@ -586,3 +586,77 @@ describe('locateChunks — coverage', () => {
 		expect(joined).toBe(transcript);
 	});
 });
+
+describe('locateChunks — ASR content-coverage gate (code review regression 2026-08-26)', () => {
+	// Mirrors a real production recording where whisper's -ml 1 pass produced
+	// a near-gapless timeline (no internal gap over 20ms, so
+	// hasSufficientCharTimingCoverage's time-gap check alone passed) but had
+	// silently skipped over 60% of the actual spoken content — the fraction-
+	// based spine lookup was then resolving boundaries against a spine whose
+	// characters didn't correspond to the transcript's characters at all past
+	// the first few. The coarser whisperSegments pass independently
+	// under-recognized a similar fraction of the same recording, so this test
+	// covers both passes failing content coverage together, not just one.
+	it('aborts the whole recording when neither ASR pass recognized enough of the transcript content to trust, even with a gapless charTimings timeline', () => {
+		const transcript =
+			'一文目はそこそこ長い内容です。二文目もかなり長い内容が続きます。三文目はさらに長い内容になります。';
+		const plan: ChunkPlanEntry[] = [
+			{ text: '一文目はそこそこ長い内容です。' },
+			{ text: '二文目もかなり長い内容が続きます。三文目はさらに長い内容になります。' }
+		];
+		// Gapless in time (each entry starts right where the last ended) but
+		// only spells out a small fraction of the real transcript's content —
+		// the scenario hasSufficientCharTimingCoverage alone can't catch.
+		const charTimings: WhisperSegment[] = [
+			{ startMs: 0, endMs: 500, text: '一' },
+			{ startMs: 500, endMs: 1000, text: '文' },
+			{ startMs: 1000, endMs: 1500, text: '目' },
+			{ startMs: 28500, endMs: 29000, text: 'り' },
+			{ startMs: 29000, endMs: 29500, text: 'ま' },
+			{ startMs: 29500, endMs: 30000, text: 'す' }
+		];
+		// Also badly under-recognized, same as the real recording's coarse
+		// pass — confirms the abort doesn't depend on which pass is checked.
+		const whisperSegments: WhisperSegment[] = [
+			{ startMs: 0, endMs: 1500, text: '一文目' },
+			{ startMs: 28500, endMs: 30000, text: 'り ます' }
+		];
+		const silences: SilenceWindow[] = [{ startMs: 14900, endMs: 15100 }];
+
+		const result = locateChunks(plan, transcript, charTimings, whisperSegments, silences, 30000);
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.failures.join(' ')).toMatch(/recognized enough of this recording/);
+		}
+	});
+
+	it('still locates normally when charTimings has good content coverage despite a real leading silence (not a regression of the existing time-gap check)', () => {
+		const transcript = '一文目です。二文目です。';
+		const plan: ChunkPlanEntry[] = [{ text: '一文目です。' }, { text: '二文目です。' }];
+		const charTimings: WhisperSegment[] = [
+			{ startMs: 4000, endMs: 4500, text: '一' },
+			{ startMs: 4500, endMs: 5000, text: '文' },
+			{ startMs: 5000, endMs: 5500, text: '目' },
+			{ startMs: 5500, endMs: 6000, text: 'で' },
+			{ startMs: 6000, endMs: 6500, text: 'す' },
+			{ startMs: 8500, endMs: 9000, text: '二' },
+			{ startMs: 9000, endMs: 9500, text: '文' },
+			{ startMs: 9500, endMs: 10000, text: '目' },
+			{ startMs: 10000, endMs: 10500, text: 'で' },
+			{ startMs: 10500, endMs: 11000, text: 'す' }
+		];
+		const whisperSegments: WhisperSegment[] = [
+			{ startMs: 4000, endMs: 6500, text: '一文目です' },
+			{ startMs: 8500, endMs: 11000, text: '二文目です' }
+		];
+		const silences: SilenceWindow[] = [
+			{ startMs: 0, endMs: 4000 },
+			{ startMs: 6800, endMs: 8200 }
+		];
+
+		const result = locateChunks(plan, transcript, charTimings, whisperSegments, silences, 12000);
+
+		expect(result.ok).toBe(true);
+	});
+});
