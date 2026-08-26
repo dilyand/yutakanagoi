@@ -31,25 +31,16 @@ const username = requireSafePathComponent(requireString(args, 'user', USAGE), 'u
 const workDir = path.join(import.meta.dirname, '..', 'work', username, slug);
 
 // Invalidate any chunks.json from a PRIOR successful cut as the very first
-// thing this run does — before even the transcript.json/chunk_plan.json
-// existence guards below, not just before reading or parsing them — found
-// in code review 2026-08-26 across three rounds: the first fix only
-// cleared it in the !located.ok branch, missing the unenriched check above
-// it; the second found it was still possible to miss even that if
-// chunk_plan.json is malformed JSON (a realistic hand-editing mistake),
-// since JSON.parse throwing happens before either check runs; this round
-// found that deleting chunk_plan.json to regenerate it from scratch (an
-// explicitly documented, supported action — see PROMPT.md) and then
-// re-running ingest:cut before finishing that regeneration hit the exact
-// same gap, since the missing-chunk_plan.json guard used to exit before
-// this invalidation ran at all. Placing this before every guard, read, and
-// parse closes every exit path at once, rather than needing a matching
-// invalidation added to each one individually as new ones are found. A
-// stale chunks.json here is still marked "verified": true and no longer
-// describes the current chunk_plan.json (or its absence); ingest:publish
-// reads only that file and has no way to know it's stale. A successful run
-// regenerates chunks.json fresh regardless, so this costs nothing on the
-// success path either.
+// thing this run does — before every guard, read, and parse below, not
+// just before the ones that can throw or fail validation. A stale
+// chunks.json is still marked "verified": true and no longer describes the
+// current chunk_plan.json (or its absence, if this run aborts before ever
+// reading one); ingest:publish reads only that file and has no way to know
+// it's stale otherwise. Placing this first closes every exit path at once
+// (a missing input file, a malformed or wrongly-shaped chunk_plan.json, a
+// located-but-unverified cut) rather than needing a matching invalidation
+// added at each one individually. A successful run regenerates chunks.json
+// fresh regardless, so this costs nothing on the success path either.
 const chunksJsonPath = path.join(workDir, 'chunks.json');
 if (existsSync(chunksJsonPath)) {
 	rmSync(chunksJsonPath);

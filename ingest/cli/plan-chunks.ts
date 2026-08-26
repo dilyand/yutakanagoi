@@ -38,7 +38,20 @@ interface TranscriptManifest {
 	transcript: string;
 }
 
-const manifest: TranscriptManifest = JSON.parse(readFileSync(transcriptPath, 'utf8'));
+// Caught explicitly, not left to crash uncaught — transcript.json's
+// "transcript" field is hand-edited in the preceding workflow step (step
+// 2: restoring punctuation, fixing ASR typos/mangled names), so a broken
+// edit (an unescaped quote, a stray trailing comma) is a realistic mistake
+// here, not just a theoretical one. Found in code review 2026-08-26.
+let manifest: TranscriptManifest;
+try {
+	manifest = JSON.parse(readFileSync(transcriptPath, 'utf8'));
+} catch (e) {
+	console.error(
+		`${transcriptPath} isn't valid JSON — check for a broken hand-edit (an unescaped quote, a stray trailing comma, unbalanced braces) and fix it, then re-run. Details: ${(e as Error).message}`
+	);
+	process.exit(1);
+}
 
 // Checked against the width-normalized text, not the raw field — a
 // transcript whose sentence-final marks are all half-width (ASCII) ?/!
