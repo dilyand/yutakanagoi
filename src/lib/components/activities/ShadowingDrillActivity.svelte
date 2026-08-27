@@ -68,6 +68,11 @@
 	// range input — guards handleTimeUpdate below so a native timeupdate
 	// tick doesn't yank the thumb out from under an in-progress drag by
 	// overwriting seekPosition with the (stale, pre-seek) playback time.
+	// Cleared on both pointerup (a normal release) and pointercancel (a
+	// gesture interrupted before it completes — an OS-level touch
+	// cancellation, e.g. — which fires instead of pointerup and would
+	// otherwise leave this stuck true, permanently freezing the seek bar's
+	// display against further timeupdate ticks).
 	let isSeeking = $state(false);
 	// The furthest point actually reached via real, uninterrupted forward
 	// playback — as opposed to `seekPosition`, which also moves on a seek.
@@ -218,10 +223,20 @@
 	// playback's last real timeupdate tick already lands within
 	// FORWARD_JUMP_TOLERANCE_MS of the true end, so this still passes for
 	// every genuine playthrough.
+	//
+	// Must fail CLOSED, not open, when durationSeconds is still 0 (not yet
+	// known for the current item — resetPerChunkState zeroes it on every
+	// chunk change, and the shared audio element means a stale event from
+	// the previous chunk is a real possibility, same class of issue as
+	// handlePause's own reused-element guard below). The condition below
+	// rejects unconditionally in that case, rather than the inverted
+	// `durationSeconds > 0 && ...` this replaced, which skipped the whole
+	// gate — and so credited completion outright — whenever duration
+	// happened to be unknown at the moment 'ended' fired.
 	function handlePlaybackEnded() {
 		playbackState = 'ended';
 		if (
-			durationSeconds > 0 &&
+			durationSeconds <= 0 ||
 			farthestHeardMs < durationSeconds * 1000 - FORWARD_JUMP_TOLERANCE_MS
 		) {
 			return;
@@ -518,6 +533,7 @@
 					oninput={(e) => handleSeekInput(Number((e.currentTarget as HTMLInputElement).value))}
 					onpointerdown={() => (isSeeking = true)}
 					onpointerup={() => (isSeeking = false)}
+					onpointercancel={() => (isSeeking = false)}
 				/>
 				<span class="shadowing-seek-time"
 					>{formatTime(seekPosition)} / {formatTime(durationSeconds)}</span
