@@ -157,12 +157,17 @@ schema, not just inferred from reading `.sql` files.
 - `shadowing_chunks` — the drill unit (`recording_id`, `user_id`
   denormalized — see below, `chunk_index`, `chunk_id`, `audio_path`,
   `start_ms`/`duration_ms`, `transcript`/`kana`/`translation`,
-  `verified_at`, `flagged_at`/`flag_note`). `chunk_id` is
-  `'<slug>:<chunking_version>:<NN>'` — the app only ever selects rows where
-  `verified_at is not null and flagged_at is null`, so nothing that failed
-  the ingest tool's verification checks (content-match cross-correlation,
-  fade-applied, distinctness, no-cut-on-attack, coverage) can reach a
-  session even if its row somehow got inserted. **Constraints:**
+  `verified_at`, `flagged_at`/`flag_note`). As of 3.1.0 a recording
+  publishes as exactly **one** `shadowing_chunks` row — `chunk_index` is
+  always `0`, and `audio_path` points at a transcoded, browser-compatible
+  AAC/m4a playback copy rather than the recording's raw
+  `source_audio_path` (ingest accepts whatever container/codec ffmpeg can
+  read, and not every one of those decodes in every browser this app
+  supports — see `ingest/README.md`'s "No audio chunking" section). `chunk_id` is still
+  `'<slug>:<chunking_version>:<NN>'` (`NN` always `00` now) — the app only
+  ever selects rows where `verified_at is not null and flagged_at is
+null`, so a row still awaiting publish, or one flagged bad in-app, can't
+  reach a session even if it somehow got inserted. **Constraints:**
   `recording_id` → `shadowing_recordings(id)`; `user_id` → `users(id)`;
   unique `(recording_id, chunk_index)` and unique `(user_id, chunk_id)`;
   composite `(recording_id, user_id)` → `shadowing_recordings(id, user_id)`
@@ -191,15 +196,19 @@ verified, same as DB access). Path scheme:
 
 ```
 shadowing-audio/
-  users/<user_id>/<slug>/v<chunking_version>/source.<ext>   # full recording, kept for re-chunking (extension matches the ingested file — m4a/mp3/wav/ogg)
-  users/<user_id>/<slug>/v<chunking_version>/chunk-NN.m4a
+  users/<user_id>/<slug>/v<chunking_version>/source.<ext>     # raw upload, archival only — extension matches the ingested file (m4a/mp3/wav/ogg)
+  users/<user_id>/<slug>/v<chunking_version>/playback.m4a     # transcoded AAC/m4a copy — this is what audio_path points at
 ```
 
-The chunking version is in the _path_ for both the source and every chunk,
-not just `chunk_id` — a re-chunk's uploads (including the source) can never
-touch anything a live `shadowing_chunks` row, or the live recording row's
-`source_audio_path`, still points at. Uploads happen before the DB swap
-runs, and only the swap itself (see `publish_shadowing_recording` below)
+As of 3.1.0 these are the only two objects per version (down from a
+source plus one cut/faded copy per chunk pre-3.1.0) — `ingest:publish`
+always transcodes `playback.m4a` from the source, regardless of the
+source's own format, the same guarantee the old per-chunk encode step
+used to provide. The version is in the _path_ for both, not just
+`chunk_id` — a re-publish's uploads can never touch anything a live
+`shadowing_chunks` row, or the live recording row's `source_audio_path`,
+still points at. Uploads happen before the DB swap runs, and only the
+swap itself (see `publish_shadowing_recording` below)
 repoints the recording row at the new version. The app never streams audio
 itself — it mints short-lived signed URLs (`createSignedUrl`, ~2h TTL)
 server-side and hands those to the client. Old versions' Storage objects
@@ -301,22 +310,20 @@ for the vocab list.
 
 `shadowing_state.chunk_id` has **no FK to `shadowing_chunks`**, even though
 (unlike conjugation's static code registry) `shadowing_chunks` _is_ a real
-table here. This is a conscious tradeoff, not an oversight: the
-merge/split heuristic in `ingest/chunk-planner.ts` that decides chunk
-boundaries is an explicit, untested guess (see its file header), so
-re-chunking a recording is expected to happen more than once as the
-heuristic gets tuned against real data. An FK would turn every re-chunk
-into the same four-step placeholder-rank dance `list_words` renames need
-(above) — and unlike a vocab word rename, a re-chunk changes _every_ chunk
-in a recording at once, not one row.
+table here. This predates 3.1.0's no-chunking pivot and is kept for the
+same reason it was originally added: a re-publish is still expected to
+happen (a corrected recording, a fixed transcript) and still mints a new
+`chunk_id` (see below) — an FK would turn every re-publish into the same
+four-step placeholder-rank dance `list_words` renames need (above).
 
-Instead, `chunk_id` embeds the chunking version
-(`'<slug>:<chunking_version>:<NN>'`), so a re-chunk mints entirely new ids.
-**Accepted downside: progress for a recording's chunks resets when it's
-re-chunked** — old `shadowing_state` rows for the previous version's ids
-simply become unreachable (never deleted, just orphaned data with no FK to
-complain about). This is considered honest rather than lossy: the
-boundaries changed, so the item the progress was tracked against no longer
+`chunk_id` embeds the publish-generation counter
+(`'<slug>:<chunking_version>:<NN>'`, `NN` always `00` since 3.1.0 — one
+chunk per recording), so a re-publish mints an entirely new id.
+**Accepted downside: progress for a recording resets when it's
+re-published** — the old `shadowing_state` row for the previous version's
+id simply becomes unreachable (never deleted, just orphaned data with no
+FK to complain about). This is considered honest rather than lossy: the
+recording changed, so the item the progress was tracked against no longer
 exists.
 
 ## One-time data migrations, historical

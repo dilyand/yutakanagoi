@@ -2,7 +2,6 @@ import {
 	existsSync,
 	mkdirSync,
 	readFileSync,
-	readdirSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
@@ -21,7 +20,8 @@ const USAGE = `Usage: npm run ingest:transcribe -- --audio <file> --user <userna
 Converts --audio to a 16k mono analysis wav, transcribes it with whisper,
 and (if --transcript is given) cross-checks the supplied transcript against
 whisper's own independent pass — aborting on real divergence unless
---accept-transcript is also passed. Writes ingest/work/<user>/<slug>/transcript.json.`;
+--accept-transcript is also passed. Writes ingest/work/<user>/<slug>/transcript.json
+with "kana"/"translation" left blank for the next step.`;
 
 const args = parseArgs(process.argv.slice(2));
 const audioPath = requireString(args, 'audio', USAGE);
@@ -90,13 +90,12 @@ const sourceWavPath = path.join(workDir, 'source.wav');
 
 // Staged under temp names, not the final source.<ext>/source.wav, until
 // every fallible step below (conversion, whisper, the divergence gate)
-// has succeeded — same reasoning, and same commit point, as the stale
-// cut-output invalidation further down. Without this staging, a
-// same-extension re-transcribe that later aborts (a bad audio file, a
-// whisper crash, a genuine divergence) had already overwritten the
-// retained source, even though the retained chunks.json/transcript is
-// kept around specifically to still be valid — leaving them pointing at
-// audio that no longer matches what they were cut from.
+// has succeeded. Without this staging, a same-extension re-transcribe
+// that later aborts (a bad audio file, a whisper crash, a genuine
+// divergence) would already have overwritten the retained source, even
+// though the retained transcript.json — including any kana/translation
+// already hand-filled against it — is kept around specifically to still
+// be valid.
 const tempSourcePath = path.join(workDir, `.tmp-source${sourceExt}`);
 const tempWavPath = path.join(workDir, '.tmp-source.wav');
 copyFileSync(audioPath, tempSourcePath);
@@ -143,38 +142,23 @@ if (suppliedTranscriptPath) {
 }
 
 // Everything fallible (conversion, whisper, the divergence gate) has now
-// succeeded — safe to commit. Invalidate a prior ingest:cut run's output
-// FIRST, before either source rename below, not after. A prior run may
-// have left chunks.json and cut chunk audio in this same directory, cut
-// from the *old* source/transcript. Left in place, that stale-but-still-
-// "verified" chunks.json would pass every one of ingest:publish's checks
-// unmodified, publishing chunks/transcript that no longer match the
-// source/transcript.json this command is about to commit. Clearing it
-// forces ingest:cut to run again before a re-publish is possible —
-// existsSync(chunksPath) is publish's own gate for "run ingest:cut
-// first." The ordering matters, not just the fact that it happens after
-// every fallible step: invalidating first means an interruption (a kill
-// signal, a crash) at ANY point from here through the renames below can
-// never leave the stale manifest behind paired with an already-replaced
-// source — chunks.json is gone before source.<ext>/source.wav change at
-// all, so publish's own "no chunks.json" gate catches it regardless of
-// exactly where an interruption lands. Doing all of this only after
-// every fallible step has succeeded (not earlier) is what stops a typo'd
-// --transcript path, an ffmpeg error, a whisper failure, or a genuine
-// divergence-gate abort from destroying the only local copy of prior
-// verified/enriched work (real work: hand-filled kana/translations)
-// while producing no replacement.
-const staleOutputPattern = /^(chunks\.json|chunk-\d+\.m4a|cut-\d+\.wav)$/;
-const staleOutputs = readdirSync(workDir).filter((f) => staleOutputPattern.test(f));
-if (staleOutputs.length > 0) {
-	console.log(
-		`Clearing ${staleOutputs.length} stale cut output file(s) from a previous ingest:cut run (re-run ingest:cut after this completes): ${staleOutputs.join(', ')}`
-	);
-	for (const f of staleOutputs) rmSync(path.join(workDir, f));
-}
+// succeeded — safe to commit. The existing transcript.json (if any) is
+// invalidated FIRST, before either source rename below, not after — a
+// re-transcribe overwriting it wholesale is what resets kana/translation
+// to blank for the new manifest, but only once it's actually rewritten a
+// few lines down. An interruption (crash, kill signal) after the source
+// rename but before that rewrite would otherwise leave the OLD, still
+// fully-enriched (and so still publishable) transcript.json on disk,
+// paired with the just-replaced NEW audio it was never actually
+// transcribed or enriched against — ingest:publish trusts transcript.json
+// outright and would publish that mismatch silently. Deleting it first
+// means an interruption at any point from here through the write below
+// leaves no manifest at all — publish's own "no transcript.json" gate
+// (see cli/publish.ts) catches it regardless of exactly where an
+// interruption lands.
+const transcriptJsonPath = path.join(workDir, 'transcript.json');
+if (existsSync(transcriptJsonPath)) rmSync(transcriptJsonPath);
 
-// Only now, with the stale manifest already gone, commit the staged
-// source into its final name.
 renameSync(tempSourcePath, sourceOriginalPath);
 renameSync(tempWavPath, sourceWavPath);
 
@@ -186,6 +170,8 @@ interface TranscriptManifest {
 	transcript: string;
 	transcriptSource: 'supplied' | 'asr';
 	whisperSegments: { startMs: number; endMs: number; text: string }[];
+	kana: string;
+	translation: string;
 }
 
 const manifest: TranscriptManifest = {
@@ -195,26 +181,14 @@ const manifest: TranscriptManifest = {
 	durationMs,
 	transcript,
 	transcriptSource,
-	whisperSegments: segments
+	whisperSegments: segments,
+	kana: '',
+	translation: ''
 };
 
-writeFileSync(path.join(workDir, 'transcript.json'), JSON.stringify(manifest, null, 2));
+writeFileSync(transcriptJsonPath, JSON.stringify(manifest, null, 2));
 
-console.log(`\nWrote ${path.join(workDir, 'transcript.json')}`);
-// Whether transcriptSource is 'asr' or 'supplied', what actually matters
-// for the next step is whether the transcript text itself has
-// sentence-final punctuation — a supplied file is only trimmed and
-// similarity-checked above, never validated for this, so it can just as
-// easily arrive unpunctuated as ASR output can. ingest:cut's own guard
-// (see cut.ts) checks this regardless of source; this message just
-// reports accurately which case applies instead of assuming "supplied"
-// always means "already punctuated."
-if (/[。！？]/.test(transcript)) {
-	console.log(
-		'\nNext: the transcript already has sentence-final punctuation — no editing needed. Run ingest:cut.'
-	);
-} else {
-	console.log(
-		'\nNext: restore sentence/clause punctuation (。、！？) in the "transcript" field — the chunk planner cuts on exactly those marks. See PROMPT.md.'
-	);
-}
+console.log(`\nWrote ${transcriptJsonPath}`);
+console.log(
+	'\nNext: proofread/punctuate the "transcript" field for readability (optional — nothing splits on punctuation anymore), then fill "kana" and "translation" for the whole recording, then run ingest:publish. See PROMPT.md.'
+);

@@ -55,6 +55,40 @@
 	let replays = $state(0);
 	let hasPlayedOnce = $state(false);
 	let playbackRate = $state(1);
+	// Drives the single play/pause/resume/replay button and the seek bar.
+	// Recordings run 40-90s+ (no more chunk-cutting — see CLAUDE.md's
+	// "No audio chunking" note), long enough that always restarting from 0
+	// on every button press (the old chunk-era behavior) isn't acceptable
+	// anymore — a listener who pauses mid-recording needs to resume from
+	// where they left off, not from the start.
+	let playbackState = $state<'idle' | 'playing' | 'paused' | 'ended'>('idle');
+	let seekPosition = $state(0);
+	let durationSeconds = $state(0);
+	// True only while the user has an active pointer down on the seek
+	// range input — guards handleTimeUpdate below so a native timeupdate
+	// tick doesn't yank the thumb out from under an in-progress drag by
+	// overwriting seekPosition with the (stale, pre-seek) playback time.
+	// Cleared on both pointerup (a normal release) and pointercancel (a
+	// gesture interrupted before it completes — an OS-level touch
+	// cancellation, e.g. — which fires instead of pointerup and would
+	// otherwise leave this stuck true, permanently freezing the seek bar's
+	// display against further timeupdate ticks).
+	let isSeeking = $state(false);
+	// The furthest point actually reached via real, uninterrupted forward
+	// playback — as opposed to `seekPosition`, which also moves on a seek.
+	// This is the completed-playthrough gate: hasPlayedOnce/Next must only
+	// unlock once the *whole* recording has genuinely been heard, not
+	// after dragging the seek bar near the end and letting the last
+	// fraction of a second play out to "ended" (see PR review — a plain
+	// hasPlayedOnce-on-'ended' check couldn't tell those apart). Reset to
+	// 0 per chunk in resetPerChunkState.
+	let farthestHeardMs = $state(0);
+	// Generous vs. native timeupdate's own ~250ms cadence (even slower at
+	// 0.75x) — this is slack for that cadence, not a loophole width worth
+	// exploiting: skipping the whole recording this way still needs
+	// dozens of manual nudges for a 40-90s+ clip, far slower than just
+	// listening to it.
+	const FORWARD_JUMP_TOLERANCE_MS = 400;
 	let flagNote = $state('');
 	// Guards next()/confirmFlag()/cancelSession() against a double-click
 	// firing a second request (and, on the last chunk, a second
@@ -94,12 +128,23 @@
 		playbackRate = 1;
 		flagNote = '';
 		outcomeRecorded = false;
+		playbackState = 'idle';
+		seekPosition = 0;
+		durationSeconds = 0;
+		isSeeking = false;
+		farthestHeardMs = 0;
 		// The audio element is reused across chunks (only its src changes),
 		// so its playbackRate is a live DOM property that outlives this
 		// reset unless cleared explicitly — otherwise a 0.75x chunk leaves
 		// the next chunk playing at 0.75x too, despite the toggle button
 		// showing inactive.
 		if (audioEl) audioEl.playbackRate = 1;
+	}
+
+	function formatTime(seconds: number): string {
+		if (!Number.isFinite(seconds)) return '0:00';
+		const total = Math.max(0, Math.floor(seconds));
+		return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 	}
 
 	function prefetchNext() {
@@ -143,11 +188,21 @@
 	}
 
 	// Playback is always user-initiated — nothing plays on entry or on
-	// advancing to the next chunk, only on an explicit tap here.
-	function play() {
+	// advancing to the next chunk, only on an explicit tap here. One button
+	// serves play/pause/resume/replay, dispatching on playbackState:
+	// idle/ended restart from 0, playing pauses in place, paused resumes
+	// from wherever it was left (no reset) — see playbackState's own
+	// comment for why resuming-in-place matters now.
+	function handleMainButtonClick() {
 		if (!audioEl) return;
 		errorMessage = '';
-		audioEl.currentTime = 0;
+		if (playbackState === 'playing') {
+			audioEl.pause();
+			return;
+		}
+		if (playbackState === 'idle' || playbackState === 'ended') {
+			audioEl.currentTime = 0;
+		}
 		// hasPlayedOnce/replays are set from a real "ended" event (below),
 		// not from this call — play() can reject (network/codec/CSP) or the
 		// user can abandon it mid-clip, and neither should count as having
@@ -158,8 +213,34 @@
 	}
 
 	// Only a completed playthrough counts: the first sets hasPlayedOnce
-	// (unlocking Next), every one after that counts as a replay.
+	// (unlocking Next), every one after that counts as a replay. Gated on
+	// farthestHeardMs actually having reached the end — deliberately
+	// read-only here, never written: if a seek lands on the last frame and
+	// 'ended' fires without an intervening 'timeupdate' to validate it
+	// first (not guaranteed by every browser), trusting audioEl.currentTime
+	// directly at this point would promote farthestHeardMs to the end and
+	// unlock Next on exactly the jump this gate exists to catch. Natural
+	// playback's last real timeupdate tick already lands within
+	// FORWARD_JUMP_TOLERANCE_MS of the true end, so this still passes for
+	// every genuine playthrough.
+	//
+	// Must fail CLOSED, not open, when durationSeconds is still 0 (not yet
+	// known for the current item — resetPerChunkState zeroes it on every
+	// chunk change, and the shared audio element means a stale event from
+	// the previous chunk is a real possibility, same class of issue as
+	// handlePause's own reused-element guard below). The condition below
+	// rejects unconditionally in that case, rather than the inverted
+	// `durationSeconds > 0 && ...` this replaced, which skipped the whole
+	// gate — and so credited completion outright — whenever duration
+	// happened to be unknown at the moment 'ended' fired.
 	function handlePlaybackEnded() {
+		playbackState = 'ended';
+		if (
+			durationSeconds <= 0 ||
+			farthestHeardMs < durationSeconds * 1000 - FORWARD_JUMP_TOLERANCE_MS
+		) {
+			return;
+		}
 		if (hasPlayedOnce) {
 			replays += 1;
 		} else {
@@ -167,16 +248,84 @@
 		}
 	}
 
-	// A failure that happens *after* play() has already started (a network
-	// drop or decode error mid-stream) never rejects play()'s promise and
-	// never fires "ended" — it surfaces only as this element's own "error"
-	// event. Without a handler here, Next stays disabled with no
-	// explanation and no way forward for a chunk whose first play attempt
-	// hasn't completed yet. Flag remains a bail-out even without this, but
-	// the actual fix is telling the user what happened and letting them
-	// retry via the same Play button (play() already resets currentTime to
-	// 0 before calling play() again).
+	function handleTimeUpdate() {
+		if (!audioEl) return;
+		const nowMs = audioEl.currentTime * 1000;
+		// Before the recording has ever been fully heard, clamp any forward
+		// jump past what's actually been heard so far back to the frontier.
+		// handleSeekInput below already stops our own seek bar from asking
+		// for such a jump in the first place — this is a backstop for any
+		// other way currentTime can move (OS media-session controls,
+		// keyboard media keys, especially relevant since this is a PWA).
+		// Without this, dragging near the end and letting the last
+		// fraction of a second play out reaches "ended" without the
+		// recording actually being heard (see PR review). Once truly heard
+		// once, there's nothing left to protect — free scrubbing for replay
+		// practice.
+		if (!hasPlayedOnce && nowMs > farthestHeardMs + FORWARD_JUMP_TOLERANCE_MS) {
+			audioEl.currentTime = farthestHeardMs / 1000;
+			return;
+		}
+		if (nowMs > farthestHeardMs) farthestHeardMs = nowMs;
+		// Guarded by isSeeking — see its own comment above — so a drag in
+		// progress doesn't get fought by the native timeupdate tick.
+		if (!isSeeking) seekPosition = audioEl.currentTime;
+	}
+
+	function handleLoadedMetadata() {
+		if (audioEl) durationSeconds = audioEl.duration;
+	}
+
+	// "pause" also fires immediately before "ended" when playback runs to
+	// completion naturally — harmless here since handlePlaybackEnded's
+	// 'ended' assignment always runs right after and wins.
+	function handlePlay() {
+		playbackState = 'playing';
+	}
+	// Only a pause of playback actually in progress counts. The audio
+	// element is reused across chunks (only its src changes, see
+	// resetPerChunkState) — reassigning src while the OLD chunk is still
+	// playing (e.g. advancing past a flagged item without pausing first)
+	// makes the browser fire a "pause" event as part of unloading the old
+	// resource, which lands on this same handler after resetPerChunkState
+	// has already set the NEW item's playbackState to 'idle'. Without this
+	// guard, that stale event would flip the brand-new item straight to
+	// 'paused' — showing "Resume" and enabling the seek bar before it's
+	// ever played (reopening the pre-play-scrub bug a previous round
+	// fixed). Gating on the CURRENT state being 'playing' — not just "not
+	// ended" — is what actually distinguishes a real pause from this.
+	function handlePause() {
+		if (playbackState === 'playing') playbackState = 'paused';
+	}
+
+	function handleSeekInput(value: number) {
+		// Clamped here, at the source, rather than left to handleTimeUpdate's
+		// own clamp to correct afterward — setting currentTime past the
+		// frontier and then snapping it back a tick later would leave
+		// seekPosition (and so the thumb) briefly showing the rejected,
+		// too-far position instead of where playback actually ended up.
+		const capped = hasPlayedOnce ? value : Math.min(value, farthestHeardMs / 1000);
+		seekPosition = capped;
+		if (audioEl) audioEl.currentTime = capped;
+		// Scrubbing after a completed playthrough must not leave
+		// playbackState at 'ended' — the main button's idle/ended branch
+		// resets currentTime to 0 before playing, which would silently
+		// discard the position just picked. 'paused' correctly offers
+		// "Resume" from here instead.
+		if (playbackState === 'ended') playbackState = 'paused';
+	}
+
+	// A failure that happens *after* playback has already started (a
+	// network drop or decode error mid-stream) never rejects play()'s
+	// promise and never fires "ended" — it surfaces only as this element's
+	// own "error" event, with playbackState left stuck at 'playing' unless
+	// corrected here. Without resetting it to 'idle', the main button's
+	// next click would read as "pause" (a no-op on an already-errored
+	// element) instead of offering a real restart. Flag remains a bail-out
+	// even without this, but the actual fix is telling the user what
+	// happened and letting them retry via the same button.
 	function handlePlaybackError() {
+		playbackState = 'idle';
 		errorMessage = 'Playback failed partway through — try again.';
 	}
 
@@ -352,15 +501,44 @@
 			bind:this={audioEl}
 			src={currentItem.audioUrl}
 			preload="auto"
+			onplay={handlePlay}
+			onpause={handlePause}
 			onended={handlePlaybackEnded}
 			onerror={handlePlaybackError}
+			ontimeupdate={handleTimeUpdate}
+			onloadedmetadata={handleLoadedMetadata}
 			style="display: none"
 		></audio>
 
 		<div class="shadowing-controls">
-			<button class="shadowing-play-button" onclick={play}>
-				{hasPlayedOnce ? '▶ Replay' : '▶ Play'}
+			<button class="shadowing-play-button" onclick={handleMainButtonClick}>
+				{playbackState === 'playing'
+					? '⏸ Pause'
+					: playbackState === 'paused'
+						? '▶ Resume'
+						: playbackState === 'ended'
+							? '▶ Replay'
+							: '▶ Play'}
 			</button>
+			<div class="shadowing-seek-row">
+				<input
+					class="shadowing-seek"
+					type="range"
+					min="0"
+					max={durationSeconds || 0}
+					step="0.1"
+					value={seekPosition}
+					disabled={!durationSeconds || playbackState === 'idle'}
+					aria-label="Seek"
+					oninput={(e) => handleSeekInput(Number((e.currentTarget as HTMLInputElement).value))}
+					onpointerdown={() => (isSeeking = true)}
+					onpointerup={() => (isSeeking = false)}
+					onpointercancel={() => (isSeeking = false)}
+				/>
+				<span class="shadowing-seek-time"
+					>{formatTime(seekPosition)} / {formatTime(durationSeconds)}</span
+				>
+			</div>
 			<div class="shadowing-secondary-controls">
 				<button
 					class:active={playbackRate === 0.75}

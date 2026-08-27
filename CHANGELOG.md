@@ -5,6 +5,32 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 3.1.0 — Drop shadowing drill's audio chunking; whole-recording drill items
+
+`ingest/` no longer cuts a recording into sentence-level chunks
+(boundary detection, per-chunk fades, content-match/attack/distinctness/
+coverage verification, and the manual chunk-grouping step all removed).
+Chunk-cutting consistently cost more time to tend (boundary tuning,
+re-cuts, listening review) than it saved in drill granularity, so a whole
+recording is now the drill unit: `ingest:transcribe` → proofread transcript
+and fill kana/translation for the whole recording → `ingest:publish`,
+which now publishes exactly one `shadowing_chunks` row (no DB schema
+change — `chunking_version` is kept as a plain publish-generation counter).
+Progress tracking is now per-recording rather than per-sentence, an
+accepted trade-off. See `ingest/README.md`'s "No audio chunking" section.
+
+Added pause/resume and a seek bar to the drill's audio player
+(`ShadowingDrillActivity.svelte`) — recordings can now run well past the
+~20s the old chunk-era player was designed for, and the previous Play/
+Replay-only control (always restarting from 0) no longer covered a
+40-90s+ clip.
+
+Production's `shadowing_recordings`/`shadowing_chunks`/`shadowing_state`/
+`shadowing_sessions`/`shadowing_session_attempts` and the `shadowing-audio`
+Storage bucket are being wiped and re-ingested fresh with the new tool —
+no prior progress or chunk-era audio was worth preserving through this
+pivot.
+
 ## 3.0.1 — Fix hellotalk-words duplicate list, atomic list creation, vocab drill back button
 
 `hellotalk-words` was hand-typed before `deriveListName` existed (2.1.0),
