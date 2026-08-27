@@ -50,3 +50,31 @@ export function toAnalysisWav(input: string, output: string): void {
 		output
 	]);
 }
+
+/**
+ * Transcodes any ffmpeg-readable input to AAC-in-m4a — a normalized
+ * playback copy, separate from the archival original ingest:publish also
+ * uploads. Ingest accepts whatever container/codec ffmpeg can read (the
+ * source could be m4a/mp3/wav/ogg, or something else entirely), but not
+ * every one of those decodes in every browser this app supports (Safari,
+ * notably, has no Ogg/Vorbis support at all) — publishing the raw upload
+ * as-is can succeed and then fail silently in the drill. AAC-in-m4a is
+ * universally supported, so this is run unconditionally regardless of the
+ * source's own format, the same way the pre-3.1.0 chunk-cutting pipeline's
+ * per-chunk encode step always did.
+ */
+export function transcodeForPlayback(input: string, outputM4a: string): void {
+	run('ffmpeg', [
+		'-y',
+		'-hide_banner',
+		'-loglevel',
+		'error',
+		'-i',
+		input,
+		'-c:a',
+		'aac',
+		'-b:a',
+		'128k',
+		outputM4a
+	]);
+}

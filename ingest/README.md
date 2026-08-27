@@ -125,13 +125,20 @@ Edit `transcript.json` directly:
 
 ### 3. `ingest:publish`
 
-Checks `kana`/`translation` are both filled in, then uploads the source
-audio to the `shadowing-audio` Storage bucket and inserts/updates the DB
-rows. Use `--dry-run` to see what it would do without touching anything.
+Checks `kana`/`translation` are both filled in, transcodes a
+browser-compatible AAC/m4a playback copy, then uploads both that copy and
+the original source audio to the `shadowing-audio` Storage bucket and
+inserts/updates the DB rows. Use `--dry-run` to see what it would do
+without touching anything.
 
 A recording publishes as exactly **one** `shadowing_chunks` row — its
-`audio_path` points at the same uploaded file as the recording's own
-`source_audio_path`, since there's no separate cut/faded copy anymore.
+`audio_path` points at the transcoded playback copy, not the raw upload.
+The raw original is still uploaded too (as the recording's own
+`source_audio_path`, archival only) — ingest accepts whatever
+container/codec ffmpeg can read, and not every one of those decodes in
+every browser this app supports (Safari, notably, has no Ogg/Vorbis
+support at all), so serving the raw upload directly could publish
+successfully and then fail silently in the drill.
 
 **Re-publishing an already-published `(user, slug)`** bumps
 `chunking_version` (kept as the column name even though nothing is
@@ -140,12 +147,12 @@ break pivot deliberately avoids) and replaces that recording's one chunk
 row (atomically — see `supabase/README.md`'s
 "`publish_shadowing_recording`" section), orphaning progress on the old
 version's chunk id (see `supabase/README.md`'s "Shadowing tables" section
-for why this is accepted rather than migrated). The source is uploaded
-under a `v<chunking_version>/` prefix, so a re-publish's upload can never
+for why this is accepted rather than migrated). Both files are uploaded
+under a `v<chunking_version>/` prefix, so a re-publish's uploads can never
 touch anything the currently-live version depends on — the old version's
-DB rows are replaced only once the new file is safely uploaded.
+DB rows are replaced only once both new files are safely uploaded.
 
-The old version's Storage object is deliberately **not** deleted by this
+The old version's Storage objects are deliberately **not** deleted by this
 command — a client that started a session before the re-publish may still
 hold a signed URL into that old audio (valid up to 2h). See
 `ingest:cleanup-old-versions` below.
@@ -168,13 +175,13 @@ what would be removed.
 
 ## Files
 
-| File                 | What it is                                                                |
-| -------------------- | ------------------------------------------------------------------------- |
-| `audio-tools.ts`     | ffmpeg/ffprobe primitives — analysis-wav conversion and duration probing. |
-| `transcribe.ts`      | whisper-cli wrapper.                                                      |
-| `transcript-diff.ts` | The supplied-vs-ASR cross-check gate.                                     |
-| `args.ts`            | Minimal `--flag value` argv parsing, no dependency.                       |
-| `cli/*.ts`           | The four command entry points (`npm run ingest:*`).                       |
+| File                 | What it is                                                                                                            |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `audio-tools.ts`     | ffmpeg/ffprobe primitives — analysis-wav conversion, duration probing, and the browser-compatible playback transcode. |
+| `transcribe.ts`      | whisper-cli wrapper.                                                                                                  |
+| `transcript-diff.ts` | The supplied-vs-ASR cross-check gate.                                                                                 |
+| `args.ts`            | Minimal `--flag value` argv parsing, no dependency.                                                                   |
+| `cli/*.ts`           | The four command entry points (`npm run ingest:*`).                                                                   |
 
 The `cli/*.ts` commands reuse `src/lib/list-naming.ts`'s `deriveListName`
 for slug derivation and `scripts/lib/supabase-admin.ts`'s

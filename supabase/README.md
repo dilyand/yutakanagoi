@@ -159,10 +159,11 @@ schema, not just inferred from reading `.sql` files.
   `start_ms`/`duration_ms`, `transcript`/`kana`/`translation`,
   `verified_at`, `flagged_at`/`flag_note`). As of 3.1.0 a recording
   publishes as exactly **one** `shadowing_chunks` row — `chunk_index` is
-  always `0`, and `audio_path` points at the same Storage object as the
-  recording's own `source_audio_path`, since ingest no longer cuts a
-  separate per-chunk audio file (see `ingest/README.md`'s "No audio
-  chunking" section). `chunk_id` is still
+  always `0`, and `audio_path` points at a transcoded, browser-compatible
+  AAC/m4a playback copy rather than the recording's raw
+  `source_audio_path` (ingest accepts whatever container/codec ffmpeg can
+  read, and not every one of those decodes in every browser this app
+  supports — see `ingest/README.md`'s "No audio chunking" section). `chunk_id` is still
   `'<slug>:<chunking_version>:<NN>'` (`NN` always `00` now) — the app only
   ever selects rows where `verified_at is not null and flagged_at is
 null`, so a row still awaiting publish, or one flagged bad in-app, can't
@@ -195,16 +196,19 @@ verified, same as DB access). Path scheme:
 
 ```
 shadowing-audio/
-  users/<user_id>/<slug>/v<chunking_version>/source.<ext>   # full recording, extension matches the ingested file — m4a/mp3/wav/ogg
+  users/<user_id>/<slug>/v<chunking_version>/source.<ext>     # raw upload, archival only — extension matches the ingested file (m4a/mp3/wav/ogg)
+  users/<user_id>/<slug>/v<chunking_version>/playback.m4a     # transcoded AAC/m4a copy — this is what audio_path points at
 ```
 
-As of 3.1.0 this is the only object per version — the single
-`shadowing_chunks` row's `audio_path` points at this same file, since
-ingest no longer produces a separate cut/faded copy per chunk. The version
-is in the _path_, not just `chunk_id` — a re-publish's upload can never
-touch anything a live `shadowing_chunks` row, or the live recording row's
-`source_audio_path`, still points at. Upload happens before the DB swap
-runs, and only the swap itself (see `publish_shadowing_recording` below)
+As of 3.1.0 these are the only two objects per version (down from a
+source plus one cut/faded copy per chunk pre-3.1.0) — `ingest:publish`
+always transcodes `playback.m4a` from the source, regardless of the
+source's own format, the same guarantee the old per-chunk encode step
+used to provide. The version is in the _path_ for both, not just
+`chunk_id` — a re-publish's uploads can never touch anything a live
+`shadowing_chunks` row, or the live recording row's `source_audio_path`,
+still points at. Uploads happen before the DB swap runs, and only the
+swap itself (see `publish_shadowing_recording` below)
 repoints the recording row at the new version. The app never streams audio
 itself — it mints short-lived signed URLs (`createSignedUrl`, ~2h TTL)
 server-side and hands those to the client. Old versions' Storage objects

@@ -1,12 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs, requireString, requireSafePathComponent } from '../args.ts';
+import { transcodeForPlayback } from '../audio-tools.ts';
 import { createAdminClient } from '../../scripts/lib/supabase-admin.ts';
 
 const USAGE = `Usage: npm run ingest:publish -- --slug <slug> --user <username> [--dry-run]
 
 Reads ingest/work/<user>/<slug>/transcript.json, checks "kana"/"translation"
-are filled in, then uploads the source audio to Supabase Storage and
+are filled in, then uploads the source audio plus a transcoded
+browser-compatible AAC/m4a playback copy to Supabase Storage and
 inserts/updates the DB rows. A recording publishes as exactly one
 shadowing_chunks row (the whole file). Re-publishing an existing
 (user, slug) bumps chunking_version and replaces that row — progress on
@@ -98,6 +100,16 @@ const CONTENT_TYPE_BY_EXT: Record<string, string> = {
 	'.ogg': 'audio/ogg'
 };
 const sourceContentType = CONTENT_TYPE_BY_EXT[sourceExt] ?? 'application/octet-stream';
+// A second, separate object from the archival source above — the source
+// is whatever container/codec ffmpeg accepted at ingest:transcribe time
+// (m4a/mp3/wav/ogg/etc.), and not every one of those decodes in every
+// browser this app supports (Safari has no Ogg/Vorbis support, notably).
+// AAC-in-m4a is universally supported, so the served audio_path always
+// points at this transcoded copy instead of the raw upload — the same
+// guarantee the pre-3.1.0 chunk-cutting pipeline's per-chunk encode step
+// used to provide.
+const playbackPath = path.join(workDir, 'playback.m4a');
+const playbackStoragePath = `users/${userId}/${slug}/v${chunkingVersion}/playback.m4a`;
 
 console.log(
 	existingRecording
@@ -107,6 +119,7 @@ console.log(
 
 if (dryRun) {
 	console.log(`[dry-run] Would upload source to ${sourceStoragePath}`);
+	console.log(`[dry-run] Would transcode and upload playback copy to ${playbackStoragePath}`);
 	console.log(
 		'[dry-run] Would insert/update shadowing_recordings and insert one shadowing_chunks row (the whole recording). No changes made.'
 	);
@@ -114,12 +127,12 @@ if (dryRun) {
 }
 
 // Upload BEFORE touching any DB row. On a re-publish this matters: the
-// new chunking_version's storage path never collides with the currently-
+// new chunking_version's storage paths never collide with the currently-
 // live version's (the version number is in the path), so nothing here
-// can clobber what's currently served. Staging the file first means a
+// can clobber what's currently served. Staging the files first means a
 // Storage failure (network, a bad file) leaves the previous version's
 // recording and chunk rows completely untouched — the DB swap below only
-// runs once the new file is safely uploaded.
+// runs once both new files are safely uploaded.
 console.log(`Uploading source audio to ${sourceStoragePath}...`);
 const sourceBytes = readFileSync(manifest.sourceAudioPath);
 const { error: sourceUploadError } = await supabase.storage
@@ -130,9 +143,18 @@ if (sourceUploadError) {
 	process.exit(1);
 }
 
-// The single chunk's audio IS the uploaded source — there's no separate
-// cut/faded copy anymore, so this row's audio_path just points at the
-// same Storage object as the recording's own source_audio_path.
+console.log('Transcoding to a browser-compatible AAC/m4a playback copy...');
+transcodeForPlayback(manifest.sourceAudioPath, playbackPath);
+console.log(`Uploading playback copy to ${playbackStoragePath}...`);
+const playbackBytes = readFileSync(playbackPath);
+const { error: playbackUploadError } = await supabase.storage
+	.from('shadowing-audio')
+	.upload(playbackStoragePath, playbackBytes, { contentType: 'audio/mp4', upsert: true });
+if (playbackUploadError) {
+	console.error('Failed to upload playback copy:', playbackUploadError.message);
+	process.exit(1);
+}
+
 const chunkId = `${slug}:${chunkingVersion}:00`;
 function buildChunkRow(recordingId: number) {
 	return {
@@ -140,7 +162,7 @@ function buildChunkRow(recordingId: number) {
 		user_id: userId,
 		chunk_index: 0,
 		chunk_id: chunkId,
-		audio_path: sourceStoragePath,
+		audio_path: playbackStoragePath,
 		start_ms: 0,
 		duration_ms: manifest.durationMs,
 		transcript: manifest.transcript,

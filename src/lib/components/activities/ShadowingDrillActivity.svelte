@@ -69,6 +69,21 @@
 	// tick doesn't yank the thumb out from under an in-progress drag by
 	// overwriting seekPosition with the (stale, pre-seek) playback time.
 	let isSeeking = $state(false);
+	// The furthest point actually reached via real, uninterrupted forward
+	// playback — as opposed to `seekPosition`, which also moves on a seek.
+	// This is the completed-playthrough gate: hasPlayedOnce/Next must only
+	// unlock once the *whole* recording has genuinely been heard, not
+	// after dragging the seek bar near the end and letting the last
+	// fraction of a second play out to "ended" (see PR review — a plain
+	// hasPlayedOnce-on-'ended' check couldn't tell those apart). Reset to
+	// 0 per chunk in resetPerChunkState.
+	let farthestHeardMs = $state(0);
+	// Generous vs. native timeupdate's own ~250ms cadence (even slower at
+	// 0.75x) — this is slack for that cadence, not a loophole width worth
+	// exploiting: skipping the whole recording this way still needs
+	// dozens of manual nudges for a 40-90s+ clip, far slower than just
+	// listening to it.
+	const FORWARD_JUMP_TOLERANCE_MS = 400;
 	let flagNote = $state('');
 	// Guards next()/confirmFlag()/cancelSession() against a double-click
 	// firing a second request (and, on the last chunk, a second
@@ -112,6 +127,7 @@
 		seekPosition = 0;
 		durationSeconds = 0;
 		isSeeking = false;
+		farthestHeardMs = 0;
 		// The audio element is reused across chunks (only its src changes),
 		// so its playbackRate is a live DOM property that outlives this
 		// reset unless cleared explicitly — otherwise a 0.75x chunk leaves
@@ -192,9 +208,22 @@
 	}
 
 	// Only a completed playthrough counts: the first sets hasPlayedOnce
-	// (unlocking Next), every one after that counts as a replay.
+	// (unlocking Next), every one after that counts as a replay. Gated on
+	// farthestHeardMs actually having reached the end — handleTimeUpdate
+	// below clamps any forward jump past it while !hasPlayedOnce, so in
+	// practice 'ended' can only fire this way via a genuine, uninterrupted
+	// playthrough; this check is the belt to that clamp's suspenders in
+	// case 'ended' ever fires without an intervening timeupdate (e.g. a
+	// seek landing exactly on the last frame).
 	function handlePlaybackEnded() {
 		playbackState = 'ended';
+		if (audioEl) farthestHeardMs = Math.max(farthestHeardMs, audioEl.currentTime * 1000);
+		if (
+			durationSeconds > 0 &&
+			farthestHeardMs < durationSeconds * 1000 - FORWARD_JUMP_TOLERANCE_MS
+		) {
+			return;
+		}
 		if (hasPlayedOnce) {
 			replays += 1;
 		} else {
@@ -203,9 +232,27 @@
 	}
 
 	function handleTimeUpdate() {
+		if (!audioEl) return;
+		const nowMs = audioEl.currentTime * 1000;
+		// Before the recording has ever been fully heard, clamp any forward
+		// jump past what's actually been heard so far back to the frontier.
+		// handleSeekInput below already stops our own seek bar from asking
+		// for such a jump in the first place — this is a backstop for any
+		// other way currentTime can move (OS media-session controls,
+		// keyboard media keys, especially relevant since this is a PWA).
+		// Without this, dragging near the end and letting the last
+		// fraction of a second play out reaches "ended" without the
+		// recording actually being heard (see PR review). Once truly heard
+		// once, there's nothing left to protect — free scrubbing for replay
+		// practice.
+		if (!hasPlayedOnce && nowMs > farthestHeardMs + FORWARD_JUMP_TOLERANCE_MS) {
+			audioEl.currentTime = farthestHeardMs / 1000;
+			return;
+		}
+		if (nowMs > farthestHeardMs) farthestHeardMs = nowMs;
 		// Guarded by isSeeking — see its own comment above — so a drag in
 		// progress doesn't get fought by the native timeupdate tick.
-		if (!isSeeking && audioEl) seekPosition = audioEl.currentTime;
+		if (!isSeeking) seekPosition = audioEl.currentTime;
 	}
 
 	function handleLoadedMetadata() {
@@ -223,8 +270,14 @@
 	}
 
 	function handleSeekInput(value: number) {
-		seekPosition = value;
-		if (audioEl) audioEl.currentTime = value;
+		// Clamped here, at the source, rather than left to handleTimeUpdate's
+		// own clamp to correct afterward — setting currentTime past the
+		// frontier and then snapping it back a tick later would leave
+		// seekPosition (and so the thumb) briefly showing the rejected,
+		// too-far position instead of where playback actually ended up.
+		const capped = hasPlayedOnce ? value : Math.min(value, farthestHeardMs / 1000);
+		seekPosition = capped;
+		if (audioEl) audioEl.currentTime = capped;
 	}
 
 	// A failure that happens *after* playback has already started (a
@@ -440,7 +493,7 @@
 					max={durationSeconds || 0}
 					step="0.1"
 					value={seekPosition}
-					disabled={!durationSeconds}
+					disabled={!durationSeconds || playbackState === 'idle'}
 					aria-label="Seek"
 					oninput={(e) => handleSeekInput(Number((e.currentTarget as HTMLInputElement).value))}
 					onpointerdown={() => (isSeeking = true)}
