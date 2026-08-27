@@ -14,7 +14,7 @@ Chunk-cutting consistently cost more time to tend (boundary tuning,
 re-cuts, listening review) than it saved in drill granularity, so a whole
 recording is now the drill unit: `ingest:transcribe` → proofread transcript
 and fill kana/translation for the whole recording → `ingest:publish`,
-which still publishes exactly one `shadowing_chunks` row (no DB schema
+which now publishes exactly one `shadowing_chunks` row (no DB schema
 change — `chunking_version` is kept as a plain publish-generation counter).
 Progress tracking is now per-recording rather than per-sentence, an
 accepted trade-off. See `ingest/README.md`'s "No audio chunking" section.
