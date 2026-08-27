@@ -27,8 +27,8 @@ Replay-only control (always restarting from 0) no longer covered a
 
 Production's `shadowing_recordings`/`shadowing_chunks`/`shadowing_state`/
 `shadowing_sessions`/`shadowing_session_attempts` and the `shadowing-audio`
-Storage bucket are being wiped and re-ingested fresh with the new tool —
-no prior progress or chunk-era audio was worth preserving through this
+Storage bucket were wiped and re-ingested fresh with the new tool — no
+prior progress or chunk-era audio was worth preserving through this
 pivot.
 
 ## 3.0.1 — Fix hellotalk-words duplicate list, atomic list creation, vocab drill back button
