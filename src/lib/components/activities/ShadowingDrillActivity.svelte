@@ -267,8 +267,20 @@
 	function handlePlay() {
 		playbackState = 'playing';
 	}
+	// Only a pause of playback actually in progress counts. The audio
+	// element is reused across chunks (only its src changes, see
+	// resetPerChunkState) — reassigning src while the OLD chunk is still
+	// playing (e.g. advancing past a flagged item without pausing first)
+	// makes the browser fire a "pause" event as part of unloading the old
+	// resource, which lands on this same handler after resetPerChunkState
+	// has already set the NEW item's playbackState to 'idle'. Without this
+	// guard, that stale event would flip the brand-new item straight to
+	// 'paused' — showing "Resume" and enabling the seek bar before it's
+	// ever played (reopening the pre-play-scrub bug a previous round
+	// fixed). Gating on the CURRENT state being 'playing' — not just "not
+	// ended" — is what actually distinguishes a real pause from this.
 	function handlePause() {
-		if (playbackState !== 'ended') playbackState = 'paused';
+		if (playbackState === 'playing') playbackState = 'paused';
 	}
 
 	function handleSeekInput(value: number) {
@@ -280,6 +292,12 @@
 		const capped = hasPlayedOnce ? value : Math.min(value, farthestHeardMs / 1000);
 		seekPosition = capped;
 		if (audioEl) audioEl.currentTime = capped;
+		// Scrubbing after a completed playthrough must not leave
+		// playbackState at 'ended' — the main button's idle/ended branch
+		// resets currentTime to 0 before playing, which would silently
+		// discard the position just picked. 'paused' correctly offers
+		// "Resume" from here instead.
+		if (playbackState === 'ended') playbackState = 'paused';
 	}
 
 	// A failure that happens *after* playback has already started (a

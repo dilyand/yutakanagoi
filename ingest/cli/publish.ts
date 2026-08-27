@@ -44,10 +44,39 @@ interface TranscriptManifest {
 
 const manifest: TranscriptManifest = JSON.parse(readFileSync(transcriptPath, 'utf8'));
 
-if (manifest.kana.trim() === '' || manifest.translation.trim() === '') {
-	console.error(
-		'transcript.json still has an empty "kana" or "translation" field — fill both in first. See PROMPT.md.'
-	);
+// transcript.json is hand-edited between ingest:transcribe and here (see
+// PROMPT.md step 2) — nothing re-validates its shape after that edit, so a
+// slipped field (deleted, emptied, or mistyped by hand) must be caught
+// here rather than discovered downstream as a raw Storage/DB error, or
+// worse, as a "verified" drill item that's actually empty or unplayable.
+// transcriptSource is the one field the DB schema's own CHECK constraint
+// already rejects outright — checked here anyway for a clearer, earlier
+// message instead of a raw Postgres constraint-violation error.
+const manifestErrors: string[] = [];
+if (typeof manifest.transcript !== 'string' || manifest.transcript.trim() === '') {
+	manifestErrors.push('"transcript" is missing or empty');
+}
+if (
+	typeof manifest.durationMs !== 'number' ||
+	!Number.isFinite(manifest.durationMs) ||
+	manifest.durationMs <= 0
+) {
+	manifestErrors.push('"durationMs" is missing or not a positive number');
+}
+if (manifest.transcriptSource !== 'supplied' && manifest.transcriptSource !== 'asr') {
+	manifestErrors.push('"transcriptSource" must be "supplied" or "asr"');
+}
+if (typeof manifest.sourceAudioPath !== 'string' || manifest.sourceAudioPath.trim() === '') {
+	manifestErrors.push('"sourceAudioPath" is missing or empty');
+}
+if (typeof manifest.kana !== 'string' || manifest.kana.trim() === '') {
+	manifestErrors.push('"kana" is missing or empty — fill it in first, see PROMPT.md');
+}
+if (typeof manifest.translation !== 'string' || manifest.translation.trim() === '') {
+	manifestErrors.push('"translation" is missing or empty — fill it in first, see PROMPT.md');
+}
+if (manifestErrors.length > 0) {
+	console.error(`transcript.json failed validation:\n  - ${manifestErrors.join('\n  - ')}`);
 	process.exit(1);
 }
 

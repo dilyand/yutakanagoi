@@ -14,6 +14,12 @@ import { createAdminClient } from './lib/supabase-admin.ts';
 // shadowing-audio Storage bucket. Every other table in this app is
 // untouched.
 //
+// The five deletes run inside wipe_shadowing_data() (see the matching
+// migration), a single Postgres transaction, not five separate requests —
+// a session created or completed by the live app between two of those
+// requests could otherwise survive in whichever table was deleted first,
+// even though the run as a whole reported success.
+//
 // This targets whatever project SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY
 // (from --env-file) point at — run against local/staging first, then only
 // against production after explicit confirmation. See "Production data
@@ -33,22 +39,36 @@ const TABLES_IN_DELETE_ORDER = [
 	'shadowing_recordings'
 ] as const;
 
-for (const table of TABLES_IN_DELETE_ORDER) {
-	const { count, error: countError } = await supabase
-		.from(table)
-		.select('id', { count: 'exact', head: true });
-	if (countError) throw countError;
-
-	if (dryRun) {
+if (dryRun) {
+	for (const table of TABLES_IN_DELETE_ORDER) {
+		const { count, error: countError } = await supabase
+			.from(table)
+			.select('id', { count: 'exact', head: true });
+		if (countError) throw countError;
 		console.log(`[dry-run] Would delete ${count ?? 0} row(s) from ${table}.`);
-		continue;
 	}
-	// gt('id', 0) matches every row — every id column in this schema is a
-	// `bigint generated always as identity`, always >= 1 — since
-	// supabase-js's .delete() refuses to run with no filter at all.
-	const { error: deleteError } = await supabase.from(table).delete().gt('id', 0);
-	if (deleteError) throw deleteError;
-	console.log(`Deleted ${count ?? 0} row(s) from ${table}.`);
+} else {
+	const { data: deletedCounts, error: wipeError } = await supabase.rpc('wipe_shadowing_data');
+	if (wipeError) throw wipeError;
+	for (const table of TABLES_IN_DELETE_ORDER) {
+		console.log(`Deleted ${deletedCounts?.[table] ?? 0} row(s) from ${table}.`);
+	}
+
+	// Belt-and-suspenders on top of the RPC's own transactional guarantee:
+	// re-count every table and fail loudly if any of them isn't actually
+	// empty, rather than trusting the RPC's reported counts alone.
+	for (const table of TABLES_IN_DELETE_ORDER) {
+		const { count, error: verifyError } = await supabase
+			.from(table)
+			.select('id', { count: 'exact', head: true });
+		if (verifyError) throw verifyError;
+		if (count && count > 0) {
+			throw new Error(
+				`${table} has ${count} row(s) left after wipe_shadowing_data() reported success — this shouldn't be possible given the RPC's transaction, investigate before re-ingesting.`
+			);
+		}
+	}
+	console.log('Verified all five tables are empty.');
 }
 
 // Storage objects live under users/<user_id>/<slug>/v<version>/... — walk
