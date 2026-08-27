@@ -49,13 +49,13 @@ proofread `transcript`.
 **Proofreading `transcript`** — do:
 
 - Fix an occasional ASR typo or hallucinated word, and correct your own
-  name if it's mangled (check for every phonetically-plausible mangling —
-  a real batch had five different ones for the same name: デイリャン,
-  ダイリャン, デーリャン, ディラン, ディリアン, all meaning the same
-  ディリャン). This is a real transcription error, not a style edit —
-  fixing it is exactly the kind of thing `--transcript`'s cross-check
-  against whisper's own independent pass is designed to help you judge
-  (see "When something aborts" below).
+  name if it's mangled — check for every phonetically-plausible mangling,
+  not just an exact match; a real batch produced several different
+  katakana mis-hearings of the same name across different recordings.
+  This is a real transcription error, not a style edit — fixing it is
+  exactly the kind of thing `--transcript`'s cross-check against
+  whisper's own independent pass is designed to help you judge (see
+  "When something aborts" below).
 - Add `。！？、` where they belong, based on the natural sentence and
   clause breaks in the Japanese, for readability of the transcript hint
   shown in the drill. This is no longer required by any downstream
