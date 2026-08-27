@@ -90,9 +90,14 @@ constraints (don't duplicate that detail here):
 - **Shadowing drill**: per-user chunk library like vocab drill (not shared
   like conjugation's registry) — `shadowing_recordings` (one row per
   ingested source audio file) → `shadowing_chunks` (the drill unit: audio
-  path, transcript, kana, translation, `verified_at`/`flagged_at`),
-  progress per `(user_id, chunk_id)` in `shadowing_state`, sessions in
-  `shadowing_sessions`/`shadowing_session_attempts`. `chunk_id`
+  path, transcript, kana, translation, `verified_at`/`flagged_at`). As of
+  3.1.0 `ingest/` no longer cuts a recording into sentence-level chunks —
+  a recording publishes as exactly one `shadowing_chunks` row (the whole
+  file), and progress tracking is per-recording rather than per-sentence;
+  the table names/shapes are unchanged, so this was a pipeline rework, not
+  a schema change. Progress is tracked per `(user_id, chunk_id)` in
+  `shadowing_state`, sessions in `shadowing_sessions`/
+  `shadowing_session_attempts`. `chunk_id`
   (`"<slug>:<chunking_version>:<NN>"`) is opaque to `drill-algorithm.ts`
   exactly the way conjugation's `cell_id` already is, so `selectDrillWords`
   is reused unmodified (`applyOutcome` is not — shadowing's own box
@@ -144,10 +149,11 @@ things with the app: the DB schema
 `shadowing-audio` Storage bucket, plus two already-generic app utilities it
 reuses rather than duplicates (`src/lib/list-naming.ts`'s `deriveListName`
 for slug derivation, `scripts/lib/supabase-admin.ts`'s `createAdminClient`
-for DB access). Everything else — the whisper/ffmpeg pipeline, the chunk
-boundary algorithm, the verification checks — lives entirely under
+for DB access). Everything else — the whisper/ffmpeg transcription
+pipeline, the transcript-vs-ASR cross-check — lives entirely under
 `ingest/` and is a separate concern from the drill UI/API that consumes its
-output.
+output. As of 3.1.0 there's no chunk-cutting or boundary-detection step at
+all — see `ingest/README.md`'s "No audio chunking" section.
 
 ### Key files
 

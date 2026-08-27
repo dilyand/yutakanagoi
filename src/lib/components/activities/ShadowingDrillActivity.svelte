@@ -55,6 +55,20 @@
 	let replays = $state(0);
 	let hasPlayedOnce = $state(false);
 	let playbackRate = $state(1);
+	// Drives the single play/pause/resume/replay button and the seek bar.
+	// Recordings run 40-90s+ (no more chunk-cutting — see CLAUDE.md's
+	// "No audio chunking" note), long enough that always restarting from 0
+	// on every button press (the old chunk-era behavior) isn't acceptable
+	// anymore — a listener who pauses mid-recording needs to resume from
+	// where they left off, not from the start.
+	let playbackState = $state<'idle' | 'playing' | 'paused' | 'ended'>('idle');
+	let seekPosition = $state(0);
+	let durationSeconds = $state(0);
+	// True only while the user has an active pointer down on the seek
+	// range input — guards handleTimeUpdate below so a native timeupdate
+	// tick doesn't yank the thumb out from under an in-progress drag by
+	// overwriting seekPosition with the (stale, pre-seek) playback time.
+	let isSeeking = $state(false);
 	let flagNote = $state('');
 	// Guards next()/confirmFlag()/cancelSession() against a double-click
 	// firing a second request (and, on the last chunk, a second
@@ -94,12 +108,22 @@
 		playbackRate = 1;
 		flagNote = '';
 		outcomeRecorded = false;
+		playbackState = 'idle';
+		seekPosition = 0;
+		durationSeconds = 0;
+		isSeeking = false;
 		// The audio element is reused across chunks (only its src changes),
 		// so its playbackRate is a live DOM property that outlives this
 		// reset unless cleared explicitly — otherwise a 0.75x chunk leaves
 		// the next chunk playing at 0.75x too, despite the toggle button
 		// showing inactive.
 		if (audioEl) audioEl.playbackRate = 1;
+	}
+
+	function formatTime(seconds: number): string {
+		if (!Number.isFinite(seconds)) return '0:00';
+		const total = Math.max(0, Math.floor(seconds));
+		return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 	}
 
 	function prefetchNext() {
@@ -143,11 +167,21 @@
 	}
 
 	// Playback is always user-initiated — nothing plays on entry or on
-	// advancing to the next chunk, only on an explicit tap here.
-	function play() {
+	// advancing to the next chunk, only on an explicit tap here. One button
+	// serves play/pause/resume/replay, dispatching on playbackState:
+	// idle/ended restart from 0, playing pauses in place, paused resumes
+	// from wherever it was left (no reset) — see playbackState's own
+	// comment for why resuming-in-place matters now.
+	function handleMainButtonClick() {
 		if (!audioEl) return;
 		errorMessage = '';
-		audioEl.currentTime = 0;
+		if (playbackState === 'playing') {
+			audioEl.pause();
+			return;
+		}
+		if (playbackState === 'idle' || playbackState === 'ended') {
+			audioEl.currentTime = 0;
+		}
 		// hasPlayedOnce/replays are set from a real "ended" event (below),
 		// not from this call — play() can reject (network/codec/CSP) or the
 		// user can abandon it mid-clip, and neither should count as having
@@ -160,6 +194,7 @@
 	// Only a completed playthrough counts: the first sets hasPlayedOnce
 	// (unlocking Next), every one after that counts as a replay.
 	function handlePlaybackEnded() {
+		playbackState = 'ended';
 		if (hasPlayedOnce) {
 			replays += 1;
 		} else {
@@ -167,16 +202,42 @@
 		}
 	}
 
-	// A failure that happens *after* play() has already started (a network
-	// drop or decode error mid-stream) never rejects play()'s promise and
-	// never fires "ended" — it surfaces only as this element's own "error"
-	// event. Without a handler here, Next stays disabled with no
-	// explanation and no way forward for a chunk whose first play attempt
-	// hasn't completed yet. Flag remains a bail-out even without this, but
-	// the actual fix is telling the user what happened and letting them
-	// retry via the same Play button (play() already resets currentTime to
-	// 0 before calling play() again).
+	function handleTimeUpdate() {
+		// Guarded by isSeeking — see its own comment above — so a drag in
+		// progress doesn't get fought by the native timeupdate tick.
+		if (!isSeeking && audioEl) seekPosition = audioEl.currentTime;
+	}
+
+	function handleLoadedMetadata() {
+		if (audioEl) durationSeconds = audioEl.duration;
+	}
+
+	// "pause" also fires immediately before "ended" when playback runs to
+	// completion naturally — harmless here since handlePlaybackEnded's
+	// 'ended' assignment always runs right after and wins.
+	function handlePlay() {
+		playbackState = 'playing';
+	}
+	function handlePause() {
+		if (playbackState !== 'ended') playbackState = 'paused';
+	}
+
+	function handleSeekInput(value: number) {
+		seekPosition = value;
+		if (audioEl) audioEl.currentTime = value;
+	}
+
+	// A failure that happens *after* playback has already started (a
+	// network drop or decode error mid-stream) never rejects play()'s
+	// promise and never fires "ended" — it surfaces only as this element's
+	// own "error" event, with playbackState left stuck at 'playing' unless
+	// corrected here. Without resetting it to 'idle', the main button's
+	// next click would read as "pause" (a no-op on an already-errored
+	// element) instead of offering a real restart. Flag remains a bail-out
+	// even without this, but the actual fix is telling the user what
+	// happened and letting them retry via the same button.
 	function handlePlaybackError() {
+		playbackState = 'idle';
 		errorMessage = 'Playback failed partway through — try again.';
 	}
 
@@ -352,15 +413,43 @@
 			bind:this={audioEl}
 			src={currentItem.audioUrl}
 			preload="auto"
+			onplay={handlePlay}
+			onpause={handlePause}
 			onended={handlePlaybackEnded}
 			onerror={handlePlaybackError}
+			ontimeupdate={handleTimeUpdate}
+			onloadedmetadata={handleLoadedMetadata}
 			style="display: none"
 		></audio>
 
 		<div class="shadowing-controls">
-			<button class="shadowing-play-button" onclick={play}>
-				{hasPlayedOnce ? '▶ Replay' : '▶ Play'}
+			<button class="shadowing-play-button" onclick={handleMainButtonClick}>
+				{playbackState === 'playing'
+					? '⏸ Pause'
+					: playbackState === 'paused'
+						? '▶ Resume'
+						: playbackState === 'ended'
+							? '▶ Replay'
+							: '▶ Play'}
 			</button>
+			<div class="shadowing-seek-row">
+				<input
+					class="shadowing-seek"
+					type="range"
+					min="0"
+					max={durationSeconds || 0}
+					step="0.1"
+					value={seekPosition}
+					disabled={!durationSeconds}
+					aria-label="Seek"
+					oninput={(e) => handleSeekInput(Number((e.currentTarget as HTMLInputElement).value))}
+					onpointerdown={() => (isSeeking = true)}
+					onpointerup={() => (isSeeking = false)}
+				/>
+				<span class="shadowing-seek-time"
+					>{formatTime(seekPosition)} / {formatTime(durationSeconds)}</span
+				>
+			</div>
 			<div class="shadowing-secondary-controls">
 				<button
 					class:active={playbackRate === 0.75}
