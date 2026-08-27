@@ -4,12 +4,24 @@
 -- created or completed a shadowing session between two of those requests
 -- (a session/start or session/complete landing mid-wipe), that row could
 -- survive in a table deleted after it, even though the run as a whole
--- reported success — the script's own "fully wiped" claim wouldn't
--- actually hold. Wrapping all five deletes in one function call gives
--- them Postgres's normal single-statement transaction semantics: either
--- every table ends up empty, or (on any error) none of them change at
--- all. A session created after this transaction commits is simply new
--- data, not a survivor of the wipe — correctly untouched.
+-- reported success. Wrapping all five deletes in one function call closes
+-- that specific gap: either every table ends up empty, or (on any error)
+-- none of them change at all.
+--
+-- What this does NOT do: serialize the wipe against the live app. A plain
+-- DELETE takes row-level locks, not a table-level lock that would block a
+-- concurrent INSERT — a session/start or session/complete request already
+-- in flight when this transaction begins can still commit its own insert/
+-- upsert at any point during or after this transaction, surviving the
+-- wipe even though every table was genuinely empty at the instant this
+-- function's DELETEs ran. Closing that fully would mean either an actual
+-- maintenance-mode write-lock shared with every shadowing-table mutation
+-- path (session/start, session/complete, the flag endpoint — a
+-- meaningfully bigger change than this one-time script warrants) or
+-- simply not having live traffic during the reset. scripts/
+-- wipe-shadowing-data.ts's own console output says this explicitly; this
+-- migration only guarantees the piece it actually can — the five deletes
+-- landing together or not at all.
 create or replace function wipe_shadowing_data() returns jsonb
 language plpgsql
 security definer
