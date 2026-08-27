@@ -209,15 +209,17 @@
 
 	// Only a completed playthrough counts: the first sets hasPlayedOnce
 	// (unlocking Next), every one after that counts as a replay. Gated on
-	// farthestHeardMs actually having reached the end — handleTimeUpdate
-	// below clamps any forward jump past it while !hasPlayedOnce, so in
-	// practice 'ended' can only fire this way via a genuine, uninterrupted
-	// playthrough; this check is the belt to that clamp's suspenders in
-	// case 'ended' ever fires without an intervening timeupdate (e.g. a
-	// seek landing exactly on the last frame).
+	// farthestHeardMs actually having reached the end — deliberately
+	// read-only here, never written: if a seek lands on the last frame and
+	// 'ended' fires without an intervening 'timeupdate' to validate it
+	// first (not guaranteed by every browser), trusting audioEl.currentTime
+	// directly at this point would promote farthestHeardMs to the end and
+	// unlock Next on exactly the jump this gate exists to catch. Natural
+	// playback's last real timeupdate tick already lands within
+	// FORWARD_JUMP_TOLERANCE_MS of the true end, so this still passes for
+	// every genuine playthrough.
 	function handlePlaybackEnded() {
 		playbackState = 'ended';
-		if (audioEl) farthestHeardMs = Math.max(farthestHeardMs, audioEl.currentTime * 1000);
 		if (
 			durationSeconds > 0 &&
 			farthestHeardMs < durationSeconds * 1000 - FORWARD_JUMP_TOLERANCE_MS

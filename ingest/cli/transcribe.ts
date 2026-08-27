@@ -3,6 +3,7 @@ import {
 	mkdirSync,
 	readFileSync,
 	renameSync,
+	rmSync,
 	writeFileSync,
 	copyFileSync
 } from 'node:fs';
@@ -141,12 +142,23 @@ if (suppliedTranscriptPath) {
 }
 
 // Everything fallible (conversion, whisper, the divergence gate) has now
-// succeeded — safe to commit the staged source into its final name. A
-// re-transcribe overwrites transcript.json wholesale below (kana/
-// translation reset to blank on the new manifest) — that IS the
-// invalidation of any prior enrichment work, no separate cleanup step
-// needed now that there's no separate chunk-cutting stage to leave stale
-// output files behind.
+// succeeded — safe to commit. The existing transcript.json (if any) is
+// invalidated FIRST, before either source rename below, not after — a
+// re-transcribe overwriting it wholesale is what resets kana/translation
+// to blank for the new manifest, but only once it's actually rewritten a
+// few lines down. An interruption (crash, kill signal) after the source
+// rename but before that rewrite would otherwise leave the OLD, still
+// fully-enriched (and so still publishable) transcript.json on disk,
+// paired with the just-replaced NEW audio it was never actually
+// transcribed or enriched against — ingest:publish trusts transcript.json
+// outright and would publish that mismatch silently. Deleting it first
+// means an interruption at any point from here through the write below
+// leaves no manifest at all — publish's own "no transcript.json" gate
+// (see cli/publish.ts) catches it regardless of exactly where an
+// interruption lands.
+const transcriptJsonPath = path.join(workDir, 'transcript.json');
+if (existsSync(transcriptJsonPath)) rmSync(transcriptJsonPath);
+
 renameSync(tempSourcePath, sourceOriginalPath);
 renameSync(tempWavPath, sourceWavPath);
 
@@ -174,9 +186,9 @@ const manifest: TranscriptManifest = {
 	translation: ''
 };
 
-writeFileSync(path.join(workDir, 'transcript.json'), JSON.stringify(manifest, null, 2));
+writeFileSync(transcriptJsonPath, JSON.stringify(manifest, null, 2));
 
-console.log(`\nWrote ${path.join(workDir, 'transcript.json')}`);
+console.log(`\nWrote ${transcriptJsonPath}`);
 console.log(
 	'\nNext: proofread/punctuate the "transcript" field for readability (optional — nothing splits on punctuation anymore), then fill "kana" and "translation" for the whole recording, then run ingest:publish. See PROMPT.md.'
 );
