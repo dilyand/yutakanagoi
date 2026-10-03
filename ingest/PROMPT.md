@@ -40,6 +40,29 @@ other production write in this repo; ingestion doesn't get a standing
 exemption from it just because it's driven by a prompt file instead of a
 person typing each command.
 
+## Practical gotchas
+
+- **The slug comes from the audio file's basename** (via `deriveListName`),
+  not from anything you pass in. If the source file isn't already named the
+  way you want the slug to look, copy it to a scratch location under the
+  target name *before* running `ingest:transcribe`; renaming afterwards
+  leaves the wrong slug in `transcript.json`, the DB, and Storage paths.
+- **Targeting a different environment without editing `.env`:** the
+  `ingest:*` npm scripts hardcode `--env-file=.env`, so call the entry
+  points directly instead, e.g.
+  `npx tsx --env-file=.env.production ingest/cli/transcribe.ts ...` (same
+  for `publish.ts`). `transcribe` queries the `users` table to validate
+  `--user`, so use the target env from step 1 onward, not just at publish.
+- **Always `--dry-run` `ingest:publish` first**, especially against
+  production.
+- **Pairing multi-part sources:** a supplied transcript file may hold
+  several recordings separated by a bare `***` line, one per audio part. If
+  filenames don't make the pairing obvious (or contain an impossible date),
+  pair by file modification times — each audio part is saved before the
+  next, and the transcript file last.
+- Feed `--transcript` the supplied text as-is; do any normalization after
+  the cross-check, in step 2.
+
 ## Step 2: proofreading and enrichment
 
 `ingest:transcribe` wrote `transcript.json` with `kana`/`translation`
@@ -56,6 +79,12 @@ proofread `transcript`.
   exactly the kind of thing `--transcript`'s cross-check against
   whisper's own independent pass is designed to help you judge (see
   "When something aborts" below).
+- Fix wrong-kanji and wrong-word errors, not just names. A supplied
+  transcript can contain a homophone mis-conversion (e.g. a nonsense
+  kanji run where a weekday abbreviation was meant) or a mis-heard
+  uncommon word, and whisper often makes the *same* mistake, so the two
+  agreeing proves nothing — judge by context and by whether the phrase
+  is even a real word.
 - Add `。！？、` where they belong, based on the natural sentence and
   clause breaks in the Japanese, for readability of the transcript hint
   shown in the drill. This is no longer required by any downstream
@@ -100,6 +129,14 @@ the check — fix the actual problem and re-run.
   reflexively just to get past the check — look at what it flagged
   first, and where possible corroborate against whisper's own segments
   (its raw per-segment text is right there in the divergence output).
+  Two patterns come up repeatedly: whisper appending a "thanks for
+  watching" line (e.g. `ご視聴ありがとうございました`) after the real
+  speech ends is a hallucination — the supplied transcript is right to
+  omit it, so once that's the *only* thing flagged, `--accept-transcript`
+  is the correct call; and whisper dropping a quiet opening greeting
+  entirely is an omission, not evidence the greeting wasn't said. If
+  something else is also flagged (a genuinely wrong word in the supplied
+  text), fix that first and re-run before accepting.
 - **`ingest:publish` aborts if `kana` or `translation` is still empty**:
   finish step 2 properly.
 
