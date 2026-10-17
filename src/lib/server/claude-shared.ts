@@ -47,3 +47,18 @@ export const UNTRUSTED_INPUT_NOTE =
 export function tagUntrusted(text: string): string {
 	return `<untrusted>\n${text}\n</untrusted>`;
 }
+
+// Verified live: an earlier version of conjugation_hint without this note
+// produced feedback like "for godan verbs ending in -tsu, add -anai (not
+// -tenai)" — romaji throughout — and separately, in one case, referred to
+// a completely different (if similar-looking) word than the one actually
+// given (待つ when the drilled word was 持つ). The second sentence below
+// targets that directly: telling the model not to re-derive the base word
+// from memory at all removes the opportunity to substitute a wrong one.
+export const NO_ROMAJI_NOTE =
+	'When your response includes any Japanese sounds, endings, or words, ' +
+	'always write them in actual Japanese script (hiragana/katakana/kanji ' +
+	'as appropriate) — never romanized (romaji). For example, write ない ' +
+	'not "-nai", つ not "-tsu", 勝つ not "katsu". Do not restate, ' +
+	'reinterpret, or "correct" the base word given to you — if you refer ' +
+	'to it, copy it exactly as given, character for character.';

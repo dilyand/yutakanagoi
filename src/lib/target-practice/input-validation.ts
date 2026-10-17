@@ -19,7 +19,12 @@ export type InputCheck =
 			/** Cleaned input: trimmed, NFKC-normalized, wave dashes unified to 〜. */
 			value: string;
 			language: InputLanguage;
-			/** English input must go through the candidate step to find the Japanese target. */
+			/**
+			 * The learner's input must go through the candidate step before the card call:
+			 * English input (to find the Japanese target), and Japanese Word input
+			 * (homographs like 人気 にんき/ひとけ and kana-only input like たべる can't be
+			 * resolved locally without a dictionary).
+			 */
 			needsCandidates: boolean;
 			/** Contrast only: the two sides, in the order typed. */
 			sides?: [string, string];
@@ -33,7 +38,10 @@ const JA_WORD_CHARS = `${KANA}${IDEOGRAPH}々ー`;
 
 const JA_WORD = new RegExp(`^[${JA_WORD_CHARS}]+$`, 'u');
 const JA_PHRASE = new RegExp(`^[${JA_WORD_CHARS}、！？・]+$`, 'u');
-const JA_PATTERN = new RegExp(`^[${JA_WORD_CHARS}〜（）]+$`, 'u');
+// Optional parts are written (よ)う — ASCII parens, because cleanInput's NFKC folds
+// the fullwidth （） into them before any of these patterns run.
+const PATTERN_CHARS = `${JA_WORD_CHARS}〜()`;
+const JA_PATTERN = new RegExp(`^[${PATTERN_CHARS}]+$`, 'u');
 const SINGLE_IDEOGRAPH = new RegExp(`^${IDEOGRAPH}$`, 'u');
 const EN_WORD = /^[A-Za-z][A-Za-z'’-]*$/;
 const EN_PATTERN_CHARS = /^[A-Za-z][A-Za-z\s,'’-]*$/;
@@ -95,7 +103,7 @@ function checkWord(value: string): InputCheck {
 		if (/\s/.test(value)) return reject('Word takes a single word, with no spaces.');
 		if (value.includes('〜')) return reject('A pattern with a slot is Grammar, not a Word.');
 		if (!JA_WORD.test(value)) return reject('A Word is kana and kanji only — no punctuation.');
-		return { ok: true, type: 'word', value, language: 'ja', needsCandidates: false };
+		return { ok: true, type: 'word', value, language: 'ja', needsCandidates: true };
 	}
 	const tokens = value.split(' ');
 	if (tokens.length > MAX_EN_WORD_TOKENS || !tokens.every((t) => EN_WORD.test(t))) {
@@ -190,7 +198,7 @@ function checkContrast(value: string): InputCheck {
 	const parsed = parseContrastInput(value);
 	if (!parsed.ok) return reject(parsed.message);
 	for (const side of parsed.sides) {
-		if (!new RegExp(`^[${JA_WORD_CHARS}〜（）]+$`, 'u').test(side)) {
+		if (!JA_PATTERN.test(side)) {
 			return reject('Each side should be kana and kanji only.');
 		}
 	}

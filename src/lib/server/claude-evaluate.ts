@@ -6,6 +6,7 @@ import { logError } from '$lib/server/logger';
 import {
 	GRADING_MODEL,
 	EXPLAIN_MODEL,
+	NO_ROMAJI_NOTE,
 	UNTRUSTED_INPUT_NOTE,
 	createClient,
 	tagUntrusted
@@ -154,21 +155,6 @@ const JAPANESE_FEEDBACK_LEVEL =
 	'wrong. If the point you need to make genuinely cannot be made this way ' +
 	'without those words, write the feedback in English instead of using ' +
 	'them.';
-
-// Verified live: an earlier version of conjugation_hint without this note
-// produced feedback like "for godan verbs ending in -tsu, add -anai (not
-// -tenai)" — romaji throughout — and separately, in one case, referred to
-// a completely different (if similar-looking) word than the one actually
-// given (待つ when the drilled word was 持つ). The second sentence below
-// targets that directly: telling the model not to re-derive the base word
-// from memory at all removes the opportunity to substitute a wrong one.
-const NO_ROMAJI_NOTE =
-	'When your response includes any Japanese sounds, endings, or words, ' +
-	'always write them in actual Japanese script (hiragana/katakana/kanji ' +
-	'as appropriate) — never romanized (romaji). For example, write ない ' +
-	'not "-nai", つ not "-tsu", 勝つ not "katsu". Do not restate, ' +
-	'reinterpret, or "correct" the base word given to you — if you refer ' +
-	'to it, copy it exactly as given, character for character.';
 
 // Verified live: two distinct failure modes surfaced once NO_ROMAJI_NOTE
 // alone wasn't enough. (1) A learner wrote a word entirely unrelated to the

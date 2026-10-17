@@ -52,8 +52,8 @@ describe('kanji', () => {
 });
 
 describe('word', () => {
-	it('accepts Japanese words without candidates', () => {
-		expect(ok('word', '食べる')).toMatchObject({ language: 'ja', needsCandidates: false });
+	it('accepts Japanese words, and still routes them through the candidate step', () => {
+		expect(ok('word', '食べる')).toMatchObject({ language: 'ja', needsCandidates: true });
 		expect(ok('word', 'たべる').value).toBe('たべる');
 		expect(ok('word', 'ラーメン').value).toBe('ラーメン');
 	});
@@ -90,6 +90,10 @@ describe('grammar', () => {
 		expect(ok('grammar', '〜てしまう')).toMatchObject({ language: 'ja', needsCandidates: false });
 		expect(ok('grammar', '～わけではない').value).toBe('〜わけではない');
 		expect(ok('grammar', '〜ことになる').value).toBe('〜ことになる');
+	});
+	it('accepts optional-part parentheses, fullwidth or ASCII (NFKC folds them to ASCII)', () => {
+		expect(ok('grammar', '〜（よ）うとする').value).toBe('〜(よ)うとする');
+		expect(ok('grammar', '〜(さ)せる').value).toBe('〜(さ)せる');
 	});
 	it('accepts an English description and routes it through candidates', () => {
 		expect(ok('grammar', 'whether or not')).toMatchObject({
