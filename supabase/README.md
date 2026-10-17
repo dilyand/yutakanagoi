@@ -186,6 +186,33 @@ null`, so a row still awaiting publish, or one flagged bad in-app, can't
   how far up the in-app hint ladder the user climbed before advancing (see
   `src/lib/shadowing/rating.ts`), not self-reported — plus `replays`, which
   doesn't affect grading but is recorded as a behavioral signal.
+- `target_practice_history` / `target_practice_flags` / `target_practice_usage` —
+  for the target-practice activity (4th activity, 3.2.0; design in the
+  gitignored `notes/target-practice-design.md`). The activity is
+  learner-led and keeps **no progress or Leitner state**; these three are
+  its only tables. All plain FKs to `users(id)`, no `ON DELETE CASCADE`
+  (same as everything else here), RLS enabled with no policies
+  (service-role only). Applied before any code that uses them — purely
+  additive.
+  - `target_practice_history` — recent-targets list, PK
+    `(user_id, type, target_key)`. `type` is one of `word|kanji|set_phrase|
+grammar|contrast` (CHECK). `target_key` is the canonical resolved
+    target (`〜かどうか`, not the learner's English phrasing); `card` is the
+    stored target card (jsonb), so relaunching a recent target skips the
+    candidate + card Claude calls. History only — no counts or scores.
+    Written after generation succeeds (upsert bumps `last_practiced_at`),
+    pruned to 30 rows per user by the repository on write — nothing in SQL
+    enforces that cap.
+  - `target_practice_flags` — flag-button reports (`type`, `target_key`,
+    `phase`, `item` jsonb — null for a flag on the card —, `reason`,
+    `note`). Read to tune generation prompts, not a per-item fix queue —
+    `npm run logs:flags [-- <limit>]` prints the newest rows.
+    `reason` is deliberately **unconstrained** so the vocabulary can change
+    while prompts are tuned without a migration; `type` keeps its CHECK.
+  - `target_practice_usage` — per-user, per-**UTC**-day circuit-breaker
+    counters (`sessions`, `lookups`, `input_tokens`, `output_tokens`), PK
+    `(user_id, day)`. Written only through the two RPCs below. Token totals
+    double as a record of real daily spend for tuning the caps.
 
 ### Shadowing Storage bucket
 
@@ -217,10 +244,10 @@ session before the re-publish may still hold a signed URL into them.
 `ingest:cleanup-old-versions` (see `ingest/README.md`) removes them, run
 manually once no such session could still be active.
 
-### Two RPCs in this schema, for two different reasons
+### RPCs in this schema, and why each exists
 
-Every other table in this app is written straight through `supabase-js`
-`.insert()`/`.update()`/`.upsert()` calls — these two functions are the
+Most tables in this app are written straight through `supabase-js`
+`.insert()`/`.update()`/`.upsert()` calls — these functions are the
 exceptions, each needed for something a plain call can't express:
 
 - **`publish_shadowing_recording`** — needs a single Postgres
@@ -237,6 +264,27 @@ excluded.last_session > shadowing_state.last_session` so a session that
   clause. See `src/routes/api/shadowing/session/start/+server.ts`'s
   `SessionAlreadyStartingError` comment for the concurrent-session
   scenario this guards against.
+- **`reserve_target_practice_usage`** / **`record_target_practice_tokens`**
+  (`20261017000003_target_practice_usage.sql`) — target practice's cost
+  guardrails (`src/lib/server/target-practice/usage.ts`, called through
+  `claude-call.ts`'s `callClaude`, the one door every Claude call there goes
+  through). `reserve_target_practice_usage(user, kind, session_cap,
+lookup_cap, output_ceiling)` needs a _conditional_ write: it increments
+  the counter for `kind` (`'session'`, `'lookup'`, or `'ceiling'` =
+  consume nothing, just check) only if every cap still has room, and
+  returns a boolean — as one `UPDATE ... WHERE`, so two tabs can't both
+  read "4 of 5" and both proceed (exactly cap-many of N parallel calls
+  succeed — verified with 12 parallel connections against cap 5). Every
+  kind also requires today's `output_tokens < output_ceiling`, the real
+  backstop. There is deliberately **no refund** path. The caps themselves
+  (5 sessions, 30 lookups, 150k output tokens a day) are constants in
+  `usage.ts`, passed in — change them there, not in SQL.
+  `record_target_practice_tokens` is an additive upsert, so parallel calls
+  (generation stages 1 and 2) can't lose each other's updates. Both compute
+  the day as `(now() at time zone 'utc')::date` inside Postgres, so a
+  skewed app-server clock can't shift a user's day boundary. Both are
+  `security definer` with execute granted to `service_role` only, set in the
+  same migration (template: `20260823000001_word_lists_create_atomic.sql`).
 
 `ingest:publish`'s re-publish path (`ingest/cli/publish.ts`) has to update
 the recording row, delete its previous `chunking_version`'s chunk rows, and

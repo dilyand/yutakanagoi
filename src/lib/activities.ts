@@ -19,6 +19,11 @@ export const ACTIVITIES: ActivityDescriptor[] = [
 		id: 'shadowing-drill',
 		label: 'Shadowing drill',
 		description: 'Listen to real Japanese speech and repeat it back.'
+	},
+	{
+		id: 'target-practice',
+		label: 'Target practice',
+		description: 'Name one grammar pattern or word and drill it in a short generated session.'
 	}
 ];
 
