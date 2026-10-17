@@ -143,7 +143,7 @@ describe('regenerationPlan', () => {
 				phase: 'understand',
 				need: 3,
 				coverage: [],
-				reasons: [expect.stringContaining('1 valid items')]
+				reasons: [expect.stringContaining('1 of 4 valid items')]
 			}
 		]);
 		expect(
@@ -154,8 +154,31 @@ describe('regenerationPlan', () => {
 	it('asks for a missing Word sense in the Sense phase, naming the key', () => {
 		const items = without(wordKibishii, ['w-u3', 'w-u4', 'w-s3']);
 		const p = plan(wordKibishii, 1, stageItems({ ...wordKibishii, items }, 1));
+		// Sense is short by one AND nothing covers sense:3; Understand is simply short by two.
 		expect(p).toEqual([
+			expect.objectContaining({ phase: 'understand', need: 2, coverage: [] }),
 			expect.objectContaining({ phase: 'sense', need: 1, coverage: ['sense:3'] })
+		]);
+	});
+
+	it('asks for more whenever a phase is below its target count, even above the minimum', () => {
+		// Understand 2 of 4: at the minimum of 2 (not "failed"), but short.
+		const stage1 = without(grammarKakadouka, ['g-u3', 'g-u4']).filter(
+			(i) => i.phase === 'understand'
+		);
+		const { valid, setIssues } = validateItems(grammarKakadouka.card, clone(stage1), { stage: 1 });
+		expect(failedPhases(setIssues)).toEqual([]);
+		expect(regenerationPlan(grammarKakadouka.card, 1, valid, setIssues)).toEqual([
+			{ phase: 'understand', need: 2, coverage: [], reasons: ['2 of 4 valid items'] }
+		]);
+	});
+
+	it('applies to the practice stage too (Produce 3 of 5)', () => {
+		const stage2 = without(grammarKakadouka, ['g-p1', 'g-p2', 'g-spare1']).filter(
+			(i) => i.phase === 'produce' || i.phase === 'use' || i.phase === 'contrast'
+		);
+		expect(plan(grammarKakadouka, 2, stage2)).toEqual([
+			{ phase: 'produce', need: 2, coverage: [], reasons: ['3 of 5 valid items'] }
 		]);
 	});
 
@@ -168,18 +191,23 @@ describe('regenerationPlan', () => {
 		expect(k).toEqual([expect.objectContaining({ phase: 'reading', coverage: ['reading:げ'] })]);
 	});
 
-	it('asks for more of the thin side when Sort is unbalanced', () => {
-		// Keep only side:a in Sort: s1, s4 (+ an a-flipped s2, s3, s5 would be needed; use relabel).
-		const items = clone(contrastKimeruKimaru.items).map((i) =>
-			i.phase === 'sort' && i.id !== 'c-s5' ? { ...i, coverage: 'side:a' } : i
-		);
-		const p = plan(
-			contrastKimeruKimaru,
-			1,
-			items.filter((i) => i.phase === 'understand' || i.phase === 'sort')
-		);
-		expect(p).toEqual([expect.objectContaining({ phase: 'sort', coverage: ['side:b'] })]);
-		expect(p[0].need).toBeGreaterThan(0);
+	const sortAs = (relabel: (id: string) => string) =>
+		clone(contrastKimeruKimaru.items)
+			.map((i) => (i.phase === 'sort' ? { ...i, coverage: relabel(i.id) } : i))
+			.filter((i) => i.phase === 'understand' || i.phase === 'sort');
+
+	it('does not regenerate a merely lopsided Sort (4:1) — it is logged, not redone', () => {
+		const items = sortAs((id) => (id === 'c-s5' ? 'side:b' : 'side:a'));
+		const { setIssues } = validateItems(contrastKimeruKimaru.card, clone(items), { stage: 1 });
+		expect(setIssues.map((i) => i.code)).toContain('sort_unbalanced');
+		expect(plan(contrastKimeruKimaru, 1, items)).toEqual([]);
+	});
+
+	it('still asks for two items when Sort has nothing for one side (5:0)', () => {
+		const items = sortAs(() => 'side:a');
+		expect(plan(contrastKimeruKimaru, 1, items)).toEqual([
+			expect.objectContaining({ phase: 'sort', need: 2, coverage: ['side:b'] })
+		]);
 	});
 
 	it('asks for a non-target Situation answer when every answer is the target', () => {

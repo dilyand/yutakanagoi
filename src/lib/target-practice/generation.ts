@@ -127,14 +127,23 @@ function coveragePhase(card: Card, stage: GenerationStage): PhaseId | null {
 	}
 }
 
+/** Items asked for when a Contrast Sort has no item at all for one side. */
+const SORT_MISSING_SIDE_NEED = 2;
+
 /**
- * Turns a stage's set issues into the phases worth regenerating once
- * (design doc §5/§8). Regenerates for: a phase below its minimum, an
- * unbalanced Contrast Sort, a Set phrase Situation with no non-target answer,
- * and a coverage key nothing covers. `coverage_dominant` is deliberately NOT
- * here — a lopsided spread is worth logging, not another call. The new items
- * are added to the existing valid ones, so a phase can end up a little over its
- * target count. Returns [] when nothing needs redoing.
+ * Turns a stage's result into the phases worth regenerating once (design doc
+ * §5/§8). Regenerates for:
+ * - any phase with fewer primaries than its target count, in either stage —
+ *   after spare promotion, so this means the spares ran out too. (The minimum
+ *   in skeleton.ts is only the line below which a phase counts as FAILED; the
+ *   redo threshold is the full count.);
+ * - a Contrast Sort with no item at all for one side;
+ * - a Set phrase Situation with no non-target answer;
+ * - a coverage key nothing covers.
+ * NOT for a merely lopsided Sort (4:1) or a dominant coverage key: the learner
+ * can't exploit it in advance and still practises both sides, so it is logged,
+ * not another call. The new items are added to the existing valid ones. Returns
+ * [] when nothing needs redoing.
  */
 export function regenerationPlan(
 	card: Card,
@@ -160,28 +169,24 @@ export function regenerationPlan(
 	};
 
 	const primaries = items.filter((i) => !i.spare);
-	for (const issue of issues) {
-		switch (issue.code) {
-			case 'phase_below_minimum': {
-				const target = spec.find((p) => p.id === issue.phase);
-				if (target) {
-					ask(target.id, target.count - primariesIn(items, target.id).length, issue.detail);
-				}
-				break;
-			}
-			case 'sort_unbalanced': {
-				const sort = primariesIn(items, 'sort');
-				const a = sort.filter((i) => i.coverage === 'side:a').length;
-				const b = sort.filter((i) => i.coverage === 'side:b').length;
-				ask('sort', Math.abs(a - b) - 1, issue.detail, [a < b ? 'side:a' : 'side:b']);
-				break;
-			}
-			case 'no_non_target_situation':
-				ask('situation', 1, issue.detail);
-				break;
-			default:
-				break;
+
+	for (const p of spec) {
+		const have = primariesIn(items, p.id).length;
+		if (have < p.count) ask(p.id, p.count - have, `${have} of ${p.count} valid items`);
+	}
+
+	if (issues.some((i) => i.code === 'sort_unbalanced')) {
+		const sort = primariesIn(items, 'sort');
+		const a = sort.filter((i) => i.coverage === 'side:a').length;
+		const b = sort.filter((i) => i.coverage === 'side:b').length;
+		if (sort.length > 0 && (a === 0 || b === 0)) {
+			ask('sort', SORT_MISSING_SIDE_NEED, `Sort has no item for ${a === 0 ? 'side:a' : 'side:b'}`, [
+				a === 0 ? 'side:a' : 'side:b'
+			]);
 		}
+	}
+	if (issues.some((i) => i.code === 'no_non_target_situation')) {
+		ask('situation', 1, 'every Situation answer is the target');
 	}
 
 	if (issues.some((i) => i.code === 'coverage_missing')) {

@@ -195,6 +195,33 @@ describe('generateStage: spares and regeneration', () => {
 		expect(recordPracticedTarget).toHaveBeenCalledTimes(1);
 	});
 
+	it('regenerates when a phase is above the minimum but short of its target (2 of 4), in either stage', async () => {
+		const parse = modelAnswers(
+			wirePayload(understand.slice(0, 2)),
+			wirePayload(understand.slice(2))
+		);
+		const result = await run();
+		if (result.status !== 'ok') throw new Error('unreachable');
+		expect(callClaudeMock).toHaveBeenCalledTimes(2);
+		expect(parse.mock.calls[1][0].messages[0].content).toContain('understand: 2 more items');
+		expect(result.items).toHaveLength(4);
+		expect(result.setIssues).toEqual([]);
+
+		const stage2 = stageItems(grammarKakadouka, 2).filter((i) => !i.spare);
+		const second = modelAnswers(
+			wirePayload(stage2.filter((i) => i.id !== 'g-p1' && i.id !== 'g-p2')),
+			wirePayload(stage2.filter((i) => i.id === 'g-p1' || i.id === 'g-p2'))
+		);
+		await run({ stage: 2 });
+		expect(second.mock.calls[1][0].messages[0].content).toContain('produce: 2 more items');
+	});
+
+	it('does not regenerate when spares fill the gap', async () => {
+		modelAnswers(wirePayload(understand.slice(0, 2), understand.slice(2)));
+		await run();
+		expect(callClaudeMock).toHaveBeenCalledTimes(1);
+	});
+
 	it('regenerates at most once', async () => {
 		modelAnswers(wirePayload(understand.slice(0, 1)), wirePayload([]));
 		const result = await run();
