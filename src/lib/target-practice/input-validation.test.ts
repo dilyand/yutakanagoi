@@ -115,9 +115,12 @@ describe('contrast', () => {
 	it('splits on whitespace when there are exactly two tokens', () => {
 		expect(ok('contrast', '決める 決まる').sides).toEqual(['決める', '決まる']);
 	});
-	it('splits on と only when it is the sole と', () => {
-		expect(ok('contrast', '決めると決まる').sides).toEqual(['決める', '決まる']);
-		expect(bad('contrast', 'ととめるとまる')).toMatch(/vs/);
+	it('does not treat と as a separator, so words containing と stay enterable', () => {
+		expect(ok('contrast', 'ところ vs とき').sides).toEqual(['ところ', 'とき']);
+		expect(ok('contrast', '止める/止まる').sides).toEqual(['止める', '止まる']);
+		expect(ok('contrast', 'とる、とまる').sides).toEqual(['とる', 'とまる']);
+		expect(bad('contrast', '決めると決まる')).toMatch(/Separate the two items/);
+		expect(bad('contrast', 'ので と から')).toMatch(/exactly two/);
 	});
 	it('rejects three items, identical sides and empty sides', () => {
 		expect(bad('contrast', 'a/b/c')).toBeTruthy();

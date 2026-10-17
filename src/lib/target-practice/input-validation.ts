@@ -145,9 +145,10 @@ const EXPLICIT_SEPARATOR = /\s*(?:\bvs\.?(?=\s|$)|[/、,，])\s*/giu;
 
 /**
  * Split `決める vs 決まる`-style input into its two sides. Explicit
- * separators (`vs`, `/`, `、`, `,`) win. Failing that, two whitespace-separated
- * tokens work, and `と` is a separator only when it is the sole `と` in the
- * string — `止めると止まる` has several possible splits otherwise.
+ * separators (`vs`, `/`, `、`, `,`) win. Failing that, exactly two
+ * whitespace-separated tokens work. `と` is deliberately NOT a separator: it
+ * is a genuine part of many words (ところ, とき, 止まる), so treating it as one
+ * would make them unenterable.
  */
 export function parseContrastInput(
 	raw: string
@@ -174,12 +175,6 @@ function splitSides(
 	if (spaced.length === 2) return { ok: true, sides: [spaced[0], spaced[1]] };
 	if (spaced.length > 2) return { ok: false, message: 'Contrast takes exactly two items.' };
 
-	const toIndices = [...value].flatMap((ch, i) => (ch === 'と' ? [i] : []));
-	if (toIndices.length === 1) {
-		const chars = [...value];
-		const i = toIndices[0];
-		return { ok: true, sides: [chars.slice(0, i).join(''), chars.slice(i + 1).join('')] };
-	}
 	return {
 		ok: false,
 		message: 'Separate the two items with "vs" or "/", like 決める vs 決まる.'
