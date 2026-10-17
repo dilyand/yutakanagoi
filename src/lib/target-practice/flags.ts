@@ -40,3 +40,28 @@ export const MAX_FLAG_ITEM_JSON = 6000;
 export function isTargetType(value: string): value is TargetType {
 	return (TARGET_TYPES as readonly string[]).includes(value);
 }
+
+/** What the learner answered and how it was graded, attached to a flag on a typed or Use item. */
+export interface LearnerResponse {
+	answer: string;
+	outcome: 'correct' | 'wrong' | 'neutral';
+	/** The grader's (Claude's) feedback, when the answer was graded by Claude; otherwise absent. */
+	graderFeedback?: string;
+	attempts: 1 | 2;
+}
+
+/**
+ * The `item` JSON stored with a flag. For typed and Use items it carries the
+ * learner's answer and the grader's feedback next to the item, so `npm run
+ * logs:flags` shows a bad grader comment, not only the item. The column is jsonb,
+ * so the extra field needs no migration. An item with no response yet (or one
+ * graded locally, like mc and tiles) is stored as is.
+ */
+export function flagItemPayload(item: unknown, response: LearnerResponse | null): unknown {
+	if (!response) return item;
+	const { graderFeedback, ...rest } = response;
+	return {
+		...(item as Record<string, unknown>),
+		learnerResponse: { ...rest, ...(graderFeedback ? { graderFeedback } : {}) }
+	};
+}

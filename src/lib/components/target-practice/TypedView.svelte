@@ -2,6 +2,7 @@
 	import { gradeTyped, typedNext } from '$lib/target-practice/grading';
 	import { toGradeInput } from '$lib/target-practice/grade';
 	import type { GradeInput, GradeVerdict } from '$lib/target-practice/grade';
+	import type { LearnerResponse } from '$lib/target-practice/flags';
 	import type { Outcome, ResultInput } from '$lib/target-practice/session';
 	import type { TypedItem } from '$lib/target-practice/types';
 	import ItemPrompt from './ItemPrompt.svelte';
@@ -15,11 +16,14 @@
 	let {
 		item,
 		grade,
-		onDone
+		onDone,
+		onReport
 	}: {
 		item: TypedItem;
 		grade: (input: GradeInput) => Promise<GradeVerdict | null>;
 		onDone: (result: ResultInput) => void;
+		/** Tells the flag button what was answered and graded, so a flag carries it. */
+		onReport?: (response: LearnerResponse) => void;
 	} = $props();
 
 	let answer = $state('');
@@ -27,6 +31,17 @@
 	let checking = $state(false);
 	let finished = $state<{ outcome: Outcome; feedback: string } | null>(null);
 	let lastAnswer = '';
+
+	$effect(() => {
+		if (!finished) return;
+		onReport?.({
+			answer: lastAnswer,
+			outcome: finished.outcome,
+			// The neutral message is canned, not the grader's.
+			graderFeedback: finished.outcome === 'neutral' ? undefined : finished.feedback,
+			attempts: attempt
+		});
+	});
 
 	async function submit() {
 		const text = answer.trim();
