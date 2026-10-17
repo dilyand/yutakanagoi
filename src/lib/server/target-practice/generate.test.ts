@@ -15,6 +15,7 @@ vi.mock('./claude-call', async (importOriginal) => ({
 	callClaude: callClaudeMock
 }));
 
+import { cardForGeneration } from './generation-prompts';
 import { UsageCapError } from './claude-call';
 import { generateStage } from './generate';
 import { wirePayload } from './wire-test-support';
@@ -120,7 +121,7 @@ describe('generateStage: a clean stage', () => {
 		await run({ avoid: ['昨日は雨でした。'] });
 		const args = parse.mock.calls[0][0];
 		expect(args.system).toContain('PHASES — one key under "items"');
-		expect(args.messages[0].content).toContain(JSON.stringify(card));
+		expect(args.messages[0].content).toContain(JSON.stringify(cardForGeneration(card)));
 		expect(args.messages[0].content).toContain('昨日は雨でした。');
 	});
 });

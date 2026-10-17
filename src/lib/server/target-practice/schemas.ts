@@ -4,6 +4,7 @@ import { spareQuota } from '$lib/target-practice/generation';
 import type { GenerationStage, RegenerationRequest } from '$lib/target-practice/generation';
 import { PHASE_KINDS, skeletonFor } from '$lib/target-practice/skeleton';
 import { TARGET_TYPES, CONTRAST_KINDS } from '$lib/target-practice/types';
+import { MAX_INSTRUCTION_JAPANESE_RUN } from '$lib/target-practice/validate-items';
 import type { Card, PhaseId, TargetType } from '$lib/target-practice/types';
 import type { ModelCardResult } from '$lib/target-practice/lookup';
 
@@ -294,6 +295,35 @@ function repairMask(kana: unknown): unknown {
 	return typeof kana === 'string' ? kana.replace(/〇+/g, TARGET_MASK) : kana;
 }
 
+const LONG_JAPANESE_RUN = new RegExp(
+	`[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}ー]{${MAX_INSTRUCTION_JAPANESE_RUN + 1},}`,
+	'u'
+);
+
+/**
+ * "Combine the two sentences" items: the model writes the Japanese into the
+ * instruction as well as into `sentence`, despite being told not to, and the
+ * validator drops the item (3 of 11 drops in the slice-5 real run). When the
+ * Japanese is also in `sentence`, nothing is lost by cutting the instruction at
+ * its first Japanese run and removing the dangling "First sentence:" label — a
+ * repair, unlike guessing. Without a `sentence` there is nothing safe to do and
+ * the item is left for validateItems to drop.
+ */
+export function repairInstruction(instruction: unknown, sentence: unknown): unknown {
+	if (typeof instruction !== 'string' || typeof sentence !== 'string') return instruction;
+	if (sentence.trim() === '') return instruction;
+	const run = LONG_JAPANESE_RUN.exec(instruction);
+	if (!run) return instruction;
+	const cut = instruction
+		.slice(0, run.index)
+		.replace(/[\s"'「『(（]+$/u, '')
+		// A dangling "First sentence:" label after a sentence end, or a lone colon.
+		.replace(/(?<=[.!?])\s+[A-Za-z0-9 ]{1,30}:$/, '')
+		.replace(/[\s:]+$/, '')
+		.trim();
+	return /[A-Za-z]{3,}/.test(cut) ? cut : instruction;
+}
+
 /** Small deterministic PRNG (mulberry32), so a given item always shuffles the same way. */
 function seededRandom(seed: string): () => number {
 	let h = 1779033703 ^ seed.length;
@@ -341,7 +371,14 @@ function toRawItem(wire: Wire, phase: string, id: string, spare: boolean): Recor
 		id,
 		phase,
 		...(spare ? { spare: true } : {}),
-		...present({ ...wire, kana: repairMask(wire.kana) }, ['instruction', 'sentence', 'kana']),
+		...present(
+			{
+				...wire,
+				kana: repairMask(wire.kana),
+				instruction: repairInstruction(wire.instruction, wire.sentence)
+			},
+			['instruction', 'sentence', 'kana']
+		),
 		// Required fields stay as given: validateItems reports them if blank.
 		targetSpan: wire.targetSpan,
 		rationale: wire.rationale

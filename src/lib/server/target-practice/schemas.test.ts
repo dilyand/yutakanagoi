@@ -18,6 +18,7 @@ import {
 	CandidatesResult,
 	GENERIC_TRANSLATION_HINT,
 	generationSchemaFor,
+	repairInstruction,
 	shuffleTiles,
 	toModelCardResult,
 	toRawItems
@@ -462,5 +463,69 @@ describe('toRawItems', () => {
 		});
 		const { dropped } = validateItems(wordKibishii.card, toRawItems(1, 1, parsed), { stage: 1 });
 		expect(dropped[0].reason).toMatch(/^kana: sentence has no kana line/);
+	});
+});
+
+describe('repairInstruction', () => {
+	const sentence = '彼は明日来ます。私は分かりません。';
+
+	it('cuts the Japanese tail and the dangling label (the real "combine" items)', () => {
+		expect(
+			repairInstruction(
+				'Combine the two sentences below into one sentence using the target pattern. First sentence: 彼は明日来ます。 Second sentence: 私は分かりません。',
+				sentence
+			)
+		).toBe('Combine the two sentences below into one sentence using the target pattern.');
+		expect(
+			repairInstruction(
+				'Combine the two sentences below into one sentence using the target pattern. First sentence: この薬は効きます。 Second sentence: 医者に確認してください。',
+				'この薬は効きます。医者に確認してください。'
+			)
+		).toBe('Combine the two sentences below into one sentence using the target pattern.');
+	});
+
+	it('also removes a quote mark left before the Japanese', () => {
+		expect(
+			repairInstruction('Turn this into reported speech: 「田中さんは来ますか」', sentence)
+		).toBe('Turn this into reported speech');
+	});
+
+	it('leaves short grammar labels alone, and instructions with no long Japanese run', () => {
+		const ok = 'Put the verb in the て-form and a な-adjective after it.';
+		expect(repairInstruction(ok, sentence)).toBe(ok);
+	});
+
+	it('does nothing without a sentence to carry the Japanese, or when little English is left', () => {
+		const withJapanese = 'Combine: 彼は明日来ます。 and 私は分かりません。';
+		expect(repairInstruction(withJapanese, '')).toBe(withJapanese);
+		expect(repairInstruction('彼は明日来ます。私は', sentence)).toBe('彼は明日来ます。私は');
+		expect(repairInstruction(undefined, sentence)).toBeUndefined();
+	});
+
+	it('makes the real dropped item valid through toRawItems and validateItems', () => {
+		const card = grammarKakadouka.card;
+		const wire = {
+			items: {
+				use: [
+					{
+						instruction:
+							'Combine the two sentences below into one sentence using the target pattern. First sentence: 彼は明日来ます。 Second sentence: 私は分かりません。',
+						sentence,
+						kana: 'かれはあしたきます。わたしはわかりません。',
+						targetSpan: 'かどうか',
+						rationale: 'A good answer embeds the plain form of 来る before かどうか.',
+						expected: ['彼が明日来るかどうか分かりません。'],
+						free: false
+					}
+				]
+			},
+			spares: {}
+		};
+		const raw = toRawItems(2, 1, wire as never);
+		expect(raw[0].instruction).toBe(
+			'Combine the two sentences below into one sentence using the target pattern.'
+		);
+		const { dropped } = validateItems(card, raw, { stage: 2 });
+		expect(dropped.filter((d) => /instruction contains Japanese/.test(d.reason))).toEqual([]);
 	});
 });

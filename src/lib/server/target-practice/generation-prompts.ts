@@ -4,7 +4,7 @@ import { spareQuota } from '$lib/target-practice/generation';
 import type { GenerationStage, RegenerationRequest } from '$lib/target-practice/generation';
 import { TARGET_MASK } from '$lib/target-practice/normalize';
 import { skeletonFor } from '$lib/target-practice/skeleton';
-import { coverageUniverse } from '$lib/target-practice/validate-items';
+import { cardModelSentences, coverageUniverse } from '$lib/target-practice/validate-items';
 import type { Card, PhaseId, TargetType } from '$lib/target-practice/types';
 import { LEARNER_LEVEL } from './prompts';
 
@@ -64,8 +64,9 @@ const FIELD_RULES = [
 		'right answer is right (it is shown after a miss). It may quote Japanese.',
 	'- "focus" is a part of "sentence" to highlight, or "". "coverage" is described per type; "" ' +
 		'where not asked for.',
-	'- Never put a sentence in two items, never reuse a sentence from the card, and never write the ' +
-		'same sentence with a different blank.'
+	'- Never put a sentence in two items, never reuse or lightly rephrase a sentence from the list ' +
+		'"already shown to the learner" in the user message, and never write the same sentence with a ' +
+		'different blank. Write every item sentence fresh.'
 ].join('\n');
 
 const MC_RULES = [
@@ -406,6 +407,27 @@ function checklist(card: Card, stage: GenerationStage, regenerate?: Regeneration
 	);
 }
 
+/**
+ * The card as the generator sees it: without its example sentences. They were
+ * the easiest thing to copy — 4 of 11 drops in the slice-5 real run were items
+ * repeating a card sentence — so they are listed separately as "already shown"
+ * instead. The rule, form, senses' glosses and the rest still ground the items.
+ */
+export function cardForGeneration(card: Card): Card {
+	switch (card.type) {
+		case 'word':
+			return {
+				...card,
+				modelSentences: [],
+				senses: card.senses.map((s) => ({ ...s, example: '' }))
+			};
+		case 'contrast':
+			return { ...card, modelSentences: [], minimalPair: ['', ''] };
+		default:
+			return { ...card, modelSentences: [] };
+	}
+}
+
 export function generationPrompt(input: GenerationPromptInput): { system: string; user: string } {
 	const { card, stage, avoid = [], regenerate } = input;
 	const recipe = (stage === 1 ? STAGE_1_RECIPE : STAGE_2_RECIPE)[card.type](card);
@@ -429,8 +451,7 @@ export function generationPrompt(input: GenerationPromptInput): { system: string
 
 	const lines = [
 		`Target type: ${card.type}.`,
-		`Target card (reference data): ${tagUntrusted(JSON.stringify(card))}`,
-		checklist(card, stage, regenerate)
+		`Target card (reference data; its example sentences are left out on purpose and listed under "already shown" below): ${tagUntrusted(JSON.stringify(cardForGeneration(card)))}`
 	];
 	if (regenerate) {
 		lines.push(
@@ -445,11 +466,17 @@ export function generationPrompt(input: GenerationPromptInput): { system: string
 			);
 		}
 	}
-	if (avoid.length > 0) {
+	// Already on the learner's card, or used in an earlier round / attempt.
+	const shown = [
+		...new Set([...cardModelSentences(card).filter((x) => x.trim() !== ''), ...avoid])
+	];
+	if (shown.length > 0) {
 		lines.push(
-			'Do not reuse or lightly rephrase any of these sentences:\n' +
-				tagUntrusted(avoid.map((s) => `- ${s}`).join('\n'))
+			'Sentences already shown to the learner — do not reuse or lightly rephrase any of these:\n' +
+				tagUntrusted(shown.map((x) => `- ${x}`).join('\n'))
 		);
 	}
+	// Last, so the counts are the freshest thing the model reads.
+	lines.push(checklist(card, stage, regenerate));
 	return { system, user: lines.filter((l) => l !== '').join('\n') };
 }
