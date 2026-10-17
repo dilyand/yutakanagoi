@@ -424,3 +424,21 @@ export function toRawItems(
 		);
 	return [...flatten(parsed.items, false), ...flatten(parsed.spares, true)];
 }
+
+// --- Grading (the grade route) ---------------------------------------------
+
+/**
+ * One verdict per graded input, in order. `correct` is a plain boolean (no
+ * enum to drop); `checkGradeResults` turns anything malformed or missing into
+ * the neutral "couldn't check" result rather than guessing.
+ */
+export const GradeResult = z.object({
+	results: z.array(
+		z.object({
+			correct: z.boolean().describe('true only if the answer is acceptable for the task'),
+			feedback: z
+				.string()
+				.describe('one or two English sentences for the learner; Japanese in script, never romaji')
+		})
+	)
+});

@@ -205,7 +205,8 @@ grammar|contrast` (CHECK). `target_key` is the canonical resolved
     enforces that cap.
   - `target_practice_flags` — flag-button reports (`type`, `target_key`,
     `phase`, `item` jsonb — null for a flag on the card —, `reason`,
-    `note`). Read to tune generation prompts, not a per-item fix queue.
+    `note`). Read to tune generation prompts, not a per-item fix queue —
+    `npm run logs:flags [-- <limit>]` prints the newest rows.
     `reason` is deliberately **unconstrained** so the vocabulary can change
     while prompts are tuned without a migration; `type` keeps its CHECK.
   - `target_practice_usage` — per-user, per-**UTC**-day circuit-breaker

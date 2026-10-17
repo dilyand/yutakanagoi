@@ -6,9 +6,8 @@ import { verifyUserExists, UserNotFoundError } from '$lib/server/conjugation-aut
 import { checkRateLimit } from '$lib/server/rate-limit';
 import { requireUserId } from '$lib/server/require-session';
 import { generateStage } from '$lib/server/target-practice/generate';
-import { validateTargetInput } from '$lib/target-practice/input-validation';
+import { parseRequestCard } from '$lib/server/target-practice/request-card';
 import { TARGET_TYPES } from '$lib/target-practice/types';
-import { validateCard } from '$lib/target-practice/validate-card';
 
 // Worst case is one full stage call (50-70s) plus one smaller regeneration (40s),
 // with SDK retries off — see generate.ts, which exports the same figure
@@ -19,7 +18,6 @@ export const config = { maxDuration: 120 };
 
 const LIMIT = 12;
 const WINDOW_MS = 5 * 60 * 1000;
-const MAX_CARD_JSON = 8000;
 
 // The card round-trips through the client, so it is untrusted: bounded here and
 // re-validated with validateCard before it goes anywhere near a prompt.
@@ -43,13 +41,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress, locals }
 	if (!parsedBody.success) error(400, 'Invalid request body');
 	const { stage, type, card: rawCard, retry, avoid } = parsedBody.data;
 
-	if (JSON.stringify(rawCard).length > MAX_CARD_JSON) error(400, 'The card is too large.');
-	const checked = validateCard(rawCard, type);
-	if (checked.status !== 'ok') error(400, 'Invalid card');
-	const card = checked.card;
-	// The card's target must itself be valid Japanese input for its type.
-	const target = validateTargetInput(type, card.target);
-	if (!target.ok || target.language !== 'ja') error(400, 'Invalid card target');
+	const card = parseRequestCard(type, rawCard);
 
 	const supabase = createServiceClient();
 	try {
