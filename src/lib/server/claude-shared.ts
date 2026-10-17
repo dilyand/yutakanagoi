@@ -19,8 +19,12 @@ const DEFAULT_TIMEOUT_MS = 20_000;
  * `timeoutMs` defaults to 20s, which suits the drills' short grading calls.
  * Callers with a legitimately long call (target practice's generation stage 1
  * runs ~20s) must pass a larger value, or the SDK aborts them mid-response.
+ * `maxRetries` defaults to the SDK's (2); see the comment below.
  */
-export function createClient({ timeoutMs = DEFAULT_TIMEOUT_MS }: { timeoutMs?: number } = {}) {
+export function createClient({
+	timeoutMs = DEFAULT_TIMEOUT_MS,
+	maxRetries
+}: { timeoutMs?: number; maxRetries?: number } = {}) {
 	const apiKey = env.ANTHROPIC_API_KEY;
 	if (!apiKey) {
 		throw new Error('ANTHROPIC_API_KEY must be set.');
@@ -28,8 +32,15 @@ export function createClient({ timeoutMs = DEFAULT_TIMEOUT_MS }: { timeoutMs?: n
 	// A stuck request should fail fast rather than leave the drill UI's
 	// "Grading…" spinner hanging for the SDK's 10-minute default. The SDK's
 	// own default (maxRetries: 2) already retries transient 429/5xx errors,
-	// so no hand-rolled retry loop is needed on top of this.
-	return new Anthropic({ apiKey, timeout: timeoutMs });
+	// so no hand-rolled retry loop is needed on top of this. A caller with a hard
+	// total-duration budget (target practice's generation routes, bounded by the
+	// route's maxDuration) passes maxRetries: 0 — each SDK retry would otherwise
+	// repeat a full timeout — and retries at its own level instead.
+	return new Anthropic({
+		apiKey,
+		timeout: timeoutMs,
+		...(maxRetries === undefined ? {} : { maxRetries })
+	});
 }
 
 // Every mode interpolates learner- or word-list-supplied text into the

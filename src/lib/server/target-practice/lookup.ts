@@ -8,12 +8,12 @@ import { checkCardResult, validateCandidates } from '$lib/target-practice/lookup
 import type {
 	CandidatesResponse,
 	CardResponse,
-	ConfirmedTarget,
-	LimitOutcome
+	ConfirmedTarget
 } from '$lib/target-practice/lookup';
 import type { CardCheck } from '$lib/target-practice/validate-card';
 import type { TargetType } from '$lib/target-practice/types';
 import { UsageCapError, callClaude } from './claude-call';
+import { limitOutcome } from './limit-outcome';
 import { cardPrompt, candidatePrompt } from './prompts';
 import { CandidatesResult, cardResultSchemaFor, toModelCardResult } from './schemas';
 
@@ -31,19 +31,6 @@ const CARD_MAX_TOKENS = 2048;
 // ~10-12s typical for a card, so the default 20s leaves little room for a slow
 // call; the route's maxDuration (60s) is the outer bound.
 const CARD_TIMEOUT_MS = 25_000;
-
-function limitOutcome(e: UsageCapError): LimitOutcome {
-	const resetsAt = e.resetsAt.toISOString();
-	return {
-		status: 'limit',
-		reason: e.reason,
-		resetsAt,
-		message:
-			e.reason === 'disabled'
-				? 'Target practice is switched off right now.'
-				: `Daily lookup limit reached — it resets at ${resetsAt.slice(11, 16)} UTC.`
-	};
-}
 
 /** Maps a model/SDK failure to the shared 502, logging it so outages stay visible. */
 async function failLookup(

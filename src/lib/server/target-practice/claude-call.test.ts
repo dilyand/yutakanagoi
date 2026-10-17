@@ -90,6 +90,18 @@ describe('callClaude', () => {
 		expect(createClient).toHaveBeenCalledWith({ timeoutMs: 60_000 });
 	});
 
+	it('passes maxRetries through (0 is meaningful, not "unset")', async () => {
+		await callClaude({
+			supabase,
+			userId: 1,
+			kind: 'session',
+			timeoutMs: 50_000,
+			maxRetries: 0,
+			call: vi.fn().mockResolvedValue(response)
+		});
+		expect(createClient).toHaveBeenLastCalledWith({ timeoutMs: 50_000, maxRetries: 0 });
+	});
+
 	it('throws UsageCapError(cap_reached) without calling Claude when blocked', async () => {
 		reserveUsage.mockResolvedValue(false);
 		const call = vi.fn();

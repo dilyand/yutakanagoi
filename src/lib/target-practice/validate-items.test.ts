@@ -10,7 +10,7 @@ import {
 	wordKibishii
 } from './fixtures';
 import type { Fixture } from './fixtures';
-import type { Item, McOption } from './types';
+import type { Item, McOption, WordCard } from './types';
 
 type Loose = Record<string, unknown>;
 
@@ -124,10 +124,37 @@ describe('shape and phase', () => {
 });
 
 describe('language hygiene', () => {
-	it('keeps Japanese script out of the English instruction', () => {
+	it('keeps Japanese words and sentences out of the English instruction', () => {
+		for (const text of [
+			'Combine with かどうか.',
+			'Rewrite 友達が「来週、時間がありますか。」 as reported speech.',
+			'Replace 決める with the other verb.'
+		]) {
+			expect(dropReason(grammarKakadouka, 'g-x1', (i) => (i.instruction = text))).toMatch(
+				/^language: instruction/
+			);
+		}
+	});
+
+	it('lets short grammar labels through (な-adjective, て-form, だ)', () => {
+		for (const text of [
+			'Fill the blank; the な-adjective drops だ.',
+			'Use the て-form of the verb.',
+			'Put the ない-form here.'
+		]) {
+			expect(dropReason(grammarKakadouka, 'g-x1', (i) => (i.instruction = text))).toBeUndefined();
+		}
+	});
+
+	it('accepts a dialogue kana line with one speaker per line', () => {
 		expect(
-			dropReason(grammarKakadouka, 'g-x1', (i) => (i.instruction = 'Combine with かどうか.'))
-		).toMatch(/^language: instruction/);
+			dropReason(grammarKakadouka, 'g-u4', (i) => {
+				i.sentence =
+					'A: 明日のパーティー、来る？\nB: 仕事が終わるかどうか分からないから、まだ返事できない。';
+				i.kana =
+					'A: あしたのパーティー、くる？\nB: しごとがおわる〇〇わからないから、まだへんじできない。';
+			})
+		).toBeUndefined();
 	});
 
 	it('requires an English rationale and hint', () => {
@@ -253,6 +280,25 @@ describe('mc items', () => {
 		expect(dropReason(w, 'w-u1', (i) => (opts(i)[1].tag = 'other_sense'))).toMatch(
 			/needs a parameter/
 		);
+	});
+
+	it('does not demand an other_sense distractor from a one-sense Word (there is none to name)', () => {
+		const one = clone(wordKibishii);
+		one.card = { ...(one.card as WordCard), senses: [(one.card as WordCard).senses[0]] };
+		const item = one.items.find((i) => i.id === 'w-u1') as unknown as Loose;
+		item.coverage = 'sense:1';
+		item.options = [
+			{ text: 'He is strict with us', correct: true },
+			{ text: 'He is cheerful', correct: false, tag: 'opposite' },
+			{ text: 'He is late', correct: false, tag: 'context' }
+		];
+		expect(validateItems(one.card, [item]).dropped).toEqual([]);
+		// ...but a multi-sense Word still does.
+		expect(
+			dropReason(wordKibishii, 'w-u1', (i) =>
+				opts(i).forEach((o) => !o.correct && (o.tag = 'opposite'))
+			)
+		).toMatch(/^missing_required_tag/);
 	});
 
 	it('does not require tags outside Understand', () => {
@@ -477,6 +523,17 @@ describe('dedupe', () => {
 		});
 		expect(r.dropped).toEqual([
 			{ id: 'g-p1-copy', reason: expect.stringMatching(/^duplicate_sentence/) }
+		]);
+	});
+
+	it('drops items that repeat a sentence from an earlier round (avoidSentences)', () => {
+		const u1 = grammarKakadouka.items.find((i) => i.id === 'g-u1')!;
+		const r = validateItems(grammarKakadouka.card, clone(grammarKakadouka.items), {
+			// Normalization makes punctuation and spacing irrelevant.
+			avoidSentences: [`${u1.sentence!.replace('。', '')} `, 'ab']
+		});
+		expect(r.dropped).toEqual([
+			{ id: 'g-u1', reason: expect.stringMatching(/^duplicate_sentence.*earlier round/) }
 		]);
 	});
 

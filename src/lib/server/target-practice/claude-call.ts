@@ -55,16 +55,18 @@ type WithUsage = {
  * throws (SDK error, invalid structured output) records nothing: the
  * response, and its usage, never reached us.
  *
- * Pass `timeoutMs` above the 20s default for long generation calls.
+ * Pass `timeoutMs` above the 20s default for long generation calls, and
+ * `maxRetries: 0` where the caller has a hard total-duration budget.
  */
 export async function callClaude<T extends WithUsage>(opts: {
 	supabase: SupabaseClient;
 	userId: number;
 	kind: UsageKind;
 	timeoutMs?: number;
+	maxRetries?: number;
 	call: (client: Anthropic) => Promise<T>;
 }): Promise<T> {
-	const { supabase, userId, kind, timeoutMs, call } = opts;
+	const { supabase, userId, kind, timeoutMs, maxRetries, call } = opts;
 
 	if (!isTargetPracticeEnabled()) {
 		throw new UsageCapError('disabled', kind, nextUtcMidnight());
@@ -73,7 +75,7 @@ export async function callClaude<T extends WithUsage>(opts: {
 		throw new UsageCapError('cap_reached', kind, nextUtcMidnight());
 	}
 
-	const response = await call(createClient({ timeoutMs }));
+	const response = await call(createClient({ timeoutMs, maxRetries }));
 
 	const { usage } = response;
 	try {

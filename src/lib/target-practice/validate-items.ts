@@ -32,6 +32,11 @@ export interface ValidateOptions {
 	stage?: 1 | 2;
 	/** Already-validated items from the other stage, for cross-stage dedupe and coverage. */
 	priorItems?: Item[];
+	/**
+	 * Sentences from an earlier round ("Another round"): items repeating one are
+	 * dropped like any other duplicate sentence. Compared after normalization.
+	 */
+	avoidSentences?: string[];
 }
 
 export interface DroppedItem {
@@ -100,6 +105,9 @@ export function validateItems(
 	const seenIds = new Set(prior.map((i) => i.id));
 	const seenContent = new Set<string>([
 		...cardModelSentences(card).map(normalizeAnswer),
+		...(options.avoidSentences ?? [])
+			.map(normalizeAnswer)
+			.filter((k) => k.length >= MIN_DEDUPE_LENGTH),
 		...prior.flatMap(contentKeys)
 	]);
 	const valid: Item[] = [];
@@ -113,7 +121,8 @@ export function validateItems(
 		if (clash !== undefined) {
 			dropped.push({
 				id: item.id,
-				reason: 'duplicate_sentence: same sentence as an earlier item or a card model sentence'
+				reason:
+					'duplicate_sentence: same sentence as an earlier item, an earlier round or a card model sentence'
 			});
 			continue;
 		}
@@ -184,6 +193,25 @@ function shapeCheck(raw: unknown): Item | string {
 
 // --- Per-item rules --------------------------------------------------------
 
+/**
+ * The English `instruction` may not carry Japanese the learner has to read (it
+ * has no kana line, and naming the target would give it away) — but natural
+ * English grammar talk includes short labels: な-adjective, て-form, ない-form, だ.
+ * The first real model run (smoke test, 2026-10-17) dropped items for exactly
+ * that, so the rule is "no run of more than two Japanese characters", which
+ * lets those labels through and still stops a quoted word or sentence.
+ */
+export const MAX_INSTRUCTION_JAPANESE_RUN = 2;
+
+function longestJapaneseRun(text: string): number {
+	return Math.max(
+		0,
+		...(text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー]+/gu) ?? []).map(
+			(m) => m.length
+		)
+	);
+}
+
 function itemProblem(card: Card, item: Item, spec: PhaseSpec[], stage?: 1 | 2): string | null {
 	const phaseSpec = spec.find((p) => p.id === item.phase);
 	if (!phaseSpec) return `unknown_phase: ${item.phase} is not in the ${card.type} skeleton`;
@@ -197,8 +225,8 @@ function itemProblem(card: Card, item: Item, spec: PhaseSpec[], stage?: 1 | 2): 
 	if (item.kind !== 'tiles' && !item.instruction?.trim() && !item.sentence?.trim()) {
 		return 'no_prompt: needs an instruction or a sentence';
 	}
-	if (item.instruction && hasJapaneseScript(item.instruction)) {
-		return 'language: instruction contains Japanese script (put Japanese in `sentence`)';
+	if (item.instruction && longestJapaneseRun(item.instruction) > MAX_INSTRUCTION_JAPANESE_RUN) {
+		return 'language: instruction contains Japanese words (put Japanese in `sentence`)';
 	}
 	if (!hasLatinLetter(item.rationale)) return 'language: rationale must be written in English';
 	if (item.kind === 'typed' && !hasLatinLetter(item.hint))
@@ -234,7 +262,8 @@ function sentenceProblem(item: Item): string | null {
 		.split(TARGET_MASK)
 		.join('')
 		.replace(/(^|\s)[A-Z]\s*[:：]/g, '$1');
-	if (/[^ぁ-ゟァ-ヿ\p{P}\p{Z}\p{S}\p{Nd}＿]/u.test(stripped)) {
+	// \s: a dialogue is often written one speaker per line.
+	if (/[^ぁ-ゟァ-ヿ\p{P}\p{Z}\p{S}\p{Nd}＿\s]/u.test(stripped)) {
 		return 'kana: kana line contains something other than kana and punctuation';
 	}
 	const occurs = sentence.includes(item.targetSpan);
@@ -281,7 +310,10 @@ function mcProblem(card: Card, item: McItem): string | null {
 		}
 		if (isRequiredTag(card.type, o.tag)) hasRequired = true;
 	}
-	if (item.phase === 'understand' && !hasRequired) {
+	// A one-sense Word has no "other sense" to misapply, so the required tag
+	// cannot exist there; its distractors are context/opposite/unrelated.
+	const requiredTagPossible = !(card.type === 'word' && card.senses.length === 1);
+	if (item.phase === 'understand' && requiredTagPossible && !hasRequired) {
 		return `missing_required_tag: needs a valid-meaning-wrong-place distractor (${card.type})`;
 	}
 	return null;
@@ -372,7 +404,7 @@ function claudeProblem(item: ClaudeItem): string | null {
 
 // --- Coverage keys ---------------------------------------------------------
 
-function canonicalCoverage(key: string): string {
+export function canonicalCoverage(key: string): string {
 	return key.startsWith('reading:') ? `reading:${toHiragana(key.slice(8))}` : key;
 }
 
