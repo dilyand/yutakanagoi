@@ -321,7 +321,10 @@ function toRawItem(wire: Wire, id: string, spare: boolean): Record<string, unkno
 		};
 	}
 	if ('tiles' in wire) {
-		const tiles = wire.tiles as string[];
+		// A punctuation-only tile ("、") is dropped: answers are compared with
+		// punctuation stripped, so it can only make the item undroppable-looking
+		// ("a tile is empty after normalization") without changing what is accepted.
+		const tiles = (wire.tiles as string[]).filter((t) => normalizeAnswer(t) !== '');
 		// Every real model run produced a "tile" item with NO tiles for an
 		// English->Japanese translation (it picked the cheaper union member). The
 		// item itself — instruction plus accepted answers — is sound, so it is

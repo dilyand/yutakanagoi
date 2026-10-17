@@ -210,6 +210,28 @@ describe('shuffleTiles', () => {
 	});
 });
 
+describe('punctuation-only tiles', () => {
+	it('are dropped, and the item still validates', () => {
+		const [item] = toRawItems(2, 1, {
+			items: [
+				{
+					phase: 'produce',
+					instruction: 'Arrange the tiles to mean: I want to check whether this medicine works.',
+					targetSpan: 'かどうか',
+					rationale: 'x',
+					tiles: ['この薬が', '効く', 'かどうか', '、', '確かめたいです'],
+					accepted: ['この薬が効くかどうか、確かめたいです']
+				}
+			],
+			spares: []
+		});
+		expect([...(item.tiles as string[])].sort()).toEqual(
+			['この薬が', '効く', 'かどうか', '確かめたいです'].sort()
+		);
+		expect(validateItems(grammarKakadouka.card, [item], { stage: 2 }).dropped).toEqual([]);
+	});
+});
+
 describe('salvaging an empty tile item', () => {
 	const translation = {
 		phase: 'produce',
