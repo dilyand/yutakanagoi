@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import { TARGET_MASK, normalizeAnswer } from '$lib/target-practice/normalize';
+import { spareQuota } from '$lib/target-practice/generation';
+import type { GenerationStage, RegenerationRequest } from '$lib/target-practice/generation';
+import { PHASE_KINDS, skeletonFor } from '$lib/target-practice/skeleton';
 import { TARGET_TYPES, CONTRAST_KINDS } from '$lib/target-practice/types';
-import type { TargetType } from '$lib/target-practice/types';
+import type { Card, PhaseId, TargetType } from '$lib/target-practice/types';
 import type { ModelCardResult } from '$lib/target-practice/lookup';
 
 /**
@@ -138,19 +141,26 @@ export function toModelCardResult(parsed: {
  * structured-output limits (16 union-typed / 24 optional parameters) and to cut
  * what the model can get wrong:
  *
- * - The model never emits `id`, `kind` or `spare`. `toRawItems` assigns ids
- *   from the stage, attempt and array position (so the two parallel stages can
- *   never collide), derives the kind from which member of the union matched,
- *   and marks everything in `spares` as a spare.
+ * - One REQUIRED array per phase of the stage, built from the skeleton
+ *   (`{items: {understand: [...], sense: [...]}, spares: {...}}`). The first real
+ *   runs showed the model closing a flat `items` array after the first phase and
+ *   moving on to `spares`, so later phases went missing (most requests needed a
+ *   regeneration). With a key per phase the constrained decoder has to open every
+ *   array, and the per-item `phase` field (and the "mc item labelled use" slip)
+ *   disappears with it.
+ * - Which item shapes a phase takes follows PHASE_KINDS, so unions only remain
+ *   where a phase really allows two (Produce: typed | tiles; Grammar's Contrast:
+ *   mc | typed). Stage 1 has none.
+ * - The model never emits `id`, `kind`, `phase` or `spare`. `toRawItems` assigns
+ *   ids from the stage, attempt, phase and position (so the two parallel stages
+ *   can never collide), takes the phase from the key, derives the kind from which
+ *   union member matched, and marks everything under `spares` as a spare.
  * - No optional fields: an absent text field is "" and becomes `undefined` in
  *   `toRawItems`. A required-but-empty field (a missing `kana` on a sentence,
  *   say) still reaches validateItems and is dropped there with a reason.
- * - `phase`, `form` and tags are plain strings with the allowed values spelled
- *   out in `.describe()`; the transform would drop a `z.enum`, and validateItems
- *   is the real check.
- * - Stage 1 is all multiple choice (comprehension phases), so it has no kind
- *   union at all. Stage 2 has one 4-way union per array, distinguished by shape
- *   (`options` | `answer` | `tiles` | `expected`).
+ * - `form` and tags are plain strings with the allowed values spelled out in
+ *   `.describe()`; the transform would drop a `z.enum`, and validateItems is the
+ *   real check.
  */
 
 // A factory, not a shared instance: zod's JSON-schema output extracts a reused
@@ -165,7 +175,6 @@ const WireOption = z.object({
 });
 
 const WireMc = z.object({
-	phase: text().describe('the phase id this item belongs to'),
 	instruction: text().describe('English task wording, no Japanese script; empty string if none'),
 	sentence: text().describe('Japanese prompt sentence or dialogue; empty string if none'),
 	kana: text().describe('kana line of the sentence with the target masked; empty if no sentence'),
@@ -177,7 +186,6 @@ const WireMc = z.object({
 });
 
 const WireTyped = z.object({
-	phase: text().describe('the phase id this item belongs to'),
 	instruction: text().describe('English task wording, no Japanese script; empty string if none'),
 	sentence: text().describe(
 		'Japanese sentence with one ＿＿ blank for a cloze; empty for a free item'
@@ -194,7 +202,6 @@ const WireTyped = z.object({
 });
 
 const WireTiles = z.object({
-	phase: text().describe('the phase id this item belongs to'),
 	instruction: text().describe('English meaning of the sentence to build; no Japanese script'),
 	targetSpan: text().describe('the target exactly as it appears in the answer'),
 	rationale: text().describe('English explanation of the answer'),
@@ -205,7 +212,6 @@ const WireTiles = z.object({
 });
 
 const WireClaude = z.object({
-	phase: text().describe('the phase id this item belongs to'),
 	instruction: text().describe('English task wording, no Japanese script'),
 	sentence: text().describe('Japanese prompt sentence or dialogue; empty string if none'),
 	kana: text().describe('kana line of the sentence with the target masked; empty if no sentence'),
@@ -215,24 +221,56 @@ const WireClaude = z.object({
 	free: z.boolean().describe('true only for the "write your own sentence" item')
 });
 
-/** Stage 1: the comprehension phases. All multiple choice. */
-export const Stage1Result = z.object({
-	items: z.array(WireMc),
-	spares: z.array(WireMc)
-});
+/** What a parsed generation response looks like: wire items grouped by phase. */
+export interface WirePayload {
+	items: Record<string, object[]>;
+	spares?: Record<string, object[]>;
+}
 
-const Stage2Item = z.union([WireTyped, WireTiles, WireClaude, WireMc]);
+/** The item shapes a phase takes, from PHASE_KINDS. */
+function phaseItems(phase: PhaseId) {
+	const kinds = PHASE_KINDS[phase];
+	const member = (kind: (typeof kinds)[number]) =>
+		({ mc: WireMc, typed: WireTyped, tiles: WireTiles, claude: WireClaude })[kind];
+	const members = kinds.map(member);
+	return members.length === 1
+		? z.array(members[0])
+		: z.array(z.union(members as unknown as [z.ZodType, z.ZodType]));
+}
 
-/** Stage 2: Produce, Use and (Grammar) Contrast. */
-export const Stage2Result = z.object({
-	items: z.array(Stage2Item),
-	spares: z.array(Stage2Item)
-});
-
-export type GenerationStage = 1 | 2;
-
-export function generationSchemaFor(stage: GenerationStage) {
-	return stage === 1 ? Stage1Result : Stage2Result;
+/**
+ * The structured-output schema for one generation call: a required array per
+ * phase of `stage`, plus (unless this is a regeneration) a required array per
+ * phase that has a spare quota. A regeneration passes `regenerate` and gets only
+ * the phases it asked for, no spares.
+ */
+export function generationSchemaFor(
+	card: Card,
+	stage: GenerationStage,
+	regenerate?: RegenerationRequest[]
+): z.ZodType<WirePayload> {
+	const spec = skeletonFor(card).filter(
+		(p) => p.stage === stage && (!regenerate || regenerate.some((r) => r.phase === p.id))
+	);
+	const items = z.object(
+		Object.fromEntries(
+			spec.map((p) => {
+				const count = regenerate?.find((r) => r.phase === p.id)?.need ?? p.count;
+				return [p.id, phaseItems(p.id).describe(`the "${p.id}" items: ${count} of them`)];
+			})
+		)
+	);
+	const quota = regenerate ? [] : spareQuota(card, stage);
+	if (quota.length === 0) return z.object({ items }) as unknown as z.ZodType<WirePayload>;
+	const spares = z.object(
+		Object.fromEntries(
+			quota.map((q) => [
+				q.phase,
+				phaseItems(q.phase).describe(`${q.count} reserve "${q.phase}" items`)
+			])
+		)
+	);
+	return z.object({ items, spares }) as unknown as z.ZodType<WirePayload>;
 }
 
 type Wire = Record<string, unknown>;
@@ -298,10 +336,10 @@ export function shuffleTiles(tiles: string[], accepted: string[], seed: string):
 export const GENERIC_TRANSLATION_HINT =
 	'Write the whole sentence yourself, using the target and the meaning given.';
 
-function toRawItem(wire: Wire, id: string, spare: boolean): Record<string, unknown> {
+function toRawItem(wire: Wire, phase: string, id: string, spare: boolean): Record<string, unknown> {
 	const base = {
 		id,
-		phase: wire.phase,
+		phase,
 		...(spare ? { spare: true } : {}),
 		...present({ ...wire, kana: repairMask(wire.kana) }, ['instruction', 'sentence', 'kana']),
 		// Required fields stay as given: validateItems reports them if blank.
@@ -368,17 +406,21 @@ function toRawItem(wire: Wire, id: string, spare: boolean): Record<string, unkno
 
 /**
  * Flattens a parsed generation result into the `unknown[]` validateItems takes:
- * primaries first, then spares. Ids look like `s1a1-p0` / `s1a1-x0` (stage,
- * attempt — a regeneration is attempt 2 — primary or spare, array position).
+ * primaries first (in the schema's phase order), then spares. Ids look like
+ * `s1a1-understand0` / `s1a1-understandx0` (stage, attempt — a regeneration is
+ * attempt 2 — phase, primary or spare, position within the phase).
  */
 export function toRawItems(
 	stage: GenerationStage,
 	attempt: number,
-	parsed: { items: object[]; spares: object[] }
+	parsed: WirePayload
 ): Record<string, unknown>[] {
 	const prefix = `s${stage}a${attempt}`;
-	return [
-		...parsed.items.map((w, i) => toRawItem(w as Wire, `${prefix}-p${i}`, false)),
-		...parsed.spares.map((w, i) => toRawItem(w as Wire, `${prefix}-x${i}`, true))
-	];
+	const flatten = (byPhase: Record<string, object[]> | undefined, spare: boolean) =>
+		Object.entries(byPhase ?? {}).flatMap(([phase, wires]) =>
+			wires.map((w, i) =>
+				toRawItem(w as Wire, phase, `${prefix}-${phase}${spare ? 'x' : ''}${i}`, spare)
+			)
+		);
+	return [...flatten(parsed.items, false), ...flatten(parsed.spares, true)];
 }

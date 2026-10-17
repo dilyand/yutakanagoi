@@ -18,6 +18,7 @@ vi.mock('./claude-call', async (importOriginal) => ({
 import { UsageCapError } from './claude-call';
 import { generateStage } from './generate';
 import { wirePayload } from './wire-test-support';
+import type { RegenerationRequest } from '$lib/target-practice/generation';
 import { grammarKakadouka, wordKibishii } from '$lib/target-practice/fixtures';
 import type { Fixture } from '$lib/target-practice/fixtures';
 import { skeletonFor } from '$lib/target-practice/skeleton';
@@ -25,6 +26,19 @@ import type { Item } from '$lib/target-practice/types';
 
 const supabase = {} as SupabaseClient;
 const card = grammarKakadouka.card;
+
+// What the model parsed to: wire items under one key per phase of the stage.
+const s1 = (items: Item[], spares?: Item[]) => wirePayload(card, 1, items, spares);
+const s2 = (items: Item[], spares?: Item[]) => wirePayload(card, 2, items, spares);
+/** The payload for a regeneration that asked for `phases` (no spares key). */
+const regen = (items: Item[], ...phases: RegenerationRequest['phase'][]) =>
+	wirePayload(
+		card,
+		phases.some((p) => p === 'produce' || p === 'use' || p === 'contrast') ? 2 : 1,
+		items,
+		undefined,
+		phases.map((phase) => ({ phase, need: 1, coverage: [], reasons: [] }))
+	);
 
 const stageItems = (fx: Fixture, stage: 1 | 2) =>
 	fx.items.filter((i) => skeletonFor(fx.card).find((p) => p.id === i.phase)?.stage === stage);
@@ -58,12 +72,12 @@ beforeEach(() => {
 
 describe('generateStage: a clean stage', () => {
 	it('stage 1: opens a session, validates, records the target', async () => {
-		const parse = modelAnswers(wirePayload(stageItems(grammarKakadouka, 1)));
+		const parse = modelAnswers(s1(stageItems(grammarKakadouka, 1)));
 		const result = await run();
 
 		expect(result).toMatchObject({ status: 'ok', stage: 1, setIssues: [], regenerated: false });
 		if (result.status !== 'ok') throw new Error('unreachable');
-		expect(ids(result.items)).toEqual(['p0', 'p1', 'p2', 'p3']);
+		expect(ids(result.items)).toEqual(['understand0', 'understand1', 'understand2', 'understand3']);
 		expect(callClaudeMock).toHaveBeenCalledTimes(1);
 		expect(callClaudeMock).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -84,11 +98,11 @@ describe('generateStage: a clean stage', () => {
 	});
 
 	it('a retried stage 1 and every stage 2 only spend against the ceiling', async () => {
-		modelAnswers(wirePayload(stageItems(grammarKakadouka, 1)));
+		modelAnswers(s1(stageItems(grammarKakadouka, 1)));
 		await run({ retry: true });
 		expect(callClaudeMock).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'ceiling' }));
 
-		modelAnswers(wirePayload(stageItems(grammarKakadouka, 2)));
+		modelAnswers(s2(stageItems(grammarKakadouka, 2)));
 		await run({ stage: 2 });
 		expect(callClaudeMock).toHaveBeenLastCalledWith(
 			expect.objectContaining({ kind: 'ceiling', timeoutMs: 70_000 })
@@ -96,16 +110,16 @@ describe('generateStage: a clean stage', () => {
 	});
 
 	it('stage 2 does not touch the learner’s history', async () => {
-		modelAnswers(wirePayload(stageItems(grammarKakadouka, 2)));
+		modelAnswers(s2(stageItems(grammarKakadouka, 2)));
 		await run({ stage: 2 });
 		expect(recordPracticedTarget).not.toHaveBeenCalled();
 	});
 
 	it('puts the card, the avoid list and the stage in the prompt', async () => {
-		const parse = modelAnswers(wirePayload(stageItems(grammarKakadouka, 1)));
+		const parse = modelAnswers(s1(stageItems(grammarKakadouka, 1)));
 		await run({ avoid: ['昨日は雨でした。'] });
 		const args = parse.mock.calls[0][0];
-		expect(args.system).toContain('PHASES to write');
+		expect(args.system).toContain('PHASES — one key under "items"');
 		expect(args.messages[0].content).toContain(JSON.stringify(card));
 		expect(args.messages[0].content).toContain('昨日は雨でした。');
 	});
@@ -148,7 +162,7 @@ describe('generateStage: spares and regeneration', () => {
 	const understand = stageItems(grammarKakadouka, 1);
 
 	it('promotes a spare into a short phase without a second call', async () => {
-		modelAnswers(wirePayload(understand.slice(0, 3), understand.slice(3)));
+		modelAnswers(s1(understand.slice(0, 3), understand.slice(3)));
 		const result = await run();
 		if (result.status !== 'ok') throw new Error('unreachable');
 		expect(callClaudeMock).toHaveBeenCalledTimes(1);
@@ -159,29 +173,24 @@ describe('generateStage: spares and regeneration', () => {
 
 	it('keeps spares that are not needed as spares', async () => {
 		const stage2 = stageItems(grammarKakadouka, 2);
-		modelAnswers(
-			wirePayload(
-				stage2.filter((i) => !i.spare),
-				stage2.filter((i) => i.spare)
-			)
-		);
+		modelAnswers(s2(stage2));
 		const result = await run({ stage: 2 });
 		if (result.status !== 'ok') throw new Error('unreachable');
-		expect(result.items.filter((i) => i.spare).map((i) => i.id)).toEqual(['s2a1-x0']);
+		expect(result.items.filter((i) => i.spare).map((i) => i.id)).toEqual(['s2a1-producex0']);
 		expect(result.setIssues).toEqual([]);
 	});
 
 	it('refills a phase below its minimum with one smaller call, then records the target', async () => {
 		const parse = modelAnswers(
-			wirePayload(understand.slice(0, 1)), // 1 valid understand item: below the minimum of 2
-			wirePayload(understand.slice(1))
+			s1(understand.slice(0, 1)), // 1 valid understand item: below the minimum of 2
+			regen(understand.slice(1), 'understand')
 		);
 		const result = await run();
 		if (result.status !== 'ok') throw new Error('unreachable');
 
 		expect(result.regenerated).toBe(true);
 		expect(result.setIssues).toEqual([]);
-		expect(ids(result.items)).toEqual(['p0', 'p0', 'p1', 'p2']); // a1-p0, then a2-p0..p2
+		expect(ids(result.items)).toEqual(['understand0', 'understand0', 'understand1', 'understand2']); // a1 #0, then a2 #0..2
 		expect(callClaudeMock).toHaveBeenCalledTimes(2);
 		expect(callClaudeMock).toHaveBeenLastCalledWith(
 			expect.objectContaining({ kind: 'ceiling', timeoutMs: 40_000 })
@@ -197,8 +206,8 @@ describe('generateStage: spares and regeneration', () => {
 
 	it('regenerates when a phase is above the minimum but short of its target (2 of 4), in either stage', async () => {
 		const parse = modelAnswers(
-			wirePayload(understand.slice(0, 2)),
-			wirePayload(understand.slice(2))
+			s1(understand.slice(0, 2)),
+			regen(understand.slice(2), 'understand')
 		);
 		const result = await run();
 		if (result.status !== 'ok') throw new Error('unreachable');
@@ -209,21 +218,24 @@ describe('generateStage: spares and regeneration', () => {
 
 		const stage2 = stageItems(grammarKakadouka, 2).filter((i) => !i.spare);
 		const second = modelAnswers(
-			wirePayload(stage2.filter((i) => i.id !== 'g-p1' && i.id !== 'g-p2')),
-			wirePayload(stage2.filter((i) => i.id === 'g-p1' || i.id === 'g-p2'))
+			s2(stage2.filter((i) => i.id !== 'g-p1' && i.id !== 'g-p2')),
+			regen(
+				stage2.filter((i) => i.id === 'g-p1' || i.id === 'g-p2'),
+				'produce'
+			)
 		);
 		await run({ stage: 2 });
 		expect(second.mock.calls[1][0].messages[0].content).toContain('produce: 2 more items');
 	});
 
 	it('does not regenerate when spares fill the gap', async () => {
-		modelAnswers(wirePayload(understand.slice(0, 2), understand.slice(2)));
+		modelAnswers(s1(understand.slice(0, 2), understand.slice(2)));
 		await run();
 		expect(callClaudeMock).toHaveBeenCalledTimes(1);
 	});
 
 	it('regenerates at most once', async () => {
-		modelAnswers(wirePayload(understand.slice(0, 1)), wirePayload([]));
+		modelAnswers(s1(understand.slice(0, 1)), regen([], 'understand'));
 		const result = await run();
 		if (result.status !== 'ok') throw new Error('unreachable');
 		expect(callClaudeMock).toHaveBeenCalledTimes(2);
@@ -233,10 +245,7 @@ describe('generateStage: spares and regeneration', () => {
 	});
 
 	it('survives a failed regeneration: first result, issues reported, failure logged', async () => {
-		modelAnswers(
-			wirePayload(understand.slice(0, 1)),
-			new Anthropic.APIConnectionError({ message: 'boom' })
-		);
+		modelAnswers(s1(understand.slice(0, 1)), new Anthropic.APIConnectionError({ message: 'boom' }));
 		const result = await run();
 		if (result.status !== 'ok') throw new Error('unreachable');
 		expect(result.regenerated).toBe(false);
@@ -251,7 +260,7 @@ describe('generateStage: spares and regeneration', () => {
 
 	it('a cap hit during regeneration is not an error', async () => {
 		modelAnswers(
-			wirePayload(understand.slice(0, 1)),
+			s1(understand.slice(0, 1)),
 			new UsageCapError('cap_reached', 'ceiling', new Date())
 		);
 		const result = await run();
@@ -264,8 +273,8 @@ describe('generateStage: spares and regeneration', () => {
 	});
 
 	it('logs dropped items with their reasons', async () => {
-		const broken = { ...wirePayload(understand), items: wirePayload(understand).items.slice() };
-		(broken.items[3] as Record<string, unknown>).kana = '';
+		const broken = s1(understand, []);
+		(broken.items.understand[3] as Record<string, unknown>).kana = '';
 		modelAnswers(broken);
 		await run();
 		expect(logError).toHaveBeenCalledWith(
@@ -278,10 +287,10 @@ describe('generateStage: spares and regeneration', () => {
 				received: { understand: 4 },
 				dropped: [
 					{
-						id: 's1a1-p3',
+						id: 's1a1-understand3',
 						reason: expect.stringMatching(/^kana: sentence has no kana/),
 						// A truncated copy of what the model wrote, for prompt tuning.
-						item: expect.stringContaining('"id":"s1a1-p3"')
+						item: expect.stringContaining('"id":"s1a1-understand3"')
 					}
 				]
 			})
@@ -289,17 +298,17 @@ describe('generateStage: spares and regeneration', () => {
 	});
 
 	it('drops items repeating a sentence from an earlier round', async () => {
-		modelAnswers(wirePayload(understand));
+		modelAnswers(s1(understand));
 		const result = await run({ avoid: [understand[0].sentence!] });
 		if (result.status !== 'ok') throw new Error('unreachable');
-		expect(ids(result.items)).toEqual(['p1', 'p2', 'p3']);
+		expect(ids(result.items)).toEqual(['understand1', 'understand2', 'understand3']);
 	});
 });
 
 describe('generateStage: history is best-effort', () => {
 	it('logs a failed history write and still returns the session', async () => {
 		recordPracticedTarget.mockRejectedValueOnce(new Error('db down'));
-		modelAnswers(wirePayload(stageItems(grammarKakadouka, 1)));
+		modelAnswers(s1(stageItems(grammarKakadouka, 1)));
 		const result = await run();
 		expect(result.status).toBe('ok');
 		expect(logError).toHaveBeenCalledWith(
@@ -311,7 +320,7 @@ describe('generateStage: history is best-effort', () => {
 
 	it('uses the Word key (target|reading) for the log context', async () => {
 		recordPracticedTarget.mockRejectedValueOnce(new Error('db down'));
-		modelAnswers(wirePayload(stageItems(wordKibishii, 1)));
+		modelAnswers(wirePayload(wordKibishii.card, 1, stageItems(wordKibishii, 1)));
 		await generateStage(supabase, 7, {
 			stage: 1,
 			card: wordKibishii.card,

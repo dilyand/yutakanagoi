@@ -3,7 +3,7 @@ import { TYPE_TAGS, GENERIC_TAGS } from '$lib/target-practice/distractor-tags';
 import { spareQuota } from '$lib/target-practice/generation';
 import type { GenerationStage, RegenerationRequest } from '$lib/target-practice/generation';
 import { TARGET_MASK } from '$lib/target-practice/normalize';
-import { PHASE_KINDS, skeletonFor } from '$lib/target-practice/skeleton';
+import { skeletonFor } from '$lib/target-practice/skeleton';
 import { coverageUniverse } from '$lib/target-practice/validate-items';
 import type { Card, PhaseId, TargetType } from '$lib/target-practice/types';
 import { LEARNER_LEVEL } from './prompts';
@@ -32,8 +32,9 @@ const ROLE =
 
 const FIELD_RULES = [
 	'FIELDS.',
-	'- "phase" is exactly one of the phase ids listed under PHASES, and the item must have one of the ' +
-		'shapes allowed for that phase. A writing ("use") item is never multiple choice.',
+	'- Items are grouped by phase: each phase is its own key under "items" (and under "spares"), and ' +
+		'every item must be written for the phase it sits under. A writing ("use") item is never ' +
+		'multiple choice.',
 	'- "instruction" is English task wording. It may use short grammar labels of one or two ' +
 		'characters (な-adjective, て-form, ない-form, だ) but must NOT contain any Japanese word or ' +
 		'sentence, not even quoted, and never the target: refer to it as "the target pattern", "the ' +
@@ -168,37 +169,27 @@ const PHASE_NOTES: Record<PhaseId, string> = {
 	contrast: 'multiple choice or typed: tell the target from its neighbours'
 };
 
-/** What each phase's items look like on the wire (kinds are derived from which fields are present). */
-const KIND_SHAPE = {
-	mc: 'multiple choice ("options")',
-	typed: 'typed ("answer", "accepted")',
-	tiles: 'tiles ("tiles", "accepted")',
-	claude: 'writing ("expected", "free")'
-} as const;
-
 function phasesSection(card: Card, stage: GenerationStage, only?: RegenerationRequest[]): string {
 	const spec = skeletonFor(card).filter((p) => p.stage === stage);
-	const lines = ['PHASES to write (in this order):'];
+	const lines = ['PHASES — one key under "items" for each, every key filled, in this order:'];
 	for (const p of spec) {
 		const want = only?.find((r) => r.phase === p.id);
 		if (only && !want) continue;
-		lines.push(
-			`- "${p.id}": ${want ? want.need : p.count} items — ${PHASE_NOTES[p.id]} ` +
-				`[item shapes allowed: ${PHASE_KINDS[p.id].map((k) => KIND_SHAPE[k]).join(' or ')}]`
-		);
+		lines.push(`- "${p.id}": ${want ? want.need : p.count} items — ${PHASE_NOTES[p.id]}`);
 	}
 	if (!only) {
 		const quota = spareQuota(card, stage);
 		if (quota.length > 0) {
 			lines.push(
-				'SPARES go in "spares" (never in "items"): extra reserve items, held to exactly the ' +
-					'same rules as the others but different in content: ' +
+				'SPARES go under "spares", in the key of their phase (never under "items"): extra ' +
+					'reserve items, held to exactly the same rules as the others but different in ' +
+					'content: ' +
 					quota.map((q) => `${q.count} for "${q.phase}"`).join(', ') +
 					'.'
 			);
 		}
 	} else {
-		lines.push('Leave "spares" empty.');
+		lines.push('There is no "spares" key this time.');
 	}
 	return lines.join('\n');
 }
@@ -397,21 +388,21 @@ export interface GenerationPromptInput {
 }
 
 /**
- * The counts, restated last so they are the freshest thing the model reads: in
- * the first real runs Contrast stage 1 left out its whole Sort phase every time
- * while the same counts sat in the middle of the system prompt.
+ * The counts, restated last so they are the freshest thing the model reads. (On
+ * its own this did not stop the model closing `items` after the first phase —
+ * the per-phase keys in the schema do; this stays as a cheap second signal.)
  */
 function checklist(card: Card, stage: GenerationStage, regenerate?: RegenerationRequest[]): string {
 	if (regenerate) return '';
 	const spec = skeletonFor(card).filter((p) => p.stage === stage);
 	const spares = spareQuota(card, stage);
 	return (
-		'Write now, in "items": ' +
+		'Write now, under "items": ' +
 		spec.map((p) => `"${p.id}" × ${p.count}`).join(', ') +
 		(spares.length > 0
-			? '; and in "spares": ' + spares.map((q) => `"${q.phase}" × ${q.count}`).join(', ')
+			? '; and under "spares": ' + spares.map((q) => `"${q.phase}" × ${q.count}`).join(', ')
 			: '') +
-		'. Every phase listed must be present.'
+		'. Every phase key must be filled.'
 	);
 }
 

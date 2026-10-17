@@ -17,13 +17,13 @@ import {
 	CARD_RESULT_SCHEMAS,
 	CandidatesResult,
 	GENERIC_TRANSLATION_HINT,
-	Stage1Result,
-	Stage2Result,
+	generationSchemaFor,
 	shuffleTiles,
 	toModelCardResult,
 	toRawItems
 } from './schemas';
-import { toWire } from './wire-test-support';
+import { toWire, wirePayload } from './wire-test-support';
+import { spareQuota } from '$lib/target-practice/generation';
 
 // Anthropic's structured outputs accept a subset of JSON Schema (limits as of
 // writing: 16 union-typed parameters, 24 optional parameters). These tests
@@ -124,36 +124,121 @@ describe('card schemas vs the Appendix A fixtures', () => {
 });
 
 describe('generation schemas', () => {
-	it('stage 1 is a plain object: no unions, no optionals, nothing lost', () => {
-		const s = stats(Stage1Result);
-		expect(s.sent.type).toBe('object');
-		expect(s.unions).toBe(0);
-		expect(s.optionals).toBe(0);
-		expect(s.lostConstraints).toEqual([]);
+	const stagePhases = (card: Card, stage: 1 | 2) =>
+		skeletonFor(card)
+			.filter((p) => p.stage === stage)
+			.map((p) => p.id);
+	const jsonOf = (
+		card: Card,
+		stage: 1 | 2,
+		regenerate?: Parameters<typeof generationSchemaFor>[2]
+	) => zodOutputFormat(generationSchemaFor(card, stage, regenerate) as never).schema as Json;
+	const defs = (sent: Json) => (sent.$defs ?? {}) as Record<string, Json>;
+	/** Resolves the object that `items` / `spares` point at (zod may $ref it). */
+	const section = (sent: Json, key: 'items' | 'spares') => {
+		const prop = (sent.properties as Record<string, Json>)[key];
+		return (prop.$ref ? defs(sent)[String(prop.$ref).split('/').pop()!] : prop) as Json;
+	};
+
+	describe.each(allFixtures)('$name', ({ card }) => {
+		it('stage 1: a required array per phase, plain objects, no unions or optionals', () => {
+			const schema = generationSchemaFor(card, 1);
+			const s = stats(schema);
+			expect(s.sent.type).toBe('object');
+			expect(s.unions).toBe(0); // comprehension phases are all multiple choice
+			expect(s.optionals).toBe(0);
+			expect(s.lostConstraints).toEqual([]);
+			expect(section(s.sent, 'items').required).toEqual(stagePhases(card, 1));
+			expect(section(s.sent, 'spares').required).toEqual(spareQuota(card, 1).map((q) => q.phase));
+		});
+
+		it('stage 2: a required array per phase, few unions, no optionals', () => {
+			const s = stats(generationSchemaFor(card, 2));
+			expect(s.sent.type).toBe('object');
+			// Produce (typed | tiles) and, for Grammar, Contrast (mc | typed); zod emits
+			// each once as a $def that items and spares both reference. 4 is the
+			// worst case if the API counted every use — far under the 16 limit.
+			expect(s.unions).toBeLessThanOrEqual(4);
+			expect(s.optionals).toBe(0);
+			expect(s.lostConstraints).toEqual([]);
+			expect(section(s.sent, 'items').required).toEqual(stagePhases(card, 2));
+			expect(section(s.sent, 'spares').required).toEqual(spareQuota(card, 2).map((q) => q.phase));
+		});
 	});
 
-	it('stage 2 has one kind union (shared by items and spares) and no optionals', () => {
-		const s = stats(Stage2Result);
-		expect(s.sent.type).toBe('object');
-		// zod emits the union once as a $def that both arrays reference; even if the
-		// API counted each use, 2 is well under the 16 limit.
-		expect(s.unions).toBeLessThanOrEqual(2);
-		expect(s.optionals).toBe(0);
-		expect(s.lostConstraints).toEqual([]);
+	it('a regeneration schema has only the requested phases and no spares', () => {
+		const sent = jsonOf(grammarKakadouka.card, 2, [
+			{ phase: 'produce', need: 2, coverage: [], reasons: [] }
+		]);
+		expect(section(sent, 'items').required).toEqual(['produce']);
+		expect(sent.required).toEqual(['items']);
+	});
+
+	it('each phase takes only the item shapes PHASE_KINDS allows', () => {
+		const sent = jsonOf(grammarKakadouka.card, 2);
+		/** Every property name reachable from a schema node, following $refs. */
+		const fields = (node: unknown, seen = new Set<string>()): Set<string> => {
+			const out = new Set<string>();
+			const visit = (n: unknown) => {
+				if (Array.isArray(n)) return n.forEach(visit);
+				if (typeof n !== 'object' || n === null) return;
+				const o = n as Json;
+				if (typeof o.$ref === 'string' && !seen.has(o.$ref)) {
+					seen.add(o.$ref);
+					visit(defs(sent)[o.$ref.split('/').pop()!]);
+				}
+				if (o.properties) {
+					Object.keys(o.properties as object).forEach((k) => out.add(k));
+				}
+				Object.values(o).forEach(visit);
+			};
+			visit(node);
+			return out;
+		};
+		const phases = section(sent, 'items').properties as Record<string, Json>;
+		// use = writing items only; produce = typed | tiles; contrast = mc | typed.
+		expect(fields(phases.use)).toContain('expected');
+		for (const f of ['options', 'tiles', 'answer']) expect(fields(phases.use)).not.toContain(f);
+		expect(fields(phases.produce)).toContain('answer');
+		expect(fields(phases.produce)).toContain('tiles');
+		for (const f of ['options', 'expected']) expect(fields(phases.produce)).not.toContain(f);
+		expect(fields(phases.contrast)).toContain('options');
+		expect(fields(phases.contrast)).toContain('answer');
+		for (const f of ['tiles', 'expected']) expect(fields(phases.contrast)).not.toContain(f);
+		// Stage 1 (all multiple choice) has none of the other shapes anywhere.
+		const stage1 = JSON.stringify(jsonOf(wordKibishii.card, 1));
+		for (const field of ['"tiles"', '"answer"', '"expected"']) expect(stage1).not.toContain(field);
 	});
 
 	it('keeps every field description (a shared z.string() instance would drop them all)', () => {
 		const count = (schema: z.ZodType, needle: string) =>
 			JSON.stringify(zodOutputFormat(schema as never).schema).split(needle).length - 1;
-		// One `phase` per union member: 1 in stage 1, 4 in stage 2.
-		expect(count(Stage1Result, 'the phase id this item belongs to')).toBe(1);
-		expect(count(Stage2Result, 'the phase id this item belongs to')).toBe(4);
-		expect(count(Stage2Result, 'the distractor tag for a wrong option')).toBe(1);
+		const s1 = generationSchemaFor(wordKibishii.card, 1);
+		const s2 = generationSchemaFor(grammarKakadouka.card, 2);
+		expect(count(s1, 'English task wording')).toBeGreaterThanOrEqual(1);
+		expect(count(s2, 'the distractor tag for a wrong option')).toBe(1);
+		// The per-phase descriptions carry the counts.
+		expect(count(s1, 'the \\"understand\\" items: 4 of them')).toBe(1);
+		expect(count(s1, '1 reserve \\"sense\\" items')).toBe(1);
 	});
 
 	it('spells out enum-like values in descriptions instead of z.enum', () => {
-		const sent = JSON.stringify(zodOutputFormat(Stage2Result as never).schema);
+		const sent = JSON.stringify(
+			zodOutputFormat(generationSchemaFor(grammarKakadouka.card, 2) as never).schema
+		);
 		expect(sent).toContain('\\"cloze\\" (one blank in the sentence) or \\"free\\"');
+	});
+
+	it('refuses a payload that leaves a phase out (the failure this shape exists to prevent)', () => {
+		const schema = generationSchemaFor(wordKibishii.card, 1);
+		const full = wirePayload(
+			wordKibishii.card,
+			1,
+			wordKibishii.items.filter((i) => i.phase === 'understand' || i.phase === 'sense')
+		);
+		expect(schema.safeParse(full).success).toBe(true);
+		const { sense: _sense, ...withoutSense } = full.items as Record<string, unknown>; // eslint-disable-line @typescript-eslint/no-unused-vars
+		expect(schema.safeParse({ ...full, items: withoutSense }).success).toBe(false);
 	});
 });
 
@@ -192,17 +277,17 @@ describe('shuffleTiles', () => {
 
 	it('toRawItems shuffles a tile item written in answer order', () => {
 		const [item] = toRawItems(2, 1, {
-			items: [
-				{
-					phase: 'produce',
-					instruction: 'Arrange: I do not know whether it is useful.',
-					targetSpan: 'かどうか',
-					rationale: 'x',
-					tiles,
-					accepted
-				}
-			],
-			spares: []
+			items: {
+				produce: [
+					{
+						instruction: 'Arrange: I do not know whether it is useful.',
+						targetSpan: 'かどうか',
+						rationale: 'x',
+						tiles,
+						accepted
+					}
+				]
+			}
 		});
 		expect(item.tiles).not.toEqual(tiles);
 		const { dropped } = validateItems(grammarKakadouka.card, [item]);
@@ -213,17 +298,17 @@ describe('shuffleTiles', () => {
 describe('punctuation-only tiles', () => {
 	it('are dropped, and the item still validates', () => {
 		const [item] = toRawItems(2, 1, {
-			items: [
-				{
-					phase: 'produce',
-					instruction: 'Arrange the tiles to mean: I want to check whether this medicine works.',
-					targetSpan: 'かどうか',
-					rationale: 'x',
-					tiles: ['この薬が', '効く', 'かどうか', '、', '確かめたいです'],
-					accepted: ['この薬が効くかどうか、確かめたいです']
-				}
-			],
-			spares: []
+			items: {
+				produce: [
+					{
+						instruction: 'Arrange the tiles to mean: I want to check whether this medicine works.',
+						targetSpan: 'かどうか',
+						rationale: 'x',
+						tiles: ['この薬が', '効く', 'かどうか', '、', '確かめたいです'],
+						accepted: ['この薬が効くかどうか、確かめたいです']
+					}
+				]
+			}
 		});
 		expect([...(item.tiles as string[])].sort()).toEqual(
 			['この薬が', '効く', 'かどうか', '確かめたいです'].sort()
@@ -234,7 +319,6 @@ describe('punctuation-only tiles', () => {
 
 describe('salvaging an empty tile item', () => {
 	const translation = {
-		phase: 'produce',
 		instruction: 'Translate into Japanese: I will ask whether it is safe.',
 		targetSpan: 'かどうか',
 		rationale: '安全かどうか is the embedded question.',
@@ -243,7 +327,7 @@ describe('salvaging an empty tile item', () => {
 	};
 
 	it('becomes a free typed item with the first accepted answer as canonical', () => {
-		const [item] = toRawItems(2, 1, { items: [translation], spares: [] });
+		const [item] = toRawItems(2, 1, { items: { produce: [translation] } });
 		expect(item).toMatchObject({
 			kind: 'typed',
 			form: 'free',
@@ -256,7 +340,7 @@ describe('salvaging an empty tile item', () => {
 	});
 
 	it('leaves a tile item that has no tiles and no answers for the validator to drop', () => {
-		const [item] = toRawItems(2, 1, { items: [{ ...translation, accepted: [] }], spares: [] });
+		const [item] = toRawItems(2, 1, { items: { produce: [{ ...translation, accepted: [] }] } });
 		expect(item.kind).toBe('tiles');
 		expect(validateItems(grammarKakadouka.card, [item]).dropped[0].reason).toMatch(
 			/^shape|tiles_too_few/
@@ -271,11 +355,7 @@ describe('toRawItems', () => {
 		it.each([1, 2] as const)('round-trips stage %i through the wire format', (stage) => {
 			const spec = skeletonFor(card);
 			const mine = items.filter((i) => spec.find((p) => p.id === i.phase)?.stage === stage);
-			const schema = stage === 1 ? Stage1Result : Stage2Result;
-			const parsed = schema.parse({
-				items: mine.filter((i) => !i.spare).map(toWire),
-				spares: mine.filter((i) => i.spare).map(toWire)
-			});
+			const parsed = generationSchemaFor(card, stage).parse(wirePayload(card, stage, mine));
 
 			const raw = toRawItems(stage, 1, parsed);
 			const { valid, dropped } = validateItems(card, raw, { stage });
@@ -294,9 +374,8 @@ describe('toRawItems', () => {
 		});
 	});
 
-	it('assigns ids from stage, attempt and position, and marks spares', () => {
+	it('assigns ids from stage, attempt, phase and position, takes the phase from the key, marks spares', () => {
 		const mc = {
-			phase: 'understand',
 			instruction: 'x',
 			sentence: '',
 			kana: '',
@@ -306,27 +385,36 @@ describe('toRawItems', () => {
 			rationale: 'z',
 			options: []
 		};
-		const raw = toRawItems(2, 2, { items: [mc, mc], spares: [mc] });
-		expect(raw.map((r) => r.id)).toEqual(['s2a2-p0', 's2a2-p1', 's2a2-x0']);
-		expect(raw.map((r) => r.spare)).toEqual([undefined, undefined, true]);
+		const raw = toRawItems(1, 2, {
+			items: { understand: [mc, mc], sense: [mc] },
+			spares: { understand: [mc] }
+		});
+		expect(raw.map((r) => r.id)).toEqual([
+			's1a2-understand0',
+			's1a2-understand1',
+			's1a2-sense0',
+			's1a2-understandx0'
+		]);
+		expect(raw.map((r) => r.phase)).toEqual(['understand', 'understand', 'sense', 'understand']);
+		expect(raw.map((r) => r.spare)).toEqual([undefined, undefined, undefined, true]);
 	});
 
 	it('turns empty strings into absent fields but keeps required ones for the validator', () => {
 		const [item] = toRawItems(1, 1, {
-			items: [
-				{
-					phase: 'understand',
-					instruction: '',
-					sentence: '',
-					kana: '',
-					focus: '',
-					targetSpan: '',
-					coverage: '',
-					rationale: '',
-					options: [{ text: 'a', correct: true, tag: '' }]
-				}
-			],
-			spares: []
+			items: {
+				understand: [
+					{
+						instruction: '',
+						sentence: '',
+						kana: '',
+						focus: '',
+						targetSpan: '',
+						coverage: '',
+						rationale: '',
+						options: [{ text: 'a', correct: true, tag: '' }]
+					}
+				]
+			}
 		});
 		expect(item).not.toHaveProperty('instruction');
 		expect(item).not.toHaveProperty('kana');
@@ -339,7 +427,6 @@ describe('toRawItems', () => {
 
 	it('repairs a mask written as one or three 〇 but leaves everything else alone', () => {
 		const wire = (kana: string) => ({
-			phase: 'understand',
 			instruction: 'x',
 			sentence: 'a',
 			kana,
@@ -350,13 +437,14 @@ describe('toRawItems', () => {
 			options: []
 		});
 		const raw = toRawItems(1, 1, {
-			items: [
-				wire('かれは〇〇〇だ'),
-				wire('かれは〇だ'),
-				wire('かれは〇〇だ'),
-				wire('かれは＿＿だ')
-			],
-			spares: []
+			items: {
+				understand: [
+					wire('かれは〇〇〇だ'),
+					wire('かれは〇だ'),
+					wire('かれは〇〇だ'),
+					wire('かれは＿＿だ')
+				]
+			}
 		});
 		expect(raw.map((r) => r.kana)).toEqual([
 			'かれは〇〇だ',
@@ -368,8 +456,10 @@ describe('toRawItems', () => {
 
 	it('a sentence without a kana line is dropped by the validator, not hidden', () => {
 		const good = wordKibishii.items.find((i) => i.kind === 'mc' && i.sentence)!;
-		const wire = { ...toWire(good), kana: '' };
-		const parsed = Stage1Result.parse({ items: [wire], spares: [] });
+		const parsed = generationSchemaFor(wordKibishii.card, 1).parse({
+			items: { understand: [{ ...toWire(good), kana: '' }], sense: [] },
+			spares: { understand: [], sense: [] }
+		});
 		const { dropped } = validateItems(wordKibishii.card, toRawItems(1, 1, parsed), { stage: 1 });
 		expect(dropped[0].reason).toMatch(/^kana: sentence has no kana line/);
 	});

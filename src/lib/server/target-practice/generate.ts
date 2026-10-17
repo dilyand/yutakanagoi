@@ -86,7 +86,7 @@ async function runModel(opts: {
 	regenerate?: RegenerationRequest[];
 }): Promise<Record<string, unknown>[]> {
 	const { supabase, userId, kind, card, stage, attempt, avoid, regenerate } = opts;
-	const schema = generationSchemaFor(stage);
+	const schema = generationSchemaFor(card, stage, regenerate);
 	const { system, user } = generationPrompt({ card, stage, avoid, regenerate });
 	const response = await callClaude({
 		supabase,

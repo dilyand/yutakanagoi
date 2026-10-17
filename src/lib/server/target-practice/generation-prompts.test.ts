@@ -12,7 +12,7 @@ const stages = [1, 2] as const;
 describe.each(allFixtures)('$name', ({ card }) => {
 	it.each(stages)('stage %i lists exactly its own phases with the skeleton counts', (stage) => {
 		const { system } = generationPrompt({ card, stage });
-		const section = system.slice(system.indexOf('PHASES to write'));
+		const section = system.slice(system.indexOf('PHASES — one key'));
 		for (const p of skeletonFor(card)) {
 			const line = `- "${p.id}": ${p.count} items`;
 			if (p.stage === stage) expect(section).toContain(line);
@@ -62,13 +62,10 @@ describe('rules added after the first real model run', () => {
 		expect(rules()).toContain('never a neighbour pattern');
 	});
 
-	it('shows the allowed item shapes per phase, from PHASE_KINDS', () => {
+	it('describes phases as keys under "items", not as a field on each item', () => {
 		const system = rules(wordKibishii, 2);
-		expect(system).toContain('"use": 3 items');
-		expect(system).toMatch(
-			/"use": 3 items[^\n]*\[item shapes allowed: writing \("expected", "free"\)\]/
-		);
-		expect(system).toMatch(/"produce": 5 items[^\n]*typed[^\n]* or tiles/);
+		expect(system).toContain('each phase is its own key under "items"');
+		expect(system).not.toContain('"phase" is exactly one of');
 	});
 
 	it('tells a card without coverage keys to leave coverage empty', () => {
@@ -85,11 +82,11 @@ describe('the closing checklist', () => {
 				const { user } = generationPrompt({ card, stage });
 				const lines = user.split('\n');
 				const last = lines[lines.length - 1];
-				expect(last).toMatch(/^Write now, in "items": /);
+				expect(last).toMatch(/^Write now, under "items": /);
 				for (const p of skeletonFor(card).filter((p) => p.stage === stage)) {
 					expect(last).toContain(`"${p.id}" × ${p.count}`);
 				}
-				expect(last).toContain('in "spares":');
+				expect(last).toContain('under "spares":');
 			}
 		}
 	);
@@ -161,10 +158,10 @@ describe('regeneration and avoid', () => {
 				{ phase: 'sense', need: 1, coverage: ['sense:3'], reasons: ['nothing covers sense:3'] }
 			]
 		});
-		const section = system.slice(system.indexOf('PHASES to write'));
+		const section = system.slice(system.indexOf('PHASES — one key'));
 		expect(section).toContain('- "sense": 1 items');
 		expect(section).not.toContain('- "understand":');
-		expect(section).toContain('Leave "spares" empty');
+		expect(section).toContain('There is no "spares" key this time');
 		expect(user).toContain('- sense: 1 more item, covering sense:3 (nothing covers sense:3)');
 	});
 
