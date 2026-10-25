@@ -283,3 +283,20 @@ describe('rounds', () => {
 		expect(JSON.parse(JSON.stringify(s))).toEqual(s);
 	});
 });
+
+describe('feedback on a miss reaches the wrap-up', () => {
+	it('stores the grader feedback with the result and returns it with the missed item', () => {
+		let s = started(grammarKakadouka);
+		s = recordResult(s, {
+			outcome: 'wrong',
+			attempts: 1,
+			answer: 'x',
+			feedback: 'You dropped the どう.'
+		});
+		s = recordResult(s, correct);
+		const missed = missedItems(s);
+		expect(missed).toHaveLength(1);
+		expect(missed[0].feedback).toBe('You dropped the どう.');
+		expect(s.results[1].feedback).toBeUndefined();
+	});
+});

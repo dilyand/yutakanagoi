@@ -53,6 +53,8 @@ export interface ItemResult {
 	attempts: 1 | 2;
 	/** The learner's last answer (a label for tiles and mc), shown in the wrap-up. */
 	answer: string;
+	/** What was wrong with THIS answer (the grader's feedback, or an mc option's `why`), for the wrap-up. */
+	feedback?: string;
 	/** A re-queued spare: extra practice, not scored. */
 	extra: boolean;
 }
@@ -62,6 +64,7 @@ export interface ResultInput {
 	outcome: Outcome;
 	attempts: 1 | 2;
 	answer: string;
+	feedback?: string;
 }
 
 export type Position = 'not_started' | 'item' | 'boundary' | 'done';
@@ -426,6 +429,8 @@ export function phaseScores(state: SessionState): PhaseScore[] {
 export interface MissedItem {
 	item: Item;
 	answer: string;
+	/** What was wrong with the learner's answer, when something said so. */
+	feedback?: string;
 	extra: boolean;
 }
 
@@ -434,7 +439,7 @@ export function missedItems(state: SessionState): MissedItem[] {
 	return state.results.flatMap((r) => {
 		if (r.outcome !== 'wrong') return [];
 		const item = findItem(state, r.itemId);
-		return item ? [{ item, answer: r.answer, extra: r.extra }] : [];
+		return item ? [{ item, answer: r.answer, feedback: r.feedback, extra: r.extra }] : [];
 	});
 }
 

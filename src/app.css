@@ -925,6 +925,10 @@ input[type='password'] {
 	font-size: var(--font-size-small);
 }
 
+.tp-note--secondary {
+	color: var(--color-text-secondary);
+}
+
 .tp-options {
 	display: flex;
 	flex-direction: column;

@@ -51,8 +51,10 @@
 					{#if m.item.instruction}<p class="tp-instruction">{m.item.instruction}</p>{/if}
 					{#if m.item.sentence}<p class="tp-sentence"><JaText text={m.item.sentence} /></p>{/if}
 					{#if m.answer}<p class="subtitle">You answered: <JaText text={m.answer} /></p>{/if}
+					<!-- What was wrong with their answer first, then the key and why it works. -->
+					{#if m.feedback}<p class="tp-note">{m.feedback}</p>{/if}
 					{#if answerText(m.item)}<p>Answer: <JaText text={answerText(m.item)} /></p>{/if}
-					{#if m.item.rationale}<p class="tp-note">{m.item.rationale}</p>{/if}
+					{#if m.item.rationale}<p class="tp-note tp-note--secondary">{m.item.rationale}</p>{/if}
 				</li>
 			{/each}
 		</ul>

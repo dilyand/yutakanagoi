@@ -102,14 +102,25 @@
 		{/if}
 		{#if finished.outcome !== 'correct'}
 			<p class="revealed-answer">Answer: <JaText text={item.answer} /></p>
-			{#if finished.outcome === 'wrong'}<p class="tp-note">{item.rationale}</p>{/if}
+			{#if finished.outcome === 'wrong'}
+				<!-- What was wrong with THIS answer first; the generic rationale after. -->
+				{#if finished.feedback}<p class="tp-note">{finished.feedback}</p>{/if}
+				<p class="tp-note tp-note--secondary">{item.rationale}</p>
+			{/if}
 		{/if}
-		{#if finished.feedback}<p class="tp-note">{finished.feedback}</p>{/if}
+		{#if finished.outcome !== 'wrong' && finished.feedback}
+			<p class="tp-note">{finished.feedback}</p>
+		{/if}
 	</div>
 	<button
 		class="button-primary"
-		onclick={() => onDone({ outcome: finished!.outcome, attempts: attempt, answer: lastAnswer })}
-		>Next</button
+		onclick={() =>
+			onDone({
+				outcome: finished!.outcome,
+				attempts: attempt,
+				answer: lastAnswer,
+				feedback: finished!.outcome === 'wrong' ? finished!.feedback : undefined
+			})}>Next</button
 	>
 {:else}
 	<button class="button-primary" onclick={submit} disabled={checking || answer.trim() === ''}>

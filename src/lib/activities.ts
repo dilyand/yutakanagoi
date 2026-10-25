@@ -16,14 +16,14 @@ export const ACTIVITIES: ActivityDescriptor[] = [
 		description: 'Practice verb, adjective, and copula conjugation patterns.'
 	},
 	{
+		id: 'target-practice',
+		label: 'Target practice drill',
+		description: 'Name one grammar pattern or word and drill it in a short generated session.'
+	},
+	{
 		id: 'shadowing-drill',
 		label: 'Shadowing drill',
 		description: 'Listen to real Japanese speech and repeat it back.'
-	},
-	{
-		id: 'target-practice',
-		label: 'Target practice',
-		description: 'Name one grammar pattern or word and drill it in a short generated session.'
 	}
 ];
 

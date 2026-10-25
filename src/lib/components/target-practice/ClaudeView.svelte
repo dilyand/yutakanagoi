@@ -89,8 +89,13 @@
 	</div>
 	<button
 		class="button-primary"
-		onclick={() => onDone({ outcome: finished!.outcome, attempts: 1, answer: submitted })}
-		>Next</button
+		onclick={() =>
+			onDone({
+				outcome: finished!.outcome,
+				attempts: 1,
+				answer: submitted,
+				feedback: finished!.outcome === 'wrong' ? finished!.feedback : undefined
+			})}>Next</button
 	>
 {:else}
 	<button class="button-primary" onclick={submit} disabled={checking || answer.trim() === ''}>

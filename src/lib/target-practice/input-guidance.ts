@@ -27,7 +27,7 @@ export const GUIDANCE: Record<TargetType, TypeGuidance> = {
 		label: 'Grammar pattern',
 		blurb: 'A pattern with a slot you fill in.',
 		placeholder: '〜かどうか',
-		note: 'A pattern with a slot you fill in: write it in Japanese (〜てしまう) or describe it in English (“the more, the more”). Fixed text is a set phrase; a single word is a Word.',
+		note: 'A pattern with a slot you fill in: write it in Japanese (〜てしまう) or describe it in English (“the more, the more”).',
 		chips: ['〜かどうか', '〜てしまう', '〜ことになる', 'the more, the more']
 	},
 	word: {
