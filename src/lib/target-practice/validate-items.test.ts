@@ -233,9 +233,9 @@ describe('mc items', () => {
 	});
 
 	it('needs distinct options', () => {
-		expect(
-			dropReason(g, 'g-c1', (i) => (opts(i)[0].text = '行っても、行かなくても、同じだ。'))
-		).toMatch(/^mc_duplicate_options/);
+		expect(dropReason(g, 'g-c1', (i) => (opts(i)[0].text = opts(i)[1].text))).toMatch(
+			/^mc_duplicate_options/
+		);
 	});
 
 	it('needs exactly one correct option', () => {
@@ -332,7 +332,7 @@ describe('typed items', () => {
 		).toMatch(/0 blanks/);
 		// The original A1 C2 packed two clozes into one item.
 		expect(
-			dropReason(g, 'g-c2', (i) => {
+			dropReason(g, 'g-p1', (i) => {
 				i.sentence = '雨が＿＿、試合は行われる。 雨が＿＿、まだ分からない。';
 				i.kana = 'あめが＿＿、しあいはおこなわれる。 あめが＿＿、まだわからない。';
 			})
@@ -350,9 +350,14 @@ describe('typed items', () => {
 	});
 
 	it('requires each accepted answer to fill the blank cleanly', () => {
-		expect(dropReason(g, 'g-c2', (i) => (i.accepted = ['降るかどうか', '降るかどうか、']))).toMatch(
-			/^cloze_unclean_fill.*doubled punctuation/
-		);
+		expect(
+			dropReason(g, 'g-p1', (i) => {
+				i.sentence = '雨が＿＿、まだ分からない。';
+				i.kana = 'あめが＿＿、まだわからない。';
+				i.answer = '降るかどうか';
+				i.accepted = ['降るかどうか', '降るかどうか、'];
+			})
+		).toMatch(/^cloze_unclean_fill.*doubled punctuation/);
 		expect(dropReason(g, 'g-p1', (i) => (i.accepted = ['かどうか', '（かどうか']))).toMatch(
 			/^cloze_unclean_fill.*unbalanced/
 		);

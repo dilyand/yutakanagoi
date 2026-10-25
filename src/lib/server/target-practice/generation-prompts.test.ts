@@ -233,3 +233,23 @@ describe('rules added after the first Preview test run', () => {
 		expect(system).toContain('"faster"');
 	});
 });
+
+describe('Grammar Contrast is "spot the error"', () => {
+	it('asks for four sentences, one faulty (the correct: true option), and no sentence field', () => {
+		const { system } = generationPrompt({ card: grammarKakadouka.card, stage: 2 });
+		expect(system).toContain('"spot the error" items');
+		expect(system).toContain('the option with correct: true');
+		expect(system).toContain('CORRECT sentences');
+		expect(system).toContain('Use a different kind of error in each of the three items');
+	});
+
+	it('allows only multiple choice in the phase, and the fixture items are spot-the-error', () => {
+		const contrast = grammarKakadouka.items.filter((i) => i.phase === 'contrast');
+		expect(contrast).toHaveLength(3);
+		for (const item of contrast) {
+			expect(item.kind).toBe('mc');
+			expect(item.kind === 'mc' && item.options).toHaveLength(4);
+			expect(item.kind === 'mc' && item.options.filter((o) => o.correct)).toHaveLength(1);
+		}
+	});
+});

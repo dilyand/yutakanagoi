@@ -82,5 +82,6 @@ export const PHASE_KINDS: Record<PhaseId, ReadonlyArray<'mc' | 'typed' | 'tiles'
 	sort: ['mc'],
 	produce: ['typed', 'tiles'],
 	use: ['claude'],
-	contrast: ['mc', 'typed']
+	// Grammar's Contrast phase is "spot the error": four sentences, one misuses the target.
+	contrast: ['mc']
 };

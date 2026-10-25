@@ -325,11 +325,21 @@ const STAGE_2_RECIPE: Record<TargetType, (card: Card) => string> = {
 			'GRAMMAR — USE (4): three guided writing items (combine two sentences with the pattern; turn ' +
 				'a quoted question into reported speech; reply to a friend in a situation), then the ' +
 				'final free "write your own sentence" item.',
-			'GRAMMAR — CONTRAST (3): tell the target apart from the neighbours on the card. Use "mc" ' +
-				'items (a meaning that one of two patterns expresses; a register question) and a typed ' +
-				'cloze where only the target fits. The target pattern itself must appear among every ' +
-				"item's options (even when it is the wrong one) or in its answer. Wrong options carry misread_similar_pattern, " +
-				'context, opposite or unrelated tags.'
+			'GRAMMAR — CONTRAST (3): "spot the error" items that tell the target apart from the neighbours ' +
+				'on the card. Each is an mc item with NO "sentence": the English "instruction" asks which ONE of ' +
+				'the sentences misuses the target pattern (e.g. "One of these sentences misuses the target ' +
+				'pattern. Which one has the error?"), and the 4 options are Japanese sentences. Exactly one ' +
+				'option is faulty — it is the option with correct: true, because it is the right answer to ' +
+				'"which one has the error?" — and the other three are natural, CORRECT sentences (the target ' +
+				'used correctly, or a neighbour pattern used correctly). The faulty sentence contains the ' +
+				'target and makes ONE realistic learner error: the target where a neighbour belongs (the ' +
+				'neighbour\'s meaning, e.g. "regardless of whether"), a wrong attachment (だ left before it, a ' +
+				'wrong form or tense in front of it), or a dropped part. Use a different kind of error in ' +
+				'each of the three items. "rationale" names the error and gives the corrected sentence in ' +
+				'Japanese. The three sound options are the wrong options for this item: give each the tag ' +
+				'context (or misread_similar_pattern when it is a neighbour pattern used correctly) and a ' +
+				'"why" that begins "Correct:" and says why that sentence is fine. Do not put the faulty ' +
+				'sentence first.'
 		].join('\n'),
 	word: (card) =>
 		card.type === 'word' && card.senses.length === 1

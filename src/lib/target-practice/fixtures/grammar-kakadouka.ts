@@ -215,40 +215,83 @@ export const grammarKakadouka: Fixture = {
 			},
 			[]
 		),
-		// Contrast (3)
+		// Contrast (3): spot the error. The option marked right is the faulty sentence (the
+		// answer to "which one has the error?"); the other three are sound sentences.
 		mc(
 			'g-c1',
 			'contrast',
 			{
-				instruction: 'Which one means "it makes no difference whether I go"?',
+				instruction: 'One of these sentences misuses the target pattern. Which one has the error?',
 				targetSpan: 'かどうか',
 				rationale:
-					'行っても行かなくても is "regardless of going or not"; 行くかどうか is "whether to go".'
+					'雨が降るかどうか、試合は行われる。 says the match is held "whether it rains" — かどうか introduces something unknown. "Regardless of rain" is 雨が降っても降らなくても、試合は行われる。'
 			},
-			[wrong('行くかどうか決めていない', ONE_PATTERN), right('行っても行かなくても同じだ')]
+			[
+				right('雨が降るかどうか、試合は行われる。'),
+				wrong(
+					'雨が降るかどうか、まだ分からない。',
+					'context',
+					'Correct: かどうか introduces the unknown.'
+				),
+				wrong(
+					'雨が降っても降らなくても、試合は行われる。',
+					ONE_PATTERN,
+					'Correct: this is the "regardless" pattern.'
+				),
+				wrong(
+					'雨が降るかどうか、天気予報を確認した。',
+					'context',
+					'Correct: he checked whether it would rain.'
+				)
+			]
 		),
-		typed('g-c2', 'contrast', {
-			form: 'cloze',
-			instruction: 'It is not yet known whether it will rain. Fill the blank.',
-			sentence: '雨が＿＿、まだ分からない。',
-			cue: '（降る）',
-			kana: 'あめが＿＿、まだわからない。',
-			targetSpan: 'かどうか',
-			answer: '降るかどうか',
-			accepted: ['降るかどうか'],
-			hint: 'The rain is unknown, not irrelevant — so which pattern?',
-			rationale:
-				'"Not yet known whether" is かどうか; 降っても降らなくても would mean "rain or shine".'
-		}),
+		mc(
+			'g-c2',
+			'contrast',
+			{
+				instruction: 'One of these sentences misuses the target pattern. Which one has the error?',
+				targetSpan: 'かどうか',
+				rationale:
+					'After a noun or な-adjective the だ is dropped: 本当かどうか, not 本当だかどうか.'
+			},
+			[
+				right('この話が本当だかどうか、確かめたい。'),
+				wrong(
+					'この話が本当かどうか、確かめたい。',
+					'context',
+					'Correct: だ is dropped before かどうか.'
+				),
+				wrong(
+					'新しい店が安いかどうか、調べてみる。',
+					'context',
+					'Correct: い-adjective, plain form.'
+				),
+				wrong('彼が元気かどうか、心配です。', 'context', 'Correct: な-adjective, だ dropped.')
+			]
+		),
 		mc(
 			'g-c3',
 			'contrast',
 			{
-				instruction: 'Which sounds more at home in a legal contract?',
+				instruction: 'One of these sentences misuses the target pattern. Which one has the error?',
 				targetSpan: 'かどうか',
-				rationale: 'か否か is the formal, written equivalent of かどうか.'
+				rationale:
+					'The pattern needs か before どうか: 彼が来たかどうか. 彼が来たどうか is not a sentence.'
 			},
-			[wrong('かどうか', 'context'), right('か否か')]
+			[
+				right('彼が来たどうか、知りたい。'),
+				wrong('彼が来たかどうか、知りたい。', 'context', 'Correct: past plain form + かどうか.'),
+				wrong(
+					'行くか行かないか、まだ決めていない。',
+					ONE_PATTERN,
+					'Correct: the か〜か pattern for two named options.'
+				),
+				wrong(
+					'来週のテストが難しいかどうか、先生に聞いた。',
+					'context',
+					'Correct: embedded yes/no question.'
+				)
+			]
 		)
 	]
 };

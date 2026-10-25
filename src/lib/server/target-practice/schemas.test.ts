@@ -197,15 +197,16 @@ describe('generation schemas', () => {
 			return out;
 		};
 		const phases = section(sent, 'items').properties as Record<string, Json>;
-		// use = writing items only; produce = typed | tiles; contrast = mc | typed.
+		// use = writing items only; produce = typed | tiles; contrast = mc only (spot the error).
 		expect(fields(phases.use)).toContain('expected');
 		for (const f of ['options', 'tiles', 'answer']) expect(fields(phases.use)).not.toContain(f);
 		expect(fields(phases.produce)).toContain('answer');
 		expect(fields(phases.produce)).toContain('tiles');
 		for (const f of ['options', 'expected']) expect(fields(phases.produce)).not.toContain(f);
 		expect(fields(phases.contrast)).toContain('options');
-		expect(fields(phases.contrast)).toContain('answer');
-		for (const f of ['tiles', 'expected']) expect(fields(phases.contrast)).not.toContain(f);
+		for (const f of ['answer', 'tiles', 'expected']) {
+			expect(fields(phases.contrast)).not.toContain(f);
+		}
 		// Stage 1 (all multiple choice) has none of the other shapes anywhere.
 		const stage1 = JSON.stringify(jsonOf(wordKibishii.card, 1));
 		for (const field of ['"tiles"', '"answer"', '"expected"']) expect(stage1).not.toContain(field);

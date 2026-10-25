@@ -23,8 +23,12 @@ type Rest<T> = Pick<T, Common & keyof T> &
 	>;
 
 export const right = (text: string): McOption => ({ text, correct: true });
-export const wrong = (text: string, tag?: string): McOption =>
-	tag === undefined ? { text, correct: false } : { text, correct: false, tag };
+export const wrong = (text: string, tag?: string, why?: string): McOption => ({
+	text,
+	correct: false,
+	...(tag === undefined ? {} : { tag }),
+	...(why === undefined ? {} : { why })
+});
 
 export function mc(id: string, phase: PhaseId, fields: Rest<McItem>, options: McOption[]): McItem {
 	return { id, phase, kind: 'mc', ...fields, options };
