@@ -58,6 +58,7 @@ describe('gradePrompt', () => {
 		expect(system).toContain('written by a different model and can be incomplete or wrong');
 		expect(system).toContain('"faster" needs 早く or 速く');
 		expect(system).toContain('never a reason to reject');
+		expect(system).toContain('Never call a word "redundant"');
 	});
 
 	it('only includes the rules for the modes present', () => {

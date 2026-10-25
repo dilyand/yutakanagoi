@@ -69,7 +69,7 @@ const MC_RULES = [
 	'- 2 to 4 options, all different, exactly ONE with correct: true.',
 	'- Every wrong option has a "tag" from the list under TAGS; the correct option has tag "". A ' +
 		'wrong option must be plainly wrong to a learner who knows the target, not merely worse.',
-	'- Every wrong option also has a "why": ONE short English sentence saying what is wrong with that ' +
+	'- Every wrong option also has a "why": ONE short English sentence of AT MOST 12 WORDS saying what is wrong with that ' +
 		'option for THIS item — what it would mean, or what a learner who picks it has misread — ' +
 		'quoting the Japanese where needed. It is shown to the learner who picks it, so it must speak ' +
 		'to that mistake, not repeat why the right answer is right. The correct option has why "".',

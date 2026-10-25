@@ -225,6 +225,7 @@ describe('rules added after the first Preview test run', () => {
 		const { system } = generationPrompt({ card: wordKibishii.card, stage: 1 });
 		expect(system).toContain('Every wrong option also has a "why"');
 		expect(system).toContain('not repeat why the right answer is right');
+		expect(system).toContain('AT MOST 12 WORDS');
 	});
 
 	it("requires a translation item's key to carry every element of its English", () => {

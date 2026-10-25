@@ -174,7 +174,7 @@ const WireOption = z.object({
 	correct: z.boolean(),
 	tag: text().describe('the distractor tag for a wrong option; empty string on the correct option'),
 	why: text().describe(
-		'a wrong option only: one short English sentence on what is wrong with THIS option for this item (what it would mean or what it misreads; quote the Japanese); empty string on the correct option'
+		'a wrong option only: one short English sentence of at most 12 words on what is wrong with THIS option for this item (what it would mean or what it misreads); empty string on the correct option'
 	)
 });
 

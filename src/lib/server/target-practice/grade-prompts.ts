@@ -33,7 +33,8 @@ const ANCHOR_RULES =
 	'"faster" needs 早く or 速く even when the examples leave it out). Reject only when you are ' +
 	'confident the answer is wrong for a reason you can state and check against the task; a matter of ' +
 	'style or politeness alone is never a reason to reject — accept it and mention the preference. ' +
-	'Do not call a word "redundant" or "odd" unless the sentence is complete and natural without it.';
+	'Never call a word "redundant", "unnecessary" or "odd", and add no style remarks to an answer you ' +
+	'accept: comment only on actual errors (an accepted answer gets one sentence on why it works).';
 
 const TYPED_RULES =
 	'TYPED items: the learner typed an answer that did NOT exactly match the accepted answers. ' +
