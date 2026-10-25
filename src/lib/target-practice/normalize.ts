@@ -3,9 +3,6 @@
  * client-side answer grading. Pure.
  */
 
-/** Placeholder the generator puts in the kana line where the target was. */
-export const TARGET_MASK = '〇〇';
-
 /** A cloze blank: one or more fullwidth underscores. Match on RAW text — NFKC turns ＿ into _. */
 const BLANK_PATTERN = /＿+/g;
 

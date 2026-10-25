@@ -1,6 +1,5 @@
 import { parseTag, isRequiredTag, tagProblem } from './distractor-tags';
 import {
-	TARGET_MASK,
 	countBlanks,
 	fillBlank,
 	hasJapaneseScript,
@@ -158,10 +157,11 @@ function shapeCheck(raw: unknown): Item | string {
 						isRec(o) &&
 						nonEmpty(o.text) &&
 						typeof o.correct === 'boolean' &&
-						(o.tag === undefined || nonEmpty(o.tag))
+						(o.tag === undefined || nonEmpty(o.tag)) &&
+						(o.why === undefined || nonEmpty(o.why))
 				)
 			) {
-				return 'shape: options must be {text, correct, tag?} objects';
+				return 'shape: options must be {text, correct, tag?, why?} objects';
 			}
 			break;
 		case 'typed':
@@ -258,20 +258,14 @@ function sentenceProblem(item: Item): string | null {
 	if (!hasJapaneseScript(sentence)) return 'language: sentence contains no Japanese';
 	if (!item.kana || item.kana.trim() === '') return 'kana: sentence has no kana line';
 
-	const stripped = item.kana
-		.split(TARGET_MASK)
-		.join('')
-		.replace(/(^|\s)[A-Z]\s*[:：]/g, '$1');
+	// The kana line is the WHOLE sentence in hiragana (the learner taps it to see how a
+	// chunk is read), so it carries no placeholder: a leftover 〇 is not kana and is
+	// rejected here. Speaker labels (A: B:) and cloze blanks (＿) are copied as they are.
+	const stripped = item.kana.replace(/(^|\s)[A-Z]\s*[:：]/g, '$1');
 	// \s: a dialogue is often written one speaker per line.
 	if (/[^ぁ-ゟァ-ヿ\p{P}\p{Z}\p{S}\p{Nd}＿\s]/u.test(stripped)) {
 		return 'kana: kana line contains something other than kana and punctuation';
 	}
-	const occurs = sentence.includes(item.targetSpan);
-	const masked = item.kana.includes(TARGET_MASK);
-	if (occurs && !masked)
-		return `kana: target appears in the sentence but ${TARGET_MASK} is missing from the kana line`;
-	if (!occurs && masked)
-		return `kana: ${TARGET_MASK} is in the kana line but the target is not in the sentence`;
 	return null;
 }
 

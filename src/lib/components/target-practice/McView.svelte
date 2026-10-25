@@ -35,7 +35,12 @@
 		</div>
 	{:else}
 		<div class="feedback-card feedback-card--incorrect">
-			<span class="feedback-card__icon" aria-hidden="true">✕</span>{item.rationale}
+			<span class="feedback-card__icon" aria-hidden="true">✕</span>
+			<!-- What is wrong with the option they picked first; why the key is right after. -->
+			{#if item.options[chosen].why}
+				<p class="tp-note">{item.options[chosen].why}</p>
+			{/if}
+			<p class="tp-note" class:tp-note--secondary={!!item.options[chosen].why}>{item.rationale}</p>
 		</div>
 	{/if}
 	<button
@@ -44,7 +49,8 @@
 			onDone({
 				outcome: right ? 'correct' : 'wrong',
 				attempts: 1,
-				answer: item.options[chosen!].text
+				answer: item.options[chosen!].text,
+				feedback: right ? undefined : item.options[chosen!].why
 			})}>Next</button
 	>
 {/if}

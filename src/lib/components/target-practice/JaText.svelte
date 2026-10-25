@@ -3,7 +3,7 @@
 
 	// ALL Japanese text in target practice renders through this component (design
 	// doc §6), so the later tokenizer / ruby upgrade only changes this file and
-	// the data shape behind it. `kana` is the masked reading line a prompt
+	// the data shape behind it. `kana` is the full reading line a prompt
 	// sentence carries, shown on tap; `\n` (dialogue: one speaker per line) is
 	// rendered as a line break.
 	let { text, kana = '', focus = '' }: { text: string; kana?: string; focus?: string } = $props();

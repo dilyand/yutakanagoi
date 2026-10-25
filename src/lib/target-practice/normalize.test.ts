@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-	TARGET_MASK,
 	countBlanks,
 	fillBlank,
 	hasJapaneseScript,
@@ -20,9 +19,8 @@ describe('normalizeAnswer', () => {
 		expect(normalizeAnswer('ｶｲ')).toBe(normalizeAnswer('カイ'));
 	});
 
-	it('keeps the long-vowel mark and the target mask', () => {
+	it('keeps the long-vowel mark', () => {
 		expect(normalizeAnswer('ラーメン')).toBe('ラーメン');
-		expect(normalizeAnswer(`あ${TARGET_MASK}い`)).toBe(`あ${TARGET_MASK}い`);
 	});
 
 	it('does not fold hiragana, katakana or kanji into each other', () => {

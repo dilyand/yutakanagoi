@@ -19,6 +19,22 @@ const ROLE =
 	'learner in Japanese; use Japanese script only to quote or correct their words, never romaji. ' +
 	'Comment only on words the learner actually wrote: do not mention a particle or word that is not in their answer.';
 
+// Found in the first Preview test run: a correct translation (早く話せば話すほど for "The
+// faster you talk, the more …") was rejected as "redundant" because the model anchored on
+// the item writer's accepted answer, which had left "faster" out — and a near-identical
+// construction was accepted two items later. So the grader is told to judge against the
+// TASK first, that the examples can be wrong or incomplete, and not to reject on style.
+const ANCHOR_RULES =
+	'The accepted / example answers were written by a different model and can be incomplete or ' +
+	'wrong. First decide what the TASK requires — read its English wording and any Japanese sentence, ' +
+	'and list the elements of the meaning that must come across (adverbs and degree words such as ' +
+	'"faster", tense, who does what). Judge the learner against that, and only then compare with the ' +
+	"examples. Never reject an answer for including a word the task's English asks for (an English " +
+	'"faster" needs 早く or 速く even when the examples leave it out). Reject only when you are ' +
+	'confident the answer is wrong for a reason you can state and check against the task; a matter of ' +
+	'style or politeness alone is never a reason to reject — accept it and mention the preference. ' +
+	'Do not call a word "redundant" or "odd" unless the sentence is complete and natural without it.';
+
 const TYPED_RULES =
 	'TYPED items: the learner typed an answer that did NOT exactly match the accepted answers. ' +
 	'Decide whether it is nevertheless a correct answer to the task: same meaning, grammatical, natural, ' +
@@ -40,6 +56,7 @@ export function gradePrompt(card: Card, inputs: GradeInput[]): { system: string;
 	const modes = new Set(inputs.map((i) => i.mode));
 	const system = [
 		ROLE,
+		ANCHOR_RULES,
 		...(modes.has('typed') ? [TYPED_RULES] : []),
 		...(modes.has('use') ? [USE_RULES] : []),
 		NO_ROMAJI_NOTE,

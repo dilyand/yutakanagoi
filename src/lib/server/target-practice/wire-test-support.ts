@@ -22,7 +22,12 @@ export function toWire(item: Item): Record<string, unknown> {
 				...common,
 				focus: item.focus ?? '',
 				coverage: item.coverage ?? '',
-				options: item.options.map((o) => ({ text: o.text, correct: o.correct, tag: o.tag ?? '' }))
+				options: item.options.map((o) => ({
+					text: o.text,
+					correct: o.correct,
+					tag: o.tag ?? '',
+					why: o.why ?? ''
+				}))
 			};
 		case 'typed':
 			return {

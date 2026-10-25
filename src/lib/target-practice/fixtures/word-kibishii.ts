@@ -38,7 +38,7 @@ export const wordKibishii: Fixture = {
 			{
 				instruction: 'What does this mean?',
 				sentence: '母は私の成績にとても厳しい。',
-				kana: 'ははわたしのせいせきにとても〇〇。',
+				kana: 'ははわたしのせいせきにとてもきびしい。',
 				targetSpan: '厳しい',
 				coverage: 'sense:1',
 				rationale: 'A person who is 厳しい about something is strict about it.'
@@ -55,7 +55,7 @@ export const wordKibishii: Fixture = {
 			{
 				instruction: 'What does this mean?',
 				sentence: '厳しい寒さの中、彼らは山を登り続けた。',
-				kana: '〇〇さむさのなか、かれらはやまをのぼりつづけた。',
+				kana: 'きびしいさむさのなか、かれらはやまをのぼりつづけた。',
 				targetSpan: '厳しい',
 				coverage: 'sense:2',
 				rationale: '厳しい寒さ is bitter, severe cold — the harsh sense.'
@@ -73,7 +73,7 @@ export const wordKibishii: Fixture = {
 			{
 				instruction: 'What does B mean?',
 				sentence: 'A: 来週までに終わりそう？ B: うーん、ちょっと厳しいかな。',
-				kana: 'A: らいしゅうまでにおわりそう？ B: うーん、ちょっと〇〇かな。',
+				kana: 'A: らいしゅうまでにおわりそう？ B: うーん、ちょっときびしいかな。',
 				targetSpan: '厳しい',
 				coverage: 'sense:3',
 				rationale: 'ちょっと厳しい about a deadline means it looks unlikely to work out.'
@@ -91,7 +91,7 @@ export const wordKibishii: Fixture = {
 			{
 				instruction: 'Which option uses the target word in the same sense as the sentence below?',
 				sentence: '来月は予定が詰まっていて、参加は厳しい。',
-				kana: 'らいげつはよていがつまっていて、さんかは〇〇。',
+				kana: 'らいげつはよていがつまっていて、さんかはきびしい。',
 				targetSpan: '厳しい',
 				coverage: 'sense:3',
 				rationale:
@@ -110,7 +110,7 @@ export const wordKibishii: Fixture = {
 			{
 				instruction: 'Which sense of the target word is used here?',
 				sentence: '厳しい校則のせいで、髪を染められない。',
-				kana: '〇〇こうそくのせいで、かみをそめられない。',
+				kana: 'きびしいこうそくのせいで、かみをそめられない。',
 				targetSpan: '厳しい',
 				coverage: 'sense:1',
 				rationale: 'School rules are strict.'
@@ -123,7 +123,7 @@ export const wordKibishii: Fixture = {
 			{
 				instruction: 'Which sense of the target word is used here?',
 				sentence: '今年の冬は例年より厳しかった。',
-				kana: 'ことしのふゆはれいねんより〇〇。',
+				kana: 'ことしのふゆはれいねんよりきびしかった。',
 				targetSpan: '厳しかった',
 				coverage: 'sense:2',
 				rationale: 'A winter that is 厳しい is harsh.'
@@ -136,7 +136,7 @@ export const wordKibishii: Fixture = {
 			{
 				instruction: 'Which sense of the target word is used here?',
 				sentence: '今の成績だと、第一志望は厳しいね。',
-				kana: 'いまのせいせきだと、だいいちしぼうは〇〇ね。',
+				kana: 'いまのせいせきだと、だいいちしぼうはきびしいね。',
 				targetSpan: '厳しい',
 				coverage: 'sense:3',
 				rationale: 'A first-choice school that is 厳しい is a long shot.'

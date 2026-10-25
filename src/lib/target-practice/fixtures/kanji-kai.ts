@@ -42,7 +42,7 @@ export const kanjiKai: Fixture = {
 			{
 				instruction: 'What does this mean?',
 				sentence: '問題が解決した。',
-				kana: 'もんだいが〇〇けつした。',
+				kana: 'もんだいがかいけつした。',
 				targetSpan: '解',
 				rationale: '解決 is resolution: the problem was resolved.'
 			},
@@ -58,7 +58,7 @@ export const kanjiKai: Fixture = {
 			{
 				instruction: 'What did the teacher do?',
 				sentence: '先生が試験の問題を解説してくれた。',
-				kana: 'せんせいがしけんのもんだいを〇〇せつしてくれた。',
+				kana: 'せんせいがしけんのもんだいをかいせつしてくれた。',
 				targetSpan: '解',
 				rationale: '解説 is explanation: the teacher went through the questions.'
 			},
@@ -74,7 +74,7 @@ export const kanjiKai: Fixture = {
 			{
 				instruction: 'What happened to the people?',
 				sentence: '集まった人たちは、警察の指示で解散した。',
-				kana: 'あつまったひとたちは、けいさつのしじで〇〇さんした。',
+				kana: 'あつまったひとたちは、けいさつのしじでかいさんした。',
 				targetSpan: '解',
 				rationale: '解散 is breaking up: the crowd dispersed.'
 			},
@@ -91,7 +91,7 @@ export const kanjiKai: Fixture = {
 				instruction:
 					'What did the speaker do? (This compound is not on the card — work it out from the kanji.)',
 				sentence: '携帯電話を解約した。',
-				kana: 'けいたいでんわを〇〇やくした。',
+				kana: 'けいたいでんわをかいやくした。',
 				targetSpan: '解',
 				rationale: '解 (undo) + 約 (contract): to cancel a contract.'
 			},
@@ -108,7 +108,7 @@ export const kanjiKai: Fixture = {
 			{
 				instruction: 'How is the highlighted kanji read?',
 				sentence: '問題を解く。',
-				kana: 'もんだいを〇〇く。',
+				kana: 'もんだいをとく。',
 				focus: '解',
 				targetSpan: '解',
 				coverage: 'reading:と',
@@ -122,7 +122,7 @@ export const kanjiKai: Fixture = {
 			{
 				instruction: 'How is the highlighted kanji read?',
 				sentence: '事件が解決した。',
-				kana: 'じけんが〇〇けつした。',
+				kana: 'じけんがかいけつした。',
 				focus: '解',
 				targetSpan: '解',
 				coverage: 'reading:かい',
@@ -136,7 +136,7 @@ export const kanjiKai: Fixture = {
 			{
 				instruction: 'How is the highlighted kanji read?',
 				sentence: '解熱剤を飲んだ。',
-				kana: '〇〇ねつざいをのんだ。',
+				kana: 'げねつざいをのんだ。',
 				focus: '解',
 				targetSpan: '解',
 				coverage: 'reading:げ',
@@ -149,7 +149,7 @@ export const kanjiKai: Fixture = {
 			form: 'free',
 			instruction: 'Type the reading, in hiragana, of the highlighted word.',
 			sentence: '彼の気持ちを理解する。',
-			kana: 'かれのきもちをり〇〇する。',
+			kana: 'かれのきもちをりかいする。',
 			focus: '理解',
 			targetSpan: '解',
 			answer: 'りかい',

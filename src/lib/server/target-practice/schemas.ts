@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { TARGET_MASK, normalizeAnswer } from '$lib/target-practice/normalize';
+import { normalizeAnswer } from '$lib/target-practice/normalize';
 import { spareQuota } from '$lib/target-practice/generation';
 import type { GenerationStage, RegenerationRequest } from '$lib/target-practice/generation';
 import { PHASE_KINDS, skeletonFor } from '$lib/target-practice/skeleton';
@@ -172,13 +172,18 @@ const text = () => z.string();
 const WireOption = z.object({
 	text: text(),
 	correct: z.boolean(),
-	tag: text().describe('the distractor tag for a wrong option; empty string on the correct option')
+	tag: text().describe('the distractor tag for a wrong option; empty string on the correct option'),
+	why: text().describe(
+		'a wrong option only: one short English sentence on what is wrong with THIS option for this item (what it would mean or what it misreads; quote the Japanese); empty string on the correct option'
+	)
 });
 
 const WireMc = z.object({
 	instruction: text().describe('English task wording, no Japanese script; empty string if none'),
 	sentence: text().describe('Japanese prompt sentence or dialogue; empty string if none'),
-	kana: text().describe('kana line of the sentence with the target masked; empty if no sentence'),
+	kana: text().describe(
+		'the whole sentence written in hiragana (katakana words stay katakana), no kanji, no placeholders; empty if no sentence'
+	),
 	focus: text().describe('substring of the sentence to highlight; empty string if none'),
 	targetSpan: text().describe('the target exactly as it appears in this item'),
 	coverage: text().describe('coverage key (sense:<id>, side:a|b, reading:<kana>), or empty string'),
@@ -191,7 +196,9 @@ const WireTyped = z.object({
 	sentence: text().describe(
 		'Japanese sentence with one ＿＿ blank for a cloze; empty for a free item'
 	),
-	kana: text().describe('kana line of the sentence with the target masked; empty if no sentence'),
+	kana: text().describe(
+		'the whole sentence written in hiragana (katakana words stay katakana), no kanji, no placeholders; empty if no sentence'
+	),
 	focus: text().describe('substring of the sentence to highlight; empty string if none'),
 	cue: text().describe('short cue such as （来る）; empty string if none'),
 	targetSpan: text().describe('the target exactly as it appears in this item'),
@@ -215,7 +222,9 @@ const WireTiles = z.object({
 const WireClaude = z.object({
 	instruction: text().describe('English task wording, no Japanese script'),
 	sentence: text().describe('Japanese prompt sentence or dialogue; empty string if none'),
-	kana: text().describe('kana line of the sentence with the target masked; empty if no sentence'),
+	kana: text().describe(
+		'the whole sentence written in hiragana (katakana words stay katakana), no kanji, no placeholders; empty if no sentence'
+	),
 	targetSpan: text().describe('the target as it would appear in a good answer'),
 	rationale: text().describe('English explanation of what a good answer does'),
 	expected: z.array(text()).describe('exemplar Japanese answers; empty for a free-writing item'),
@@ -284,15 +293,6 @@ function present(source: Wire, keys: string[]): Wire {
 		if (typeof v === 'string' && v.trim() !== '') out[key] = v;
 	}
 	return out;
-}
-
-/**
- * The model sometimes writes the mask as 〇〇〇 or 〇. The mask is exactly
- * TARGET_MASK, so a run of 〇 is normalised to it — a harmless repair, unlike
- * guessing where a missing or misplaced mask should have gone.
- */
-function repairMask(kana: unknown): unknown {
-	return typeof kana === 'string' ? kana.replace(/〇+/g, TARGET_MASK) : kana;
 }
 
 const LONG_JAPANESE_RUN = new RegExp(
@@ -374,7 +374,6 @@ function toRawItem(wire: Wire, phase: string, id: string, spare: boolean): Recor
 		...present(
 			{
 				...wire,
-				kana: repairMask(wire.kana),
 				instruction: repairInstruction(wire.instruction, wire.sentence)
 			},
 			['instruction', 'sentence', 'kana']
@@ -391,7 +390,8 @@ function toRawItem(wire: Wire, phase: string, id: string, spare: boolean): Recor
 			options: (wire.options as Wire[]).map((o) => ({
 				text: o.text,
 				correct: o.correct,
-				...present(o, ['tag'])
+				// "Why it is wrong" belongs to wrong options only; a note on the key is dropped.
+				...present(o, o.correct === true ? ['tag'] : ['tag', 'why'])
 			}))
 		};
 	}

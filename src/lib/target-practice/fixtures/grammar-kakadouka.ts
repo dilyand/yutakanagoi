@@ -34,7 +34,7 @@ export const grammarKakadouka: Fixture = {
 			{
 				instruction: 'What does this sentence mean?',
 				sentence: '彼が来るかどうか、まだ分かりません。',
-				kana: 'かれがくる〇〇、まだわかりません。',
+				kana: 'かれがくるかどうか、まだわかりません。',
 				targetSpan: 'かどうか',
 				rationale:
 					'かどうか embeds a yes/no question: "whether he is coming". It is not "regardless of".'
@@ -52,7 +52,7 @@ export const grammarKakadouka: Fixture = {
 			{
 				instruction: 'What is everyone wondering?',
 				sentence: '先生が来週の試験を延期するかどうか、みんな知りたがっている。',
-				kana: 'せんせいがらいしゅうのしけんをえんきする〇〇、みんなしりたがっている。',
+				kana: 'せんせいがらいしゅうのしけんをえんきするかどうか、みんなしりたがっている。',
 				targetSpan: 'かどうか',
 				rationale:
 					'みんな知りたがっている is about the yes/no question "will the teacher postpone it?".'
@@ -86,7 +86,7 @@ export const grammarKakadouka: Fixture = {
 				instruction: "Why can't B answer yet?",
 				sentence:
 					'A: 明日のパーティー、来る？ B: 仕事が終わるかどうか分からないから、まだ返事できない。',
-				kana: 'A: あしたのパーティー、くる？ B: しごとがおわる〇〇わからないから、まだへんじできない。',
+				kana: 'A: あしたのパーティー、くる？ B: しごとがおわるかどうかわからないから、まだへんじできない。',
 				targetSpan: 'かどうか',
 				rationale: 'B does not know yet whether work will be finished, so the answer has to wait.'
 			},
@@ -125,7 +125,7 @@ export const grammarKakadouka: Fixture = {
 			instruction: 'Fill the blank with the right form of the verb.',
 			sentence: '彼が昨日学校に＿＿かどうか、覚えていない。',
 			cue: '（来る）',
-			kana: 'かれがきのうがっこうに＿＿〇〇、おぼえていない。',
+			kana: 'かれがきのうがっこうに＿＿かどうか、おぼえていない。',
 			targetSpan: 'かどうか',
 			answer: '来た',
 			accepted: ['来た', 'きた'],

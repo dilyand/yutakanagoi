@@ -152,7 +152,7 @@ describe('language hygiene', () => {
 				i.sentence =
 					'A: 明日のパーティー、来る？\nB: 仕事が終わるかどうか分からないから、まだ返事できない。';
 				i.kana =
-					'A: あしたのパーティー、くる？\nB: しごとがおわる〇〇わからないから、まだへんじできない。';
+					'A: あしたのパーティー、くる？\nB: しごとがおわるかどうかわからないから、まだへんじできない。';
 			})
 		).toBeUndefined();
 	});
@@ -190,19 +190,20 @@ describe('kana line', () => {
 	});
 
 	it('allows only kana and punctuation', () => {
-		expect(dropReason(g, 'g-u1', (i) => (i.kana = '彼が来る〇〇、まだ分かりません。'))).toMatch(
+		expect(dropReason(g, 'g-u1', (i) => (i.kana = '彼が来るかどうか、まだ分かりません。'))).toMatch(
 			/^kana: kana line contains something other/
 		);
-		expect(dropReason(g, 'g-u1', (i) => (i.kana = 'kare ga 〇〇'))).toMatch(/^kana:/);
+		expect(dropReason(g, 'g-u1', (i) => (i.kana = 'kare ga kuru'))).toMatch(/^kana:/);
 	});
 
-	it('requires the mask when the target occurs, and forbids it when it does not', () => {
+	it('is the whole sentence: a leftover 〇〇 placeholder is not kana and is rejected', () => {
+		expect(dropReason(g, 'g-u1', (i) => (i.kana = 'かれがくる〇〇、まだわかりません。'))).toMatch(
+			/^kana: kana line contains something other/
+		);
+		// The full reading, target included, is what a valid item carries.
 		expect(
 			dropReason(g, 'g-u1', (i) => (i.kana = 'かれがくるかどうか、まだわかりません。'))
-		).toMatch(/〇〇 is missing/);
-		expect(dropReason(g, 'g-p1', (i) => (i.kana = 'あしたはあめがふる〇〇わからない。'))).toMatch(
-			/target is not in the sentence/
-		);
+		).toBeUndefined();
 	});
 
 	it('accepts A/B speaker labels and cloze blanks in the kana line', () => {
@@ -326,7 +327,7 @@ describe('typed items', () => {
 		expect(
 			dropReason(g, 'g-p2', (i) => {
 				i.sentence = 'この情報は本当かどうか確かめたい。';
-				i.kana = 'このじょうほうはほんとう〇〇たしかめたい。';
+				i.kana = 'このじょうほうはほんとうかどうかたしかめたい。';
 			})
 		).toMatch(/0 blanks/);
 		// The original A1 C2 packed two clozes into one item.
@@ -361,7 +362,7 @@ describe('typed items', () => {
 		expect(
 			dropReason(g, 'g-p1', (i) => {
 				i.sentence = '明日は雨が降る＿＿分からない。かどうか';
-				i.kana = 'あしたはあめがふる＿＿わからない。〇〇';
+				i.kana = 'あしたはあめがふる＿＿わからない。かどうか';
 			})
 		).toMatch(/^answer_in_prompt/);
 	});
@@ -508,7 +509,7 @@ describe('dedupe', () => {
 		expect(
 			dropReason(grammarKakadouka, 'g-u1', (i) => {
 				i.sentence = '彼が結婚しているかどうか、誰も知らない。';
-				i.kana = 'かれがけっこんしている〇〇、だれもしらない。';
+				i.kana = 'かれがけっこんしているかどうか、だれもしらない。';
 			})
 		).toMatch(/^duplicate_sentence/);
 	});

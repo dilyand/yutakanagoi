@@ -140,6 +140,12 @@ export interface McOption {
 	text: string;
 	correct: boolean;
 	tag?: DistractorTag;
+	/**
+	 * Wrong options only: what is wrong with THIS option for this item (what it would mean,
+	 * or what it misreads). Shown when the learner picks it, so a miss is explained, not just
+	 * the key. Optional: older stored items and the fixtures don't have it.
+	 */
+	why?: string;
 }
 
 interface ItemBase {
@@ -151,7 +157,7 @@ interface ItemBase {
 	instruction?: string;
 	/** Japanese prompt sentence or dialogue; `＿＿` marks a cloze blank. Requires `kana`. */
 	sentence?: string;
-	/** Kana reading of `sentence` with the target span masked as TARGET_MASK. */
+	/** The whole of `sentence` written in hiragana (katakana words stay katakana); shown on tap. */
 	kana?: string;
 	/** Substring of `sentence` to highlight ("the bold part"). */
 	focus?: string;

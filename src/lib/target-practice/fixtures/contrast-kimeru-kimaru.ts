@@ -38,7 +38,7 @@ export const contrastKimeruKimaru: Fixture = {
 			{
 				instruction: 'What does this mean?',
 				sentence: '来月の旅行の行き先が決まった。',
-				kana: 'らいげつのりょこうのいきさきが〇〇。',
+				kana: 'らいげつのりょこうのいきさきがきまった。',
 				targetSpan: '決まった',
 				coverage: 'side:b',
 				rationale: '行き先が決まった: the destination is settled; nobody is in focus.'
@@ -55,7 +55,7 @@ export const contrastKimeruKimaru: Fixture = {
 			{
 				instruction: 'Who made the decision?',
 				sentence: '田中さんは、来年留学することに決めたそうだ。',
-				kana: 'たなかさんは、らいねんりゅうがくすることに〇〇そうだ。',
+				kana: 'たなかさんは、らいねんりゅうがくすることにきめたそうだ。',
 				targetSpan: '決めた',
 				coverage: 'side:a',
 				rationale: '〜ことに決めた names the person who decided: 田中さん.'
@@ -73,7 +73,7 @@ export const contrastKimeruKimaru: Fixture = {
 			{
 				instruction: 'What is the situation?',
 				sentence: 'A: 会議の日程、どうなった？ B: まだ誰も決めていないよ。',
-				kana: 'A: かいぎのにってい、どうなった？ B: まだだれも〇〇ていないよ。',
+				kana: 'A: かいぎのにってい、どうなった？ B: まだだれもきめていないよ。',
 				targetSpan: '決め',
 				coverage: 'side:a',
 				rationale: '誰も決めていない: nobody has made the decision yet.'
@@ -197,7 +197,7 @@ export const contrastKimeruKimaru: Fixture = {
 			{
 				instruction: 'Rewrite so that the result, not the person, is the focus.',
 				sentence: '私たちは日程を決めた。',
-				kana: 'わたしたちはにっていを〇〇。',
+				kana: 'わたしたちはにっていをきめた。',
 				targetSpan: '決めた',
 				rationale: '日程が決まった puts the outcome in focus.'
 			},
@@ -209,7 +209,7 @@ export const contrastKimeruKimaru: Fixture = {
 			{
 				instruction: 'Rewrite with "we" as the ones who decided.',
 				sentence: '結婚式の場所が決まった。',
-				kana: 'けっこんしきのばしょが〇〇。',
+				kana: 'けっこんしきのばしょがきまった。',
 				targetSpan: '決まった',
 				rationale:
 					'Make the decider the topic and the place the object: 私たちは結婚式の場所を決めた.'

@@ -34,7 +34,7 @@ export const setPhraseOtsukaresama: Fixture = {
 			{
 				instruction: 'What is the situation?',
 				sentence: 'A: 今日はもう帰ります。お疲れ様でした。 B: お疲れ様でした。',
-				kana: 'A: きょうはもうかえります。〇〇。 B: 〇〇。',
+				kana: 'A: きょうはもうかえります。おつかれさまでした。 B: おつかれさまでした。',
 				targetSpan: 'お疲れ様でした',
 				rationale: 'The phrase is a parting acknowledgement between colleagues, not a complaint.'
 			},
@@ -50,7 +50,7 @@ export const setPhraseOtsukaresama: Fixture = {
 			{
 				instruction: 'This is the opening of an email. Who is the likely recipient?',
 				sentence: 'お疲れ様です。田中です。会議の資料を送ります。',
-				kana: '〇〇。たなかです。かいぎのしりょうをおくります。',
+				kana: 'おつかれさまです。たなかです。かいぎのしりょうをおくります。',
 				targetSpan: 'お疲れ様です',
 				rationale: 'お疲れ様です opens internal emails to colleagues.'
 			},
@@ -62,7 +62,7 @@ export const setPhraseOtsukaresama: Fixture = {
 			{
 				instruction: "What is B's tone?",
 				sentence: 'A: 先に失礼します。 B: あ、お疲れ！',
-				kana: 'A: さきにしつれいします。 B: あ、〇〇！',
+				kana: 'A: さきにしつれいします。 B: あ、おつかれ！',
 				targetSpan: 'お疲れ',
 				rationale: 'The clipped お疲れ is casual, between peers or to a junior.'
 			},
@@ -74,7 +74,7 @@ export const setPhraseOtsukaresama: Fixture = {
 			{
 				instruction: 'What is A doing?',
 				sentence: 'A: 残業ですか。お疲れ様です。 B: ありがとうございます。',
-				kana: 'A: ざんぎょうですか。〇〇。 B: ありがとうございます。',
+				kana: 'A: ざんぎょうですか。おつかれさまです。 B: ありがとうございます。',
 				targetSpan: 'お疲れ様です',
 				rationale: 'B thanks A, which fits an acknowledgement of effort.'
 			},
@@ -153,7 +153,7 @@ export const setPhraseOtsukaresama: Fixture = {
 			form: 'free',
 			instruction: 'This opening is wrong for a client. Rewrite it.',
 			sentence: 'お疲れ様です、山田です。',
-			kana: '〇〇、やまだです。',
+			kana: 'おつかれさまです、やまだです。',
 			targetSpan: 'お疲れ様です',
 			answer: 'お世話になっております。山田です。',
 			accepted: ['お世話になっております。山田です。', 'お世話になっております、山田です。'],
@@ -196,7 +196,7 @@ export const setPhraseOtsukaresama: Fixture = {
 			{
 				instruction: 'Make this casual greeting suitable for your boss.',
 				sentence: 'お疲れ！',
-				kana: '〇〇！',
+				kana: 'おつかれ！',
 				targetSpan: 'お疲れ',
 				rationale: 'Use the full polite form to a superior.'
 			},

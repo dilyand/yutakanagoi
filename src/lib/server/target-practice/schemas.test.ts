@@ -426,35 +426,6 @@ describe('toRawItems', () => {
 		expect(dropped[0].reason).toMatch(/^shape: rationale is missing/);
 	});
 
-	it('repairs a mask written as one or three 〇 but leaves everything else alone', () => {
-		const wire = (kana: string) => ({
-			instruction: 'x',
-			sentence: 'a',
-			kana,
-			focus: '',
-			targetSpan: 'y',
-			coverage: '',
-			rationale: 'z',
-			options: []
-		});
-		const raw = toRawItems(1, 1, {
-			items: {
-				understand: [
-					wire('かれは〇〇〇だ'),
-					wire('かれは〇だ'),
-					wire('かれは〇〇だ'),
-					wire('かれは＿＿だ')
-				]
-			}
-		});
-		expect(raw.map((r) => r.kana)).toEqual([
-			'かれは〇〇だ',
-			'かれは〇〇だ',
-			'かれは〇〇だ',
-			'かれは＿＿だ'
-		]);
-	});
-
 	it('a sentence without a kana line is dropped by the validator, not hidden', () => {
 		const good = wordKibishii.items.find((i) => i.kind === 'mc' && i.sentence)!;
 		const parsed = generationSchemaFor(wordKibishii.card, 1).parse({
@@ -527,5 +498,48 @@ describe('repairInstruction', () => {
 		);
 		const { dropped } = validateItems(card, raw, { stage: 2 });
 		expect(dropped.filter((d) => /instruction contains Japanese/.test(d.reason))).toEqual([]);
+	});
+});
+
+describe('mc "why" on wrong options', () => {
+	const wire = (options: object[]) => ({
+		instruction: 'x',
+		sentence: 'a',
+		kana: 'あ',
+		focus: '',
+		targetSpan: 'y',
+		coverage: '',
+		rationale: 'z',
+		options
+	});
+
+	it('keeps a why on a wrong option, drops one written on the correct option, and "" means absent', () => {
+		const raw = toRawItems(1, 1, {
+			items: {
+				understand: [
+					wire([
+						{ text: 'right', correct: true, tag: '', why: 'a note on the key' },
+						{ text: 'wrong', correct: false, tag: 'context', why: 'It misreads X.' },
+						{ text: 'wrong 2', correct: false, tag: 'opposite', why: '' }
+					])
+				]
+			}
+		});
+		const options = raw[0].options as Record<string, unknown>[];
+		expect(options[0]).toEqual({ text: 'right', correct: true });
+		expect(options[1]).toEqual({
+			text: 'wrong',
+			correct: false,
+			tag: 'context',
+			why: 'It misreads X.'
+		});
+		expect('why' in options[2]).toBe(false);
+	});
+
+	it('the wire schema asks for it with a description', () => {
+		const json = JSON.stringify(
+			zodOutputFormat(generationSchemaFor(wordKibishii.card, 1) as never).schema
+		);
+		expect(json).toContain('what is wrong with THIS option');
 	});
 });

@@ -53,6 +53,13 @@ describe('gradePrompt', () => {
 		expect(user).toContain(JSON.stringify(card));
 	});
 
+	it('tells the grader to judge against the task, not to anchor on the examples or reject on style', () => {
+		const { system } = gradePrompt(card, inputs);
+		expect(system).toContain('written by a different model and can be incomplete or wrong');
+		expect(system).toContain('"faster" needs 早く or 速く');
+		expect(system).toContain('never a reason to reject');
+	});
+
 	it('only includes the rules for the modes present', () => {
 		const { system } = gradePrompt(card, [inputs[0]]);
 		expect(system).toContain('TYPED items');

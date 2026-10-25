@@ -2,7 +2,6 @@ import { NO_ROMAJI_NOTE, UNTRUSTED_INPUT_NOTE, tagUntrusted } from '$lib/server/
 import { TYPE_TAGS, GENERIC_TAGS } from '$lib/target-practice/distractor-tags';
 import { spareQuota } from '$lib/target-practice/generation';
 import type { GenerationStage, RegenerationRequest } from '$lib/target-practice/generation';
-import { TARGET_MASK } from '$lib/target-practice/normalize';
 import { skeletonFor } from '$lib/target-practice/skeleton';
 import { cardModelSentences, coverageUniverse } from '$lib/target-practice/validate-items';
 import type { Card, PhaseId, TargetType } from '$lib/target-practice/types';
@@ -44,17 +43,13 @@ const FIELD_RULES = [
 		'one using the target pattern.", not the sentences themselves.',
 	'- "sentence" is the Japanese the learner reads: a natural sentence, or a short dialogue with ' +
 		'speaker labels (A: … B: …). Use "" when the item has no Japanese prompt.',
-	`- "kana" is required whenever "sentence" is not empty: the full sentence in hiragana (katakana ` +
-		`words stay katakana), keeping the punctuation and the speaker labels. Replace exactly the ` +
-		`reading of the characters in "targetSpan" — and nothing else; never a neighbour pattern or ` +
-		`any other word — with ${TARGET_MASK}, so the line does not give the ` +
-		`target's reading away (sentence 彼が来るかどうか、まだ分かりません。 with targetSpan かどうか → ` +
-		`かれがくる${TARGET_MASK}、まだわかりません。). Use ${TARGET_MASK} only if "targetSpan" literally ` +
-		`appears inside "sentence" — when the target is the answer to a blank, the kana line has no ` +
-		`${TARGET_MASK}. ${TARGET_MASK} is exactly two characters, once for each occurrence of ` +
-		`"targetSpan". A blank ＿＿ is copied as it is and is NEVER replaced by ${TARGET_MASK} (sentence ` +
-		`雨が＿＿、まだ分からない。 → あめが＿＿、まだわからない。). Kana, punctuation and speaker labels ` +
-		`only: no kanji, no romaji.`,
+	'- "kana" is required whenever "sentence" is not empty: the WHOLE sentence written in hiragana ' +
+		'(katakana words stay katakana), keeping the punctuation and the speaker labels, so the ' +
+		'learner can tap it to see how every chunk — the target included — is read (sentence ' +
+		'彼が来るかどうか、まだ分かりません。 → かれがくるかどうか、まだわかりません。). Never replace ' +
+		'any part with a placeholder such as 〇〇. A blank ＿＿ is copied as it is (sentence ' +
+		'雨が＿＿、まだ分からない。 → あめが＿＿、まだわからない。). Kana, punctuation and speaker labels ' +
+		'only: no kanji, no romaji.',
 	'- "targetSpan" is NEVER empty: it is the target exactly as it appears in this item, in the ' +
 		'inflected form used (決まった, not 決まる). It must appear in the sentence, an option, an ' +
 		'answer or the tiles. An item that is about a neighbour of the target (a contrast, a ' +
@@ -74,6 +69,10 @@ const MC_RULES = [
 	'- 2 to 4 options, all different, exactly ONE with correct: true.',
 	'- Every wrong option has a "tag" from the list under TAGS; the correct option has tag "". A ' +
 		'wrong option must be plainly wrong to a learner who knows the target, not merely worse.',
+	'- Every wrong option also has a "why": ONE short English sentence saying what is wrong with that ' +
+		'option for THIS item — what it would mean, or what a learner who picks it has misread — ' +
+		'quoting the Japanese where needed. It is shown to the learner who picks it, so it must speak ' +
+		'to that mistake, not repeat why the right answer is right. The correct option has why "".',
 	'- Options are short. Put English options in English and Japanese options in Japanese.'
 ].join('\n');
 
@@ -89,6 +88,11 @@ const TYPED_RULES = [
 		'forms where both are fine. The learner types it, so list real variants, not near-misses.',
 	'- "cue" is a short hint such as （来る） shown after the sentence, or "". "hint" is one English ' +
 		'line that nudges without giving the answer away.',
+	'- For a translation ("free") item, every element of the English wording — an adverb or degree ' +
+		'word such as "faster", the tense, the subject — must be expressed in "answer" and in every ' +
+		'"accepted" variant, and "accepted" lists the natural alternatives (with and without the ' +
+		'pronoun, different word orders). If you do not want an element in the answer, leave it out ' +
+		'of the English too: a key that omits "faster" for an English "The faster you talk" is a bug.',
 	'- The answer must contain Japanese.'
 ].join('\n');
 
