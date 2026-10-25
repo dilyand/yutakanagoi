@@ -13,8 +13,10 @@ import type {
 } from '$lib/target-practice/generation';
 import { targetKey } from '$lib/target-practice/lookup';
 import type { Card, Item } from '$lib/target-practice/types';
-import type { SetIssue, DroppedItem } from '$lib/target-practice/validate-items';
+import type { SetIssue, DroppedItem, ValidationResult } from '$lib/target-practice/validate-items';
 import { UsageCapError, callClaude } from './claude-call';
+import { verifyContrastItems } from './verify-contrast';
+import { contrastItemsToVerify } from '$lib/target-practice/verification';
 import { generationPrompt } from './generation-prompts';
 import { recordPracticedTarget } from './history-repository';
 import { limitOutcome } from './limit-outcome';
@@ -33,7 +35,16 @@ import type { UsageKind } from './usage';
  * automatic retry of a failed stage, as a fresh request with `retry: true`.
  */
 
-export const GENERATE_MAX_DURATION_S = 120;
+export const GENERATE_MAX_DURATION_S = 180;
+
+/**
+ * Worst case for a Grammar stage 2: one full call (70s), the Contrast verification
+ * (25s), one regeneration (40s) and a verification of what it added (25s) = 160s,
+ * so the route's budget is 180s. A verification is skipped when less than its own
+ * timeout would be left of the routine budget, so a slow first call can never push
+ * the request past the limit.
+ */
+const VERIFY_SKIP_AFTER_MS = (GENERATE_MAX_DURATION_S - 25 - 15) * 1000;
 
 /**
  * Output budgets are ~4x the estimated payload (design doc §6: ~1.5k-2.2k
@@ -149,12 +160,72 @@ async function logOutcome(
 	});
 }
 
+/**
+ * Grammar's spot-the-error Contrast items are checked by a second model before the
+ * learner ever sees them: a learner can't tell a real error from an odd sentence, and
+ * the generator's own faults slip through every deterministic check. Items the
+ * checker doubts are dropped and the stage is re-validated, which promotes spares.
+ * Fails open (a failed or capped check keeps the items) and is skipped when the
+ * request has already used most of its time. `verified` remembers what was checked,
+ * so the items a regeneration adds are the only ones checked the second time.
+ */
+async function verifyStage(
+	supabase: SupabaseClient,
+	userId: number,
+	card: Card,
+	stage: GenerationStage,
+	result: ValidationResult,
+	verified: Set<string>,
+	startedAt: number,
+	avoid: string[]
+): Promise<ValidationResult> {
+	if (card.type !== 'grammar' || stage !== 2) return result;
+	const toCheck = contrastItemsToVerify(result.valid).filter((i) => !verified.has(i.id));
+	if (toCheck.length === 0 || Date.now() - startedAt > VERIFY_SKIP_AFTER_MS) return result;
+
+	let failures;
+	try {
+		failures = await verifyContrastItems(supabase, userId, card, toCheck);
+	} catch (e) {
+		if (!(e instanceof UsageCapError)) {
+			await logError('target-practice/generate/verify', e, { type: card.type, stage });
+		}
+		return result;
+	}
+	for (const item of toCheck) verified.add(item.id);
+	if (failures.length === 0) return result;
+
+	await logError('target-practice/generate/verify', new Error('contrast items dropped'), {
+		type: card.type,
+		target: card.target,
+		dropped: failures.map((f) => ({
+			...f,
+			item: JSON.stringify(result.valid.find((i) => i.id === f.id)).slice(0, SAMPLE_CHARS)
+		}))
+	});
+	const failed = new Set(failures.map((f) => f.id));
+	const revalidated = validateStage(
+		card,
+		result.valid.filter((i) => !failed.has(i.id)),
+		{ stage, avoidSentences: avoid }
+	);
+	return {
+		...revalidated,
+		dropped: [
+			...result.dropped,
+			...failures.map((f) => ({ id: f.id, reason: `verification: ${f.problem}` }))
+		]
+	};
+}
+
 export async function generateStage(
 	supabase: SupabaseClient,
 	userId: number,
 	params: GenerateParams
 ): Promise<GenerateResponse> {
 	const { stage, card, retry, avoid } = params;
+	const startedAt = Date.now();
+	const verified = new Set<string>();
 	const context = { type: card.type, target: card.target };
 
 	// Stage 1 opens a session; stage 2 and any retry only spend against the token ceiling.
@@ -170,6 +241,7 @@ export async function generateStage(
 
 	let result = validateStage(card, raw, { stage, avoidSentences: avoid });
 	await logOutcome(stage, 1, card, raw, result.dropped, result.setIssues);
+	result = await verifyStage(supabase, userId, card, stage, result, verified, startedAt, avoid);
 
 	// Refill what is still short (a phase below its minimum, a missing coverage
 	// key, ...) with one smaller call. Failing here is not fatal: the learner
@@ -193,7 +265,7 @@ export async function generateStage(
 			const combined = [...result.valid, ...extra];
 			const second = validateStage(card, combined, { stage, avoidSentences: avoid });
 			await logOutcome(stage, 2, card, combined, second.dropped, second.setIssues);
-			result = second;
+			result = await verifyStage(supabase, userId, card, stage, second, verified, startedAt, avoid);
 		} catch (e) {
 			if (!(e instanceof UsageCapError)) {
 				await logError(`target-practice/generate/stage${stage}-regenerate`, e, {

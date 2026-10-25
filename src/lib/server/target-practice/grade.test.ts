@@ -6,6 +6,9 @@ import { isHttpError } from '@sveltejs/kit';
 const logError = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 vi.mock('$lib/server/logger', () => ({ logError }));
 
+const reviewRejections = vi.hoisted(() => vi.fn(async () => [] as unknown[]));
+vi.mock('./review', () => ({ reviewRejections }));
+
 const callClaudeMock = vi.hoisted(() => vi.fn());
 vi.mock('./claude-call', async (importOriginal) => ({
 	...(await importOriginal<typeof import('./claude-call')>()),
@@ -115,5 +118,85 @@ describe('gradeAnswers', () => {
 			isHttpError(e, 502)
 		);
 		expect(logError).toHaveBeenCalled();
+	});
+});
+
+describe('gradeAnswers: the second look at rejections', () => {
+	const bad = {
+		results: [
+			{ correct: false, feedback: 'First reason.' },
+			{ correct: true, feedback: 'Works.' }
+		]
+	};
+
+	it('does not look again at answers that were accepted', async () => {
+		modelReturns({
+			results: [
+				{ correct: true, feedback: 'a' },
+				{ correct: true, feedback: 'b' }
+			]
+		});
+		await gradeAnswers(supabase, 7, card, inputs);
+		expect(reviewRejections).not.toHaveBeenCalled();
+	});
+
+	it('sends only the rejected items, with the first reason, and can overturn the rejection', async () => {
+		modelReturns(bad);
+		reviewRejections.mockResolvedValueOnce([
+			{ acceptable: true, feedback: 'A native would accept this.' }
+		]);
+		const out = await gradeAnswers(supabase, 7, card, inputs);
+		const rejected = (reviewRejections.mock.calls[0] as unknown[])[3] as {
+			input: unknown;
+			first: unknown;
+		}[];
+		expect(rejected).toHaveLength(1);
+		expect(rejected[0]).toEqual({
+			input: inputs[0],
+			first: { correct: false, feedback: 'First reason.' }
+		});
+		expect(out).toMatchObject({
+			status: 'ok',
+			results: [{ correct: true, feedback: 'A native would accept this.' }, { correct: true }]
+		});
+		expect(logError).toHaveBeenCalledWith(
+			'target-practice/grade/review',
+			expect.any(Error),
+			expect.objectContaining({
+				overturned: [expect.objectContaining({ firstReason: 'First reason.' })]
+			})
+		);
+	});
+
+	it('keeps the rejection when the review agrees, with the reviewer\u2019s better explanation', async () => {
+		modelReturns(bad);
+		reviewRejections.mockResolvedValueOnce([{ acceptable: false, feedback: 'The real error.' }]);
+		const out = await gradeAnswers(supabase, 7, card, inputs);
+		expect(out).toMatchObject({
+			results: [{ correct: false, feedback: 'The real error.' }, { correct: true }]
+		});
+	});
+
+	it('fails open: a review outage or an unusable review leaves the first verdict', async () => {
+		modelReturns(bad);
+		reviewRejections.mockRejectedValueOnce(new Anthropic.AnthropicError('down'));
+		expect(await gradeAnswers(supabase, 7, card, inputs)).toMatchObject({
+			results: [{ correct: false, feedback: 'First reason.' }, { correct: true }]
+		});
+		modelReturns(bad);
+		reviewRejections.mockResolvedValueOnce([null]);
+		expect(await gradeAnswers(supabase, 7, card, inputs)).toMatchObject({
+			results: [{ correct: false, feedback: 'First reason.' }, { correct: true }]
+		});
+	});
+
+	it('a usage cap during the review keeps the first verdict without logging an error', async () => {
+		modelReturns(bad);
+		reviewRejections.mockRejectedValueOnce(
+			new UsageCapError('cap_reached', 'ceiling', new Date('2026-10-26T00:00:00Z'))
+		);
+		const out = await gradeAnswers(supabase, 7, card, inputs);
+		expect(out).toMatchObject({ results: [{ correct: false }, { correct: true }] });
+		expect(logError).not.toHaveBeenCalled();
 	});
 });

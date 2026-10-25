@@ -479,3 +479,34 @@ export const GradeResult = z.object({
 		})
 	)
 });
+
+// --- Verification passes ----------------------------------------------------
+
+/** Contrast verification: one result per item asked about. */
+export const VerifyResult = z.object({
+	results: z.array(
+		z.object({
+			id: text().describe('the item id exactly as given'),
+			ok: z
+				.boolean()
+				.describe(
+					'true only if the marked sentence is clearly wrong AND the others are clearly fine'
+				),
+			problem: text().describe('empty if ok; otherwise one short sentence on what is doubtful')
+		})
+	)
+});
+
+/** Second look at rejected answers: one result per rejected item, in order. */
+export const ReviewResult = z.object({
+	results: z.array(
+		z.object({
+			acceptable: z
+				.boolean()
+				.describe("true if a native speaker would accept the learner's answer for this task"),
+			feedback: text().describe(
+				'one or two English sentences for the learner: why it works, or what is actually wrong; Japanese in script, never romaji'
+			)
+		})
+	)
+});

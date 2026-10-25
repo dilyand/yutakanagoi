@@ -10,6 +10,9 @@ import { parseRequestCard } from '$lib/server/target-practice/request-card';
 import { MAX_GRADE_ITEMS } from '$lib/target-practice/grade';
 import { TARGET_TYPES } from '$lib/target-practice/types';
 
+// The first grade call plus, on a rejection, the second look (25s timeouts each).
+export const config = { maxDuration: 90 };
+
 // A session's worst case is a handful of typed fallbacks plus the Use phase;
 // the daily token ceiling is the real backstop (see usage.ts).
 const LIMIT = 45;

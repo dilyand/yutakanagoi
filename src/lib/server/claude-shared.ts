@@ -12,6 +12,16 @@ import { env } from '$env/dynamic/private';
 // same comparison showed no quality difference there, so it runs on Haiku.
 export const GRADING_MODEL = 'claude-sonnet-5';
 export const EXPLAIN_MODEL = 'claude-haiku-4-5';
+// A second opinion on target practice's own model output (Contrast verification, and the
+// second look at a grader rejection). Deliberately a stronger model than the one that
+// wrote or graded the thing being checked: the same model tends to repeat its own
+// mistake. Only used on rare, small calls, so the larger per-token price is negligible.
+export const REVIEW_MODEL = 'claude-opus-5-5';
+// This model rejects `thinking: { type: 'disabled' }` (found on the first live call): thinking
+// is steered with adaptive thinking plus an effort level. The checks are small and need no long
+// deliberation, so effort stays low and the thinking text is not returned.
+export const REVIEW_THINKING = { type: 'adaptive', display: 'omitted' } as const;
+export const REVIEW_EFFORT = 'low' as const;
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 

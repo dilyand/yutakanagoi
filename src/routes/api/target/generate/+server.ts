@@ -9,12 +9,12 @@ import { generateStage } from '$lib/server/target-practice/generate';
 import { parseRequestCard } from '$lib/server/target-practice/request-card';
 import { TARGET_TYPES } from '$lib/target-practice/types';
 
-// Worst case is one full stage call (50-70s) plus one smaller regeneration (40s),
-// with SDK retries off — see generate.ts, which exports the same figure
+// Worst case (Grammar stage 2) is one full call (70s), the Contrast verification (25s), one
+// smaller regeneration (40s) and a verification of what it added (25s), with SDK retries off — see generate.ts, which exports the same figure
 // (GENERATE_MAX_DURATION_S; the test pins them together). A literal here because
 // adapter-vercel reads `config` statically. Fluid compute defaults to 300s;
 // this keeps the bound explicit, and valid on every plan.
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 180 };
 
 const LIMIT = 12;
 const WINDOW_MS = 5 * 60 * 1000;

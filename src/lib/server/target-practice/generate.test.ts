@@ -9,6 +9,12 @@ vi.mock('$lib/server/logger', () => ({ logError }));
 const recordPracticedTarget = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 vi.mock('./history-repository', () => ({ recordPracticedTarget }));
 
+// The Contrast verification is its own module; here it passes everything unless a test says otherwise.
+const verifyContrastItems = vi.hoisted(() =>
+	vi.fn(async () => [] as { id: string; problem: string }[])
+);
+vi.mock('./verify-contrast', () => ({ verifyContrastItems }));
+
 const callClaudeMock = vi.hoisted(() => vi.fn());
 vi.mock('./claude-call', async (importOriginal) => ({
 	...(await importOriginal<typeof import('./claude-call')>()),
@@ -333,5 +339,101 @@ describe('generateStage: history is best-effort', () => {
 			expect.anything(),
 			expect.objectContaining({ targetKey: '厳しい|きびしい' })
 		);
+	});
+});
+
+describe('generateStage: Contrast verification (Grammar stage 2)', () => {
+	const grammarStage2 = () => stageItems(grammarKakadouka, 2);
+	const contrastIds = (result: { items: Item[] }) =>
+		result.items.filter((i) => i.phase === 'contrast').map((i) => i.id);
+
+	it('checks the Contrast items once, all in one call, and keeps what passes', async () => {
+		modelAnswers(s2(grammarStage2()));
+		const result = await run({ stage: 2 });
+		if (result.status !== 'ok') throw new Error('unreachable');
+		expect(verifyContrastItems).toHaveBeenCalledTimes(1);
+		const checked = (verifyContrastItems.mock.calls[0] as unknown[])[3] as Item[];
+		expect(checked.map((i) => i.phase)).toEqual(['contrast', 'contrast', 'contrast']);
+		expect(contrastIds(result)).toHaveLength(3);
+	});
+
+	it('drops a doubted item, promotes a spare in its place, and logs why', async () => {
+		const spare = {
+			...grammarStage2().find((i) => i.phase === 'contrast')!,
+			id: 'g-cx',
+			spare: true
+		} as Item;
+		// Make the spare a different sentence set so it is not a duplicate.
+		if (spare.kind === 'mc')
+			spare.options = spare.options.map((o) => ({ ...o, text: o.text + '。' }));
+		modelAnswers(s2(grammarStage2(), [spare]));
+		verifyContrastItems.mockResolvedValueOnce([
+			{ id: 's2a1-contrast0', problem: 'It is grammatical.' }
+		]);
+		const result = await run({ stage: 2 });
+		if (result.status !== 'ok') throw new Error('unreachable');
+		const primaries = result.items.filter((i) => i.phase === 'contrast' && !i.spare);
+		expect(primaries).toHaveLength(3);
+		expect(primaries.map((i) => i.id)).not.toContain('s2a1-contrast0');
+		expect(logError).toHaveBeenCalledWith(
+			'target-practice/generate/verify',
+			expect.any(Error),
+			expect.objectContaining({ dropped: [expect.objectContaining({ id: 's2a1-contrast0' })] })
+		);
+	});
+
+	it('with no spare left the phase comes back short, and the regeneration refills it (and is checked too)', async () => {
+		modelAnswers(
+			s2(grammarStage2()),
+			regen(
+				grammarStage2()
+					.filter((i) => i.phase === 'contrast')
+					.slice(0, 1)
+					.map((i) => ({ ...i, id: 'x' }) as Item),
+				'contrast'
+			)
+		);
+		verifyContrastItems.mockResolvedValueOnce([{ id: 's2a1-contrast0', problem: 'doubt' }]);
+		const result = await run({ stage: 2 });
+		if (result.status !== 'ok') throw new Error('unreachable');
+		expect(result.regenerated).toBe(true);
+		expect(verifyContrastItems).toHaveBeenCalledTimes(2);
+		// The second check covers only items the first did not.
+		const second = (verifyContrastItems.mock.calls[1] as unknown[])[3] as Item[];
+		expect(second.every((i) => i.id.startsWith('s2a2-'))).toBe(true);
+	});
+
+	it('fails open: a failed check keeps every item and logs', async () => {
+		modelAnswers(s2(grammarStage2()));
+		verifyContrastItems.mockRejectedValueOnce(new Anthropic.AnthropicError('down'));
+		const result = await run({ stage: 2 });
+		if (result.status !== 'ok') throw new Error('unreachable');
+		expect(contrastIds(result)).toHaveLength(3);
+		expect(logError).toHaveBeenCalledWith(
+			'target-practice/generate/verify',
+			expect.any(Error),
+			expect.anything()
+		);
+	});
+
+	it('a usage cap on the check keeps the items without logging an error', async () => {
+		modelAnswers(s2(grammarStage2()));
+		verifyContrastItems.mockRejectedValueOnce(
+			new UsageCapError('cap_reached', 'ceiling', new Date('2026-10-26T00:00:00Z'))
+		);
+		const result = await run({ stage: 2 });
+		if (result.status !== 'ok') throw new Error('unreachable');
+		expect(contrastIds(result)).toHaveLength(3);
+		expect(logError).not.toHaveBeenCalledWith(
+			'target-practice/generate/verify',
+			expect.anything(),
+			expect.anything()
+		);
+	});
+
+	it('does not run for stage 1 or for other types', async () => {
+		modelAnswers(s1(stageItems(grammarKakadouka, 1)));
+		await run();
+		expect(verifyContrastItems).not.toHaveBeenCalled();
 	});
 });

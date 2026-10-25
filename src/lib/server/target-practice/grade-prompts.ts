@@ -53,6 +53,23 @@ const USE_RULES =
 	'target correctly is correct. Overlook small stylistic choices and typos that do not affect the ' +
 	'target. When it is not correct, say what is wrong and give a corrected version in Japanese script.';
 
+/** One numbered item as the grader (and the reviewer) sees it. */
+export function renderGradeItem(input: GradeInput, i: number): string {
+	const task = [
+		input.instruction && `Task: ${input.instruction}`,
+		input.sentence && `Sentence: ${input.sentence}`
+	].filter(Boolean);
+	if (input.mode === 'typed') {
+		if (input.cue) task.push(`Cue: ${input.cue}`);
+		task.push(`Accepted answers: ${input.accepted.join(' / ')}`);
+	} else {
+		task.push(input.free ? 'This is a free "write your own sentence" item.' : '');
+		if (input.expected.length > 0) task.push(`Example answers: ${input.expected.join(' / ')}`);
+	}
+	task.push(`Learner's answer: ${input.learnerAnswer}`);
+	return `Item ${i + 1} (${input.mode.toUpperCase()}):\n${task.filter(Boolean).join('\n')}`;
+}
+
 export function gradePrompt(card: Card, inputs: GradeInput[]): { system: string; user: string } {
 	const modes = new Set(inputs.map((i) => i.mode));
 	const system = [
@@ -64,21 +81,7 @@ export function gradePrompt(card: Card, inputs: GradeInput[]): { system: string;
 		UNTRUSTED_INPUT_NOTE
 	].join('\n\n');
 
-	const lines = inputs.map((input, i) => {
-		const task = [
-			input.instruction && `Task: ${input.instruction}`,
-			input.sentence && `Sentence: ${input.sentence}`
-		].filter(Boolean);
-		if (input.mode === 'typed') {
-			if (input.cue) task.push(`Cue: ${input.cue}`);
-			task.push(`Accepted answers: ${input.accepted.join(' / ')}`);
-		} else {
-			task.push(input.free ? 'This is a free "write your own sentence" item.' : '');
-			if (input.expected.length > 0) task.push(`Example answers: ${input.expected.join(' / ')}`);
-		}
-		task.push(`Learner's answer: ${input.learnerAnswer}`);
-		return `Item ${i + 1} (${input.mode.toUpperCase()}):\n${task.filter(Boolean).join('\n')}`;
-	});
+	const lines = inputs.map(renderGradeItem);
 
 	const user =
 		`Target card:\n${tagUntrusted(JSON.stringify(card))}\n\n` +
