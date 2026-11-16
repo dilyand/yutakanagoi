@@ -17,6 +17,7 @@
 		"add-user": "tsx --env-file=.env scripts/add-user.ts",
 		"set-password": "tsx --env-file=.env scripts/set-password.ts",
 		"logs:errors": "tsx --env-file=.env scripts/read-error-log.ts",
+		"logs:flags": "tsx --env-file=.env scripts/read-target-flags.ts",
 		"scrub-master-list-cleanup": "tsx --env-file=.env scripts/scrub-master-list-cleanup.ts",
 		"fix-hellotalk-words": "tsx --env-file=.env scripts/fix-hellotalk-words-corrections.ts",
 		"strip-list-name-extensions": "tsx --env-file=.env scripts/strip-list-name-extensions.ts",

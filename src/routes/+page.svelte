@@ -4,6 +4,7 @@
 	import VocabDrillActivity from '$lib/components/activities/VocabDrillActivity.svelte';
 	import ConjugationDrillActivity from '$lib/components/activities/ConjugationDrillActivity.svelte';
 	import ShadowingDrillActivity from '$lib/components/activities/ShadowingDrillActivity.svelte';
+	import TargetPracticeActivity from '$lib/components/activities/TargetPracticeActivity.svelte';
 	import FontSizeControl from '$lib/components/FontSizeControl.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import { transitionDuration } from '$lib/client/motion';
@@ -64,6 +65,16 @@
 			<div class="activity-screen" transition:fade={{ duration: transitionDuration(150) }}>
 				<ShadowingDrillActivity
 					{username}
+					onExit={() => {
+						selectedActivityId = null;
+					}}
+				/>
+			</div>
+		{:else if selectedActivityId === 'target-practice'}
+			<div class="activity-screen" transition:fade={{ duration: transitionDuration(150) }}>
+				<TargetPracticeActivity
+					{username}
+					userId={data.user!.id}
 					onExit={() => {
 						selectedActivityId = null;
 					}}

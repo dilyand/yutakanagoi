@@ -6,12 +6,15 @@
 	import { apiPost } from '$lib/client/api-client';
 	import { applyStoredFontSize } from '$lib/client/font-size';
 	import { applyStoredTheme } from '$lib/client/theme';
+	import { clearAllSnapshots } from '$lib/client/target-practice-storage';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
 
 	async function logout() {
 		await apiPost('/api/logout', {});
+		// An in-progress target-practice session must not outlive the login on this device.
+		clearAllSnapshots();
 		await invalidateAll();
 	}
 

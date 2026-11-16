@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { ACTIVITIES, getActivity } from './activities';
 
 describe('ACTIVITIES', () => {
-	it('is non-empty and includes vocab-drill, conjugation-drill, and shadowing-drill', () => {
+	it('is non-empty and includes vocab-drill, conjugation-drill, shadowing-drill, and target-practice', () => {
 		expect(ACTIVITIES.length).toBeGreaterThan(0);
 		expect(ACTIVITIES.some((activity) => activity.id === 'vocab-drill')).toBe(true);
 		expect(ACTIVITIES.some((activity) => activity.id === 'conjugation-drill')).toBe(true);
 		expect(ACTIVITIES.some((activity) => activity.id === 'shadowing-drill')).toBe(true);
+		expect(ACTIVITIES.some((activity) => activity.id === 'target-practice')).toBe(true);
 	});
 });
 

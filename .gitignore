@@ -32,3 +32,7 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Target practice routes live in src/routes/api/target/ — a global "target/" ignore
+# (common for Rust) would otherwise silently drop them from commits.
+!/src/routes/api/target/
