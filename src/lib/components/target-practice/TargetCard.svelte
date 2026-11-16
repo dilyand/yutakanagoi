@@ -40,7 +40,17 @@
 			</p>
 		{/if}
 		{#if card.forms.length > 0}
-			<p class="subtitle">Common forms: <JaText text={card.forms.join('、')} /></p>
+			<p class="subtitle">Common forms</p>
+			<ul class="tp-forms">
+				{#each card.forms as entry (entry)}
+					<!-- "form — gloss"; cards stored before glosses existed are just the form. -->
+					{@const [form, ...gloss] = entry.split(' — ')}
+					<li>
+						<JaText text={form} />
+						{#if gloss.length > 0}<span class="tp-form-gloss">— {gloss.join(' — ')}</span>{/if}
+					</li>
+				{/each}
+			</ul>
 		{/if}
 	{/if}
 

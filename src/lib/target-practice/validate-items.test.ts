@@ -623,3 +623,35 @@ describe('set-level rules', () => {
 		expect(r.setIssues).toEqual([]);
 	});
 });
+
+describe('Word cloze: the blank is never just the target (isolated recall)', () => {
+	const w = wordKibishii;
+	const cloze = (
+		answer: string,
+		accepted: string[],
+		o: { sentence?: string; kana?: string; cue?: string } = {}
+	) =>
+		dropReason(w, 'w-p1', (i) => {
+			if (i.kind !== 'typed') throw new Error('w-p1 should be typed');
+			i.form = 'cloze';
+			i.sentence = o.sentence ?? 'このレポートの＿＿は来週の金曜日です。';
+			i.kana = o.kana ?? 'このれぽーとの＿＿はらいしゅうのきんようびです。';
+			i.answer = answer;
+			i.accepted = accepted;
+			i.cue = o.cue;
+			i.targetSpan = answer;
+		});
+
+	it('drops a cloze whose answer is the bare target or its reading — even with a reading cue', () => {
+		expect(cloze('厳しい', ['厳しい', 'きびしい'], { cue: '（きびしい）' })).toMatch(
+			/^bare_target_cloze/
+		);
+		expect(cloze('きびしい', ['きびしい'])).toMatch(/^bare_target_cloze/);
+	});
+
+	it('keeps a cloze that blanks an inflected form or a collocate', () => {
+		expect(
+			cloze('厳しかった', ['厳しかった', 'きびしかった'], { cue: '（厳しい）' })
+		).toBeUndefined();
+	});
+});

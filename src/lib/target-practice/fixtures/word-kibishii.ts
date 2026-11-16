@@ -23,7 +23,11 @@ const card: WordCard = {
 			example: '今の状況では、合格は厳しい。'
 		}
 	],
-	forms: ['厳しくない', '厳しかった', '厳しく (adverb: 厳しく叱る)'],
+	forms: [
+		'厳しくない — not strict / not harsh',
+		'厳しかった — was strict, was harsh, was tough',
+		'厳しく — strictly, harshly (adverb: 厳しく叱る)'
+	],
 	lessCommonSenses: 0
 };
 

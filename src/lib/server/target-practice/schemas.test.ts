@@ -19,6 +19,7 @@ import {
 	GENERIC_TRANSLATION_HINT,
 	generationSchemaFor,
 	repairInstruction,
+	shuffleOptions,
 	shuffleTiles,
 	toModelCardResult,
 	toRawItems
@@ -364,11 +365,14 @@ describe('toRawItems', () => {
 			expect(dropped).toEqual([]);
 			expect(valid).toHaveLength(mine.length);
 			// Same content as the hand-written fixture, modulo the server-assigned id.
-			// Tiles are shuffled by the server, so compare them as a bag.
+			// Tiles and mc options are shuffled by the server, so compare them as bags.
+			const byText = (a: { text: string }, b: { text: string }) => a.text.localeCompare(b.text);
 			const withoutId = (items: Item[]) =>
 				items.map((item) => {
 					const { id: _id, ...rest } = item; // eslint-disable-line @typescript-eslint/no-unused-vars
-					return rest.kind === 'tiles' ? { ...rest, tiles: [...rest.tiles].sort() } : rest;
+					if (rest.kind === 'tiles') return { ...rest, tiles: [...rest.tiles].sort() };
+					if (rest.kind === 'mc') return { ...rest, options: [...rest.options].sort(byText) };
+					return rest;
 				});
 			expect(withoutId(valid)).toEqual(
 				withoutId([...mine.filter((i) => !i.spare), ...mine.filter((i) => i.spare)])
@@ -527,14 +531,15 @@ describe('mc "why" on wrong options', () => {
 			}
 		});
 		const options = raw[0].options as Record<string, unknown>[];
-		expect(options[0]).toEqual({ text: 'right', correct: true });
-		expect(options[1]).toEqual({
+		const named = (text: string) => options.find((o) => o.text === text)!;
+		expect(named('right')).toEqual({ text: 'right', correct: true });
+		expect(named('wrong')).toEqual({
 			text: 'wrong',
 			correct: false,
 			tag: 'context',
 			why: 'It misreads X.'
 		});
-		expect('why' in options[2]).toBe(false);
+		expect('why' in named('wrong 2')).toBe(false);
 	});
 
 	it('the wire schema asks for it with a description', () => {
@@ -542,5 +547,57 @@ describe('mc "why" on wrong options', () => {
 			zodOutputFormat(generationSchemaFor(wordKibishii.card, 1) as never).schema
 		);
 		expect(json).toContain('what is wrong with THIS option');
+	});
+});
+
+describe('shuffleOptions', () => {
+	const options = ['a', 'b', 'c', 'd'];
+
+	it('keeps every option, is deterministic per seed, and differs between seeds', () => {
+		expect([...shuffleOptions(options, 'x')].sort()).toEqual(options);
+		expect(shuffleOptions(options, 'x')).toEqual(shuffleOptions(options, 'x'));
+		const seen = new Set(
+			Array.from({ length: 30 }, (_, i) => shuffleOptions(options, `s${i}`).join(''))
+		);
+		expect(seen.size).toBeGreaterThan(5);
+	});
+
+	it('does not leave the correct option first every time (the model always listed it first)', () => {
+		// 60 items whose key is written first, as the model does: about a quarter should still start with it.
+		const firsts = Array.from(
+			{ length: 60 },
+			(_, i) => shuffleOptions(options, `s2a1-understand${i}`)[0]
+		);
+		const keyFirst = firsts.filter((o) => o === 'a').length;
+		expect(keyFirst).toBeGreaterThan(5);
+		expect(keyFirst).toBeLessThan(30);
+	});
+
+	it('toRawItems shuffles an mc item, and the same id always gives the same order', () => {
+		const wire = {
+			instruction: 'x',
+			sentence: 'a',
+			kana: 'あ',
+			focus: '',
+			targetSpan: 'y',
+			coverage: '',
+			rationale: 'z',
+			options: ['k', 'w1', 'w2', 'w3'].map((text, n) => ({
+				text,
+				correct: n === 0,
+				tag: n ? 'context' : '',
+				why: ''
+			}))
+		};
+		const once = toRawItems(1, 1, {
+			items: { understand: [wire, wire, wire, wire, wire, wire, wire, wire] }
+		});
+		const twice = toRawItems(1, 1, {
+			items: { understand: [wire, wire, wire, wire, wire, wire, wire, wire] }
+		});
+		const order = (r: Record<string, unknown>[]) =>
+			r.map((x) => (x.options as { text: string }[]).map((o) => o.text).join(','));
+		expect(order(once)).toEqual(order(twice));
+		expect(new Set(order(once)).size).toBeGreaterThan(1);
 	});
 });

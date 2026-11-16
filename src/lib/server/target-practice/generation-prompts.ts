@@ -64,6 +64,19 @@ const FIELD_RULES = [
 		'different blank. Write every item sentence fresh.'
 ].join('\n');
 
+/**
+ * Found in a Preview test run: four of five Produce items were "fill in the word meaning
+ * deadline" with the word's reading as the cue — type what you are looking at. That is the
+ * vocab drill's isolated recall; validateItems now drops it (bare_target_cloze), and the
+ * recipe says what to write instead.
+ */
+const WORD_PRODUCE_RULE =
+	'NEVER ask the learner to type the target word itself: the blank is never the bare target, and ' +
+	'"cue" never holds the target\'s reading or spelling (that only asks them to copy it). What is ' +
+	'blanked must need real knowledge of how the word is USED: the collocate that goes with it (with ' +
+	'the target visible in the sentence, e.g. 締め切り＿＿過ぎる → を), an inflected or derived form, a ' +
+	'compound, or the form that fits one sense and not another.';
+
 const MC_RULES = [
 	'MULTIPLE-CHOICE ITEMS ("options").',
 	'- 2 to 4 options, all different, exactly ONE with correct: true.',
@@ -343,14 +356,19 @@ const STAGE_2_RECIPE: Record<TargetType, (card: Card) => string> = {
 		].join('\n'),
 	word: (card) =>
 		card.type === 'word' && card.senses.length === 1
-			? 'WORD (one sense) — PRODUCE (6): cloze items that need an inflected form (use "cue" with the ' +
-				'dictionary form) or a form like the adverb, a collocation cloze, 1 tile item, 1 free ' +
-				'English→Japanese item. USE (3): guided writing items in different contexts, then the ' +
-				'final free item.'
+			? 'WORD (one sense) — PRODUCE (6): ' +
+				WORD_PRODUCE_RULE +
+				' Mix: collocation clozes, clozes ' +
+				'that need an inflected or derived form, 1 tile item, 1 free English→Japanese item. USE ' +
+				'(3): guided writing items in different contexts, then the final free item.'
 			: [
-					'WORD — PRODUCE (5): cloze items that need an inflected form (negative, past, adverb, ' +
-						'te-form) with "cue" holding the dictionary form, a collocation cloze, 1 tile item ' +
-						'and 1 free English→Japanese item. Cover more than one sense.',
+					'WORD — PRODUCE (5): ' +
+						WORD_PRODUCE_RULE +
+						' Mix: collocation clozes (the verb or ' +
+						'particle that goes with the target), clozes that need an inflected or derived form ' +
+						'(negative, past, adverb, te-form, a compound) with "cue" holding the dictionary form ' +
+						'only when the target inflects, 1 tile item and 1 free English→Japanese item. Cover ' +
+						'more than one sense.',
 					'WORD — USE (3): guided writing items, each in a different sense, then the final free ' +
 						'item.'
 				].join('\n'),

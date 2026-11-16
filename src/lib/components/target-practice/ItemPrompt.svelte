@@ -11,7 +11,9 @@
 {#if item.instruction}<p class="tp-instruction">{item.instruction}</p>{/if}
 {#if item.sentence}
 	<p class="tp-sentence">
-		<JaText text={item.sentence} kana={item.kana} focus={item.focus} />
+		<!-- The highlight only belongs to typed items ("type the reading of the highlighted word"); in a
+			multiple-choice item it was distracting and pointed at the answer. -->
+		<JaText text={item.sentence} kana={item.kana} focus={item.kind === 'typed' ? item.focus : ''} />
 	</p>
 {/if}
 {#if item.kind === 'typed' && item.cue}<p class="tp-cue"><JaText text={item.cue} /></p>{/if}

@@ -341,6 +341,22 @@ function seededRandom(seed: string): () => number {
 }
 
 /**
+ * The model lists the correct option FIRST, every time (a learner found 6 of 6 Understand
+ * items answerable by clicking the first option without reading), so the server shuffles
+ * the options, like the tiles: deterministic per item id (a regenerated or resumed item
+ * keeps its order), uniform over the positions.
+ */
+export function shuffleOptions<T>(options: T[], seed: string): T[] {
+	const rand = seededRandom(`options:${seed}`);
+	const out = [...options];
+	for (let i = out.length - 1; i > 0; i--) {
+		const j = Math.floor(rand() * (i + 1));
+		[out[i], out[j]] = [out[j], out[i]];
+	}
+	return out;
+}
+
+/**
  * The model lists tiles in the order of a correct sentence (what it does
  * naturally — asked to shuffle, it kept the right order in most items), and
  * the server shuffles them: deterministically per item id, and never into an
@@ -387,12 +403,15 @@ function toRawItem(wire: Wire, phase: string, id: string, spare: boolean): Recor
 			...base,
 			kind: 'mc',
 			...present(wire, ['focus', 'coverage']),
-			options: (wire.options as Wire[]).map((o) => ({
-				text: o.text,
-				correct: o.correct,
-				// "Why it is wrong" belongs to wrong options only; a note on the key is dropped.
-				...present(o, o.correct === true ? ['tag'] : ['tag', 'why'])
-			}))
+			options: shuffleOptions(
+				(wire.options as Wire[]).map((o) => ({
+					text: o.text,
+					correct: o.correct,
+					// "Why it is wrong" belongs to wrong options only; a note on the key is dropped.
+					...present(o, o.correct === true ? ['tag'] : ['tag', 'why'])
+				})),
+				id
+			)
 		};
 	}
 	if ('tiles' in wire) {

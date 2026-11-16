@@ -60,3 +60,10 @@ describe('cardPrompt', () => {
 		expect(user).toContain('Meaning: <untrusted>\nsigns of people\n</untrusted>');
 	});
 });
+
+describe('Word card forms', () => {
+	it('asks for each common form with an English gloss ("form — gloss")', () => {
+		const { system } = cardPrompt({ type: 'word', target: '厳しい' });
+		expect(system).toContain('then " — ", then a short English gloss');
+	});
+});

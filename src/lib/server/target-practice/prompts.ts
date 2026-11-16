@@ -105,8 +105,10 @@ const CARD_FIELDS: Record<TargetType, string> = {
 		'WORD card. "reading": the whole word in kana. "senses": the 1 to 4 main senses, most common ' +
 		'first, ids 1, 2, 3…, each with a short English "gloss" and a Japanese "example" sentence; ' +
 		'a word with one sense gets one entry. "lessCommonSenses": how many further senses you left ' +
-		'out (0 if none). "forms": 2 to 5 common inflected or derived forms (厳しくない, 厳しかった, ' +
-		'厳しく). "modelSentences": 2 or 3, spread across the senses.',
+		'out (0 if none). "forms": 2 to 5 common inflected or derived forms, each written as the form, ' +
+		'then " — ", then a short English gloss that says what the form means or when it is used ' +
+		'(厳しくない — not strict; 厳しかった — was strict / was harsh; 厳しく — strictly, harshly (adverb)). ' +
+		'"modelSentences": 2 or 3, spread across the senses.',
 	kanji:
 		'KANJI card. "meaning": the core meaning in a few English words. "readings": the common ' +
 		'readings, kana only, each with "kana" (the kun reading is the stem only — と, not と(く)), ' +

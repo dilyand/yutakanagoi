@@ -254,3 +254,18 @@ describe('Grammar Contrast is "spot the error"', () => {
 		}
 	});
 });
+
+describe('Word Produce is usage, not "type the word"', () => {
+	it.each([
+		wordKibishii.card,
+		{
+			...(wordKibishii.card as WordCard),
+			senses: (wordKibishii.card as WordCard).senses.slice(0, 1)
+		}
+	])('stage 2 forbids blanking the bare target or cueing its reading', (card) => {
+		const { system } = generationPrompt({ card, stage: 2 });
+		expect(system).toContain('NEVER ask the learner to type the target word itself');
+		expect(system).toContain('"cue" never holds the target');
+		expect(system).toContain('collocate');
+	});
+});

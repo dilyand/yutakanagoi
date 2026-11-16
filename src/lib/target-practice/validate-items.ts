@@ -249,6 +249,10 @@ function itemProblem(card: Card, item: Item, spec: PhaseSpec[], stage?: 1 | 2): 
 					? tilesProblem(item)
 					: claudeProblem(item);
 	if (kindProblem) return kindProblem;
+	if (item.kind === 'typed') {
+		const bare = bareTargetProblem(card, item);
+		if (bare) return bare;
+	}
 
 	return coverageProblem(card, item) ?? targetPresenceProblem(card, item);
 }
@@ -349,6 +353,24 @@ function typedProblem(item: TypedItem): string | null {
 	const answer = normalizeAnswer(item.answer);
 	if (answer.length >= 2 && normalizeAnswer(sentence).includes(answer)) {
 		return 'answer_in_prompt: the answer already appears in the sentence';
+	}
+	return null;
+}
+
+/**
+ * A Word cloze whose blank is just the target word ("fill in the word meaning deadline", with
+ * its reading as the cue) only asks the learner to type a word they are looking at — isolated
+ * recall, which the vocab drill already does, and the rest of the sentence is irrelevant.
+ * Target practice for a word is about USING it: its collocates, inflections, derived forms.
+ */
+function bareTargetProblem(card: Card, item: TypedItem): string | null {
+	if (card.type !== 'word' || item.form !== 'cloze') return null;
+	const answer = normalizeAnswer(item.answer);
+	if (
+		answer === normalizeAnswer(card.target) ||
+		answer === normalizeAnswer(toHiragana(card.reading))
+	) {
+		return 'bare_target_cloze: the blank is just the target word — isolated recall, not usage (blank a collocate or a form instead)';
 	}
 	return null;
 }
