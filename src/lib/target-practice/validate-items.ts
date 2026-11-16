@@ -354,6 +354,11 @@ function typedProblem(item: TypedItem): string | null {
 	if (answer.length >= 2 && normalizeAnswer(sentence).includes(answer)) {
 		return 'answer_in_prompt: the answer already appears in the sentence';
 	}
+	// A cue that IS the answer ("（間に合う）" for the answer 間に合う) only asks the learner to copy
+	// it. (A cue in another script — the reading of a kanji answer — is a different thing and passes.)
+	if (item.cue && item.accepted.some((a) => normalizeAnswer(a) === normalizeAnswer(item.cue!))) {
+		return 'cue_is_answer: the cue is the answer, so the item only asks to copy it';
+	}
 	return null;
 }
 

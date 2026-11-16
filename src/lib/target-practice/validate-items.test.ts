@@ -643,8 +643,12 @@ describe('Word cloze: the blank is never just the target (isolated recall)', () 
 		});
 
 	it('drops a cloze whose answer is the bare target or its reading — even with a reading cue', () => {
+		// Either rule may fire first (the cue also equals an accepted answer); both mean "dropped".
 		expect(cloze('厳しい', ['厳しい', 'きびしい'], { cue: '（きびしい）' })).toMatch(
-			/^bare_target_cloze/
+			/^(bare_target_cloze|cue_is_answer)/
+		);
+		expect(cloze('厳しい', ['厳しい'], { cue: '（厳しい）' })).toMatch(
+			/^(bare_target_cloze|cue_is_answer)/
 		);
 		expect(cloze('きびしい', ['きびしい'])).toMatch(/^bare_target_cloze/);
 	});
@@ -653,5 +657,28 @@ describe('Word cloze: the blank is never just the target (isolated recall)', () 
 		expect(
 			cloze('厳しかった', ['厳しかった', 'きびしかった'], { cue: '（厳しい）' })
 		).toBeUndefined();
+	});
+});
+
+describe('typed cloze: the cue is never the answer', () => {
+	const w = wordKibishii;
+	const withCue = (answer: string, accepted: string[], cue: string) =>
+		dropReason(w, 'w-p1', (i) => {
+			if (i.kind !== 'typed') throw new Error('w-p1 should be typed');
+			i.form = 'cloze';
+			i.sentence = '急げば、まだ提出に＿＿と思う。';
+			i.kana = 'いそげば、まだていしゅつに＿＿とおもう。';
+			i.answer = answer;
+			i.accepted = accepted;
+			i.cue = cue;
+			i.targetSpan = answer;
+		});
+
+	it('drops an item whose cue repeats the answer (the real "（間に合う）" case)', () => {
+		expect(withCue('間に合う', ['間に合う', 'まにあう'], '（間に合う）')).toMatch(/^cue_is_answer/);
+	});
+
+	it('keeps an inflected answer with its dictionary-form cue', () => {
+		expect(withCue('間に合った', ['間に合った', 'まにあった'], '（間に合う）')).toBeUndefined();
 	});
 });

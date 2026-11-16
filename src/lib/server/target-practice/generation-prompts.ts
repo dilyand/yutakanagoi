@@ -99,7 +99,9 @@ const TYPED_RULES = [
 	'- "answer" is the canonical Japanese answer. "accepted" lists every answer you would mark ' +
 		'correct, INCLUDING the canonical one: the kana and kanji spellings, and the plain and polite ' +
 		'forms where both are fine. The learner types it, so list real variants, not near-misses.',
-	'- "cue" is a short hint such as （来る） shown after the sentence, or "". "hint" is one English ' +
+	'- "cue" is a short hint such as （来る） shown after the sentence, or "" — never identical to ' +
+		'the answer (an inflected answer 来た with cue （来る） is right; answer 来る with cue ' +
+		'（来る） only asks to copy). "hint" is one English ' +
 		'line that nudges without giving the answer away.',
 	'- For a translation ("free") item, every element of the English wording — an adverb or degree ' +
 		'word such as "faster", the tense, the subject — must be expressed in "answer" and in every ' +
