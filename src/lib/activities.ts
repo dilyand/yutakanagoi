@@ -19,6 +19,11 @@ export const ACTIVITIES: ActivityDescriptor[] = [
 		id: 'shadowing-drill',
 		label: 'Shadowing drill',
 		description: 'Listen to real Japanese speech and repeat it back.'
+	},
+	{
+		id: 'shadowing-radio',
+		label: 'Shadowing radio',
+		description: 'Hands-free listening: every clip, on repeat.'
 	}
 ];
 

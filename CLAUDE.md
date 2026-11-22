@@ -40,9 +40,11 @@ one user's data and another's.
 
 ### Data model
 
-Three independent activities share the `users` table but otherwise keep
-separate schemas — see `supabase/README.md` for full table definitions and
-constraints (don't duplicate that detail here):
+Three activities share the `users` table but otherwise keep separate
+schemas (a fourth, shadowing radio, has none — it reads the shadowing
+drill's library, see "Shadowing radio" below) — see `supabase/README.md`
+for full table definitions and constraints (don't duplicate that detail
+here):
 
 - **Vocab drill**: each user has their own private word lists
   (`word_lists`), each list's words in `list_words`, progress scoped per
@@ -112,7 +114,8 @@ constraints (don't duplicate that detail here):
   `shadowing_state` row, and `selectDrillWords`'s not-yet-due fallback
   reads progress directly with no such cross-check (true for
   vocab/conjugation, where a tracked word never leaves its master list,
-  but not here).
+  but not here). The shadowing radio activity reads this same library
+  read-only — see "Shadowing radio" below.
 
 ### Activities
 
@@ -132,6 +135,58 @@ To add a new activity: append one entry to `ACTIVITIES`, add one new
 component under `src/lib/components/activities/`, add one `{:else if}`
 branch in `+page.svelte`. No changes needed to `ActivityPicker.svelte` or
 any DB table.
+
+### Shadowing radio
+
+`ShadowingRadioActivity.svelte` (registry id `shadowing-radio`) is a
+hands-free listening mode over the **shadowing drill's** per-user library,
+built as its own activity rather than a mode of the drill. It is strictly
+read-only — no `shadowing_sessions` row, no `shadowing_state` change, no
+attempts — so progress only ever moves in the drill. It plays *every* clip
+(not a 10-clip session): each repeated N times (stepper, 1–10, default 3)
+with a ~1s gap, then the next clip, then a fresh playlist fetch and
+another pass, until Stop.
+
+- **Order**: `orderRadioPlaylist` (`src/lib/shadowing/radio-playlist.ts`)
+  calls `selectDrillWords` unchanged with `limit = library.length` and no
+  new-slot reservation, so it's the drill's priority order (due → never
+  heard → not-yet-due) over the whole library. `sessionIndex` is
+  `getLatestSessionIndex + 1`, computed and never persisted.
+- **Endpoints** (both read-only, own rate-limit buckets):
+  `POST /api/shadowing/radio/playlist` returns ids only;
+  `POST /api/shadowing/radio/clips` returns fresh signed URLs for ≤5 ids.
+  URLs are fetched just-in-time (current clip awaited, next prefetched)
+  because a long pass could outlast a signed URL's 2h TTL.
+  `fetchChunkDetailsWithSignedUrls` applies the verified/unflagged gate
+  itself, since this endpoint takes client-supplied ids.
+- **Sequencing**: `src/lib/shadowing/radio-sequencer.ts` is pure
+  (`nextPosition`, `clampRepeats`); the component drives it from `ended`
+  events. `repeats` is read fresh at every boundary.
+- **Playback design** (the non-obvious part): one always-mounted clip
+  `<audio>` plus a second `gapEl` playing `static/silence.wav` (1s). Both
+  are played inside the Start tap to unlock them for later programmatic
+  plays on mobile (a same-origin file because CSP `media-src` has no
+  `data:`). The gap is a playing element whose `ended` advances — *not* a
+  `setTimeout` — and the silence loops across any real wait (pass-end
+  playlist refetch, uncached clip, buffering), so something is always
+  playing and a locked phone doesn't freeze the page. Stale async work is
+  cancelled by a `runId` bumped on Start/Stop/unmount; `paused` is the
+  user's intent, checked wherever the next play would start.
+- **Also**: Flag (pauses while its form is open, captures the clip it
+  will flag), a 0.75× toggle that persists across clips (it sets
+  `defaultPlaybackRate`, since a new `src` resets `playbackRate`), and
+  Media Session (now-playing card; play/pause/stop/next-clip — next-clip
+  has no on-screen button).
+- **Don't simplify the gap/unlock/hold design without a phone.** It
+  exists for locked-screen listening, which no desktop browser or unit test
+  can exercise — a timer-based gap, a single element, or dropping the
+  silence loop all look equivalent on a desktop and can silently stall on
+  a real phone. Validate any change there on a real device.
+- **Running/testing locally**: needs a user with verified, unflagged
+  shadowing chunks in the local Supabase library (`ingest/` populates it).
+  Unit tests: `radio-playlist.test.ts`, `radio-sequencer.test.ts`, the two
+  `radio/*/server.test.ts` files and `shadowing-repository.test.ts`; the
+  component itself has no unit tests, so check it in a browser.
 
 ### The `ingest/` tool
 
@@ -157,7 +212,8 @@ output. There's no chunk-cutting or boundary-detection step — see
 
 - `src/lib/drill-algorithm.ts` — pure, list/cell-agnostic due-word
   selection and box-transition logic (see the spec below). Unit-tested in
-  `drill-algorithm.test.ts`. Shared by all three activities; if you're
+  `drill-algorithm.test.ts`. Shared by all three activities (and reused by
+  shadowing radio's playlist ordering, with `minNewSlots = 0`); if you're
   changing drill behavior, this is the file to edit. `selectDrillWords`'s
   `minNewSlots` param (default 0, so a caller that omits it is unaffected)
   reserves up to that many session slots for never-before-seen items
@@ -202,11 +258,14 @@ output. There's no chunk-cutting or boundary-detection step — see
   `src/lib/server/conjugation-auth.ts` (`verifyUserExists`) — ownership
   checks. Conjugation drills have no `listId` to check against, so
   `verifyUserExists` is the lighter equivalent — reused verbatim by
-  shadowing drill's endpoints for the same reason (chunk ownership is
+  shadowing's (drill and radio) endpoints for the same reason (chunk ownership is
   enforced by scoping every query on the session-derived `userId`
   directly, not via a separate ownership check).
 - `src/lib/server/drill-repository.ts` / `conjugation-repository.ts` /
   `shadowing-repository.ts` — per-activity Supabase data access.
+- `src/lib/shadowing/radio-playlist.ts` / `radio-sequencer.ts` — shadowing
+  radio's pure ordering and repeat/advance logic (see "Shadowing radio"
+  above); `radio-playlist.ts` reuses `selectDrillWords` unmodified.
 - `src/lib/shadowing/rating.ts` — `ratingForHintLevel`/
   `applyShadowingOutcome`, shadowing drill's own box-transition rule
   (direct precedent: `conjugation-engine.ts`'s `applyConjugationOutcome`

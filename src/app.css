@@ -575,6 +575,26 @@ input[type='password'] {
 	color: var(--color-accent);
 }
 
+/* Shadowing radio's "plays per clip" stepper. */
+.radio-repeats {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-3);
+}
+
+.radio-repeats > span {
+	color: var(--color-text-secondary);
+	font-size: var(--font-size-small);
+}
+
+.radio-repeats output {
+	min-width: 2ch;
+	text-align: center;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
 .hint-block {
 	width: 100%;
 	margin-top: var(--space-4);

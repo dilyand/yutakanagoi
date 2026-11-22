@@ -2,9 +2,11 @@
 
 A PWA for Japanese drill practice: SvelteKit + Supabase + the Claude API.
 Multi-user (private per-user word lists, each user logging in with their
-own username + password), with two drill activities — spaced-repetition
-vocabulary drills (pick or upload a word list, then drill) and conjugation
-drills (a shared word-class/form registry, not per-user lists). See
+own username + password), with four activities — spaced-repetition
+vocabulary drills (pick or upload a word list, then drill), conjugation
+drills (a shared word-class/form registry, not per-user lists), shadowing
+drills (listen to real recordings ingested out-of-band, per user), and
+shadowing radio (hands-free, looping listening over that same library). See
 [CLAUDE.md](./CLAUDE.md) for the algorithms each activity implements and
 current-state notes for anyone (human or agent) working in this repo,
 [supabase/README.md](./supabase/README.md) for the data layer, and

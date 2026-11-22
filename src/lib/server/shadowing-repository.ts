@@ -377,9 +377,11 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60 * 2;
 
 /**
  * Fetches full chunk data (audio path, transcript, kana, translation) for
- * this session's selected chunk ids and mints a signed URL for each — the
- * app never streams shadowing audio itself, and never exposes a raw
- * Storage path to the client.
+ * the given chunk ids — this user's verified, unflagged chunks only — and
+ * mints a signed URL for each. The app never streams shadowing audio
+ * itself, and never exposes a raw Storage path to the client. Used by
+ * session/start (ids from the drill's selection) and by the radio clips
+ * endpoint (client-supplied ids, hence the gate here).
  */
 export async function fetchChunkDetailsWithSignedUrls(
 	supabase: SupabaseClient,
@@ -402,6 +404,13 @@ export async function fetchChunkDetailsWithSignedUrls(
 			.from('shadowing_chunks')
 			.select('chunk_id, audio_path, transcript, kana, translation, duration_ms')
 			.eq('user_id', userId)
+			// The same serving gate fetchChunkLibrary applies (verified and
+			// unflagged only). Redundant for session/start, whose ids always
+			// come from that library — but /api/shadowing/radio/clips passes
+			// client-supplied ids, and a chunk that was flagged (or never
+			// verified) must not be servable just because its id was asked for.
+			.is('flagged_at', null)
+			.not('verified_at', 'is', null)
 			.in('chunk_id', chunkIds)
 	);
 	if (error) throw error;

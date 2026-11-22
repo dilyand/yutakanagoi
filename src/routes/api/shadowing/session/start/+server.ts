@@ -83,9 +83,13 @@ export const POST: RequestHandler = async ({ getClientAddress, locals }) => {
 	const items = drillItems.map((item) => {
 		const detail = detailsByChunkId.get(item.word);
 		if (!detail) {
-			// Should be unreachable — selectDrillWords only ever picks chunk
+			// Effectively unreachable — selectDrillWords only ever picks chunk
 			// ids that came from fetchChunkLibrary, which only lists
 			// verified/unflagged chunks that still exist in shadowing_chunks.
+			// The one way in is a chunk flagged in the milliseconds between
+			// that library fetch and the details fetch (which applies the same
+			// verified/unflagged gate): failing the request cleanly beats
+			// serving a chunk the user just said was broken.
 			throw new Error(`No chunk detail found for chunk_id ${item.word}`);
 		}
 		return {
