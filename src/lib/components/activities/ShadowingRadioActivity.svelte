@@ -27,14 +27,16 @@
 
 	type Action = (run: number) => Promise<void>;
 
-	// Silence between plays and between clips, so one clip doesn't run
-	// straight into the next.
-	const GAP_MS = 1000;
-
-	// Played inside the Start tap to "unlock" the audio element — see start().
+	// One second of silence, used two ways:
+	//  - as the gap between plays and between clips, so one clip doesn't run
+	//    straight into the next (played on its own element, `gapEl`, whose
+	//    `ended` event moves radio on — see startGap() for why that's not a
+	//    timer);
+	//  - played inside the Start tap on both elements to "unlock" them (see
+	//    unlockAudio()).
 	// Served from static/ (same origin) rather than a data: URI because the
 	// app's CSP media-src doesn't allow data:.
-	const UNLOCK_SRC = '/silence.wav';
+	const SILENCE_SRC = '/silence.wav';
 
 	// Guards against a pathological loop if the server keeps listing ids it
 	// then won't serve — see playCurrentClip().
@@ -77,6 +79,9 @@
 	let flagInput: HTMLInputElement | undefined = $state();
 
 	let audioEl: HTMLAudioElement | undefined = $state();
+	// Plays the silent gaps. A second element, not audioEl, so a repeat of the
+	// same clip can just rewind audioEl instead of reloading its URL.
+	let gapEl: HTMLAudioElement | undefined = $state();
 
 	// Not rendered, so plain variables.
 	//
@@ -88,7 +93,6 @@
 	// paused playback (so Cancel knows whether to resume).
 	let flagTarget: RadioClip | undefined;
 	let pausedForFlag = false;
-	let gapTimer: ReturnType<typeof setTimeout> | undefined;
 	// True from a clip ending until the next play begins loading, so a pause
 	// during the gap can resume into the gap rather than replaying the clip.
 	let gapPending = false;
@@ -112,17 +116,9 @@
 		currentClip ? `${(currentClip.durationMs / 1000).toFixed(1)}s` : ''
 	);
 
-	function clearGap() {
-		if (gapTimer !== undefined) {
-			clearTimeout(gapTimer);
-			gapTimer = undefined;
-		}
-	}
-
-	/** Cancels everything in flight and silences the audio element. Safe to call at any time, including on unmount. */
+	/** Cancels everything in flight and silences both audio elements. Safe to call at any time, including on unmount. */
 	function teardown() {
 		runId += 1;
-		clearGap();
 		gapPending = false;
 		loading = false;
 		retryTarget = undefined;
@@ -133,6 +129,11 @@
 			audioEl.pause();
 			audioEl.removeAttribute('src');
 			audioEl.load();
+		}
+		if (gapEl) {
+			gapEl.loop = false;
+			gapEl.pause();
+			gapEl.currentTime = 0;
 		}
 	}
 
@@ -152,12 +153,12 @@
 	}
 
 	// Component unmounting (e.g. "Back to activities") must stop the audio
-	// and any pending timer — a radio that keeps playing with no UI is the
+	// and any pending gap — a radio that keeps playing with no UI is the
 	// worst failure mode this activity has.
 	$effect(() => teardown);
 
 	function isUnlockClip(): boolean {
-		return !!audioEl && audioEl.currentSrc.endsWith(UNLOCK_SRC);
+		return !!audioEl && audioEl.currentSrc.endsWith(SILENCE_SRC);
 	}
 
 	/**
@@ -175,6 +176,7 @@
 		} catch (e) {
 			if (run !== runId) return;
 			errorMessage = e instanceof Error ? e.message : String(e);
+			setHold(false);
 			if (phase === 'starting') {
 				// Nothing is playing yet — back to the start screen, like the drill.
 				phase = 'idle';
@@ -256,8 +258,9 @@
 
 	function showPlaybackFailure() {
 		if (phase !== 'playing') return;
-		clearGap();
+		// Pending flag first, so the gap's own "pause" event is ignored.
 		gapPending = false;
+		setHold(false);
 		errorMessage = 'Playback failed — tap Retry.';
 		retryAction = reloadCurrentClip;
 	}
@@ -273,6 +276,7 @@
 	 */
 	const playCurrentClip: Action = async (run) => {
 		retryTarget = playCurrentClip;
+		setHold(true);
 		// Not the previous clip's length badge while this one is loading.
 		currentClip = undefined;
 		let skipped = 0;
@@ -318,6 +322,7 @@
 			// This also disables Flag for that window, so a flag can't start a
 			// second loader alongside this one.
 			currentClip = undefined;
+			setHold(true);
 			if (!(await beginCycle(run))) return;
 			await playCurrentClip(run);
 			return;
@@ -333,18 +338,105 @@
 		await playCurrentClip(run);
 	};
 
-	function startGap() {
-		clearGap();
-		gapTimer = setTimeout(() => {
-			gapTimer = undefined;
-			void runAction(advance);
-		}, GAP_MS);
+	/**
+	 * Keeps the silent clip looping from the moment a gap ends until the next
+	 * clip is actually playing. Those moments can involve real waiting — the
+	 * end of a pass fetches a new playlist and then a clip's URL, and a clip
+	 * can take a while to buffer on a poor connection — and with nothing
+	 * playing, a locked phone may freeze the page right there. Not while the
+	 * user has paused. Released by the clip's own "playing" event, on error,
+	 * and on Stop.
+	 */
+	function setHold(on: boolean) {
+		if (!gapEl) return;
+		if (!on) {
+			gapEl.loop = false;
+			// A gap in progress (pending) is the gap's to finish, not ours.
+			if (!gapPending) {
+				gapEl.pause();
+				gapEl.currentTime = 0;
+			}
+			return;
+		}
+		if (paused) return;
+		gapEl.loop = true;
+		if (gapEl.paused) {
+			gapEl.currentTime = 0;
+			gapEl.play().catch(() => {
+				// Best effort: without it, radio still works while the screen is on.
+			});
+		}
+	}
+
+	/**
+	 * Plays the silent gap, from its start unless `resume` (continuing a gap
+	 * that was paused part-way). Its `ended` moves radio on, via endGap().
+	 *
+	 * The gap is a playing media element, deliberately not a setTimeout:
+	 * on a locked phone or backgrounded tab the browser may freeze the page
+	 * as soon as nothing is playing, so a timer sitting idle through the gap
+	 * might never fire and hands-free listening would just stop. With a
+	 * (silent) clip playing at every moment, the page stays alive — and a
+	 * pause mid-gap can resume into the remainder of it.
+	 */
+	function startGap(resume = false) {
+		if (!gapEl || (resume && gapEl.ended)) {
+			endGap();
+			return;
+		}
+		gapEl.loop = false;
+		if (!resume) gapEl.currentTime = 0;
+		gapEl.play().catch((e: unknown) => {
+			if (e instanceof DOMException && e.name === 'AbortError') return;
+			// A gap that can't play is only cosmetic — carry on without it.
+			endGap();
+		});
+	}
+
+	/** The gap is over (or couldn't be played): start the next play. */
+	function endGap() {
+		if (!gapPending || phase !== 'playing') return;
+		void runAction(advance);
 	}
 
 	function handleEnded() {
 		if (phase !== 'playing' || isUnlockClip()) return;
+		// A load in flight (e.g. a skip) is about to replace this clip anyway,
+		// and will start the next playback itself — a gap here would start a
+		// second advance alongside it.
+		if (loading) return;
 		gapPending = true;
-		if (!paused) startGap();
+		if (!paused) {
+			startGap();
+		} else if (gapEl) {
+			// Paused right as the clip finished: make Resume play a full gap,
+			// not whatever state the gap element was last left in.
+			gapEl.currentTime = 0;
+		}
+	}
+
+	// The clip is audibly playing: whatever was bridging the wait can stop.
+	function handlePlaying() {
+		if (phase !== 'playing' || isUnlockClip()) return;
+		setHold(false);
+	}
+
+	// The silent unlock played at Start also ends on this element, with no
+	// gap pending — endGap() ignores that.
+	function handleGapEnded() {
+		endGap();
+	}
+
+	// Same as handlePause/handlePlay, for the gap element: keeps `paused`
+	// honest when the OS pauses or resumes playback mid-gap.
+	function handleGapPause() {
+		if (phase !== 'playing' || !gapPending || !gapEl || gapEl.ended) return;
+		paused = true;
+	}
+
+	function handleGapPlay() {
+		if (phase !== 'playing' || !gapPending) return;
+		paused = false;
 	}
 
 	function handleAudioError() {
@@ -391,16 +483,20 @@
 	function pausePlayback() {
 		if (!audioEl) return;
 		paused = true;
-		// Mid-gap: stop the countdown but remember a clip had finished.
-		clearGap();
 		audioEl.pause();
+		// Mid-gap: freeze the gap where it is, remembering a clip had finished.
+		// (Also ends any hold, which is silence kept looping across a load.)
+		if (gapEl) {
+			gapEl.loop = false;
+			gapEl.pause();
+		}
 	}
 
 	function resumePlayback() {
 		if (!audioEl) return;
 		paused = false;
 		if (gapPending) {
-			startGap();
+			startGap(true);
 		} else if (!loading) {
 			audioEl.play().catch((e: unknown) => {
 				if (e instanceof DOMException && e.name === 'AbortError') return;
@@ -491,6 +587,72 @@
 		void runAction(playCurrentClip);
 	}
 
+	/**
+	 * Skips to the next clip (a headphone double-tap or the lock screen's
+	 * next button — there's no on-screen equivalent). Ignored while another
+	 * step is loading, so it can't start a second loader, and while the flag
+	 * form is open. Also a way past a clip that won't play.
+	 */
+	function skipClip() {
+		if (phase !== 'playing' || flagging || loading) return;
+		gapPending = false;
+		if (gapEl) gapEl.pause();
+		pos = { index: pos.index + 1, play: 1 };
+		paused = false;
+		// Past the end of the list, playCurrentClip starts a fresh pass.
+		void runAction(playCurrentClip);
+	}
+
+	// Lock-screen, headphone and car controls. Radio is exactly the kind of
+	// listening that happens with the screen off, so without these the only
+	// way to pause it is to unlock the phone. play/pause/stop mirror the
+	// on-screen buttons; they're ignored while the flag form is open or a
+	// failure is showing, where an unseen resume would play under the form
+	// or against a broken clip.
+	$effect(() => {
+		if (phase !== 'playing' || !('mediaSession' in navigator)) return;
+		const session = navigator.mediaSession;
+		const usable = () => phase === 'playing' && !flagging && !retryAction;
+		// A browser that doesn't support an action throws; losing one control
+		// must not lose the others (or the cleanup below).
+		const setHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+			try {
+				session.setActionHandler(action, handler);
+			} catch {
+				// Unsupported action on this browser.
+			}
+		};
+		setHandler('play', () => {
+			if (usable()) resumePlayback();
+		});
+		setHandler('pause', () => {
+			if (usable()) pausePlayback();
+		});
+		setHandler('stop', () => stop());
+		setHandler('nexttrack', () => skipClip());
+		return () => {
+			for (const action of ['play', 'pause', 'stop', 'nexttrack'] as const) {
+				setHandler(action, null);
+			}
+			session.metadata = null;
+			session.playbackState = 'none';
+		};
+	});
+
+	// The "now playing" card: which clip, and which play of it.
+	$effect(() => {
+		if (phase !== 'playing' || !('mediaSession' in navigator)) return;
+		if (typeof MediaMetadata !== 'undefined') {
+			navigator.mediaSession.metadata = new MediaMetadata({
+				title: `Clip ${Math.min(pos.index + 1, playlist.length)} of ${playlist.length}`,
+				artist: `Play ${Math.min(pos.play, repeats)} of ${repeats}`,
+				album: 'Shadowing radio'
+			});
+		}
+		// A failure showing is not "playing" either.
+		navigator.mediaSession.playbackState = paused || retryAction ? 'paused' : 'playing';
+	});
+
 	function retry() {
 		if (!retryAction) return;
 		// Retry is itself a tap, and the likeliest reason for a failure on a
@@ -505,19 +667,26 @@
 	/**
 	 * Mobile browsers (iOS Safari especially) only let a media element start
 	 * playing from inside a user gesture, and everything radio plays after
-	 * the first tap happens later, after network fetches and timers. Playing
+	 * the first tap happens later, after network fetches and media events. Playing
 	 * a short silent clip synchronously inside the Start tap marks the
 	 * element as user-activated, which is what lets the later programmatic
-	 * src changes and play() calls through. (Reusing this one element for
-	 * every clip is deliberate for the same reason.)
+	 * src changes and play() calls through. (Reusing one element for every
+	 * clip is deliberate for the same reason.) The gap element needs the same
+	 * treatment, since it also starts playing outside any gesture.
 	 */
 	function unlockAudio() {
-		if (!audioEl) return;
-		audioEl.src = UNLOCK_SRC;
-		audioEl.play().catch(() => {
-			// Best effort — if this is blocked, the first real play() will
-			// surface the failure with a Retry.
-		});
+		const bestEffort = () => {
+			// If this is blocked, the first real play() will surface the
+			// failure with a Retry.
+		};
+		if (audioEl) {
+			audioEl.src = SILENCE_SRC;
+			audioEl.play().catch(bestEffort);
+		}
+		if (gapEl) {
+			gapEl.currentTime = 0;
+			gapEl.play().catch(bestEffort);
+		}
 	}
 
 	function start() {
@@ -535,7 +704,7 @@
 	}
 </script>
 
-<!-- Always mounted, so the element exists (and can be unlocked) during the
+<!-- Always mounted, so the elements exist (and can be unlocked) during the
      Start tap itself. Hidden: radio has no seek bar. -->
 <audio
 	bind:this={audioEl}
@@ -544,6 +713,17 @@
 	onerror={handleAudioError}
 	onpause={handlePause}
 	onplay={handlePlay}
+	onplaying={handlePlaying}
+	style="display: none"
+></audio>
+<audio
+	bind:this={gapEl}
+	src={SILENCE_SRC}
+	preload="auto"
+	onended={handleGapEnded}
+	onerror={handleGapEnded}
+	onpause={handleGapPause}
+	onplay={handleGapPlay}
 	style="display: none"
 ></audio>
 
