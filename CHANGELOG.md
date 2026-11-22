@@ -5,6 +5,26 @@ CLAUDE.md's "Keeping this doc useful" section. Short version: this file
 records what shipped and why, briefly — current behavior lives in
 `CLAUDE.md`, deep session-specific detail lives in memory.
 
+## 3.2.0 — Shadowing radio
+
+A new hands-free activity (a minor bump rather than a major one like the
+earlier activities: a read-only mode over the shadowing library, no schema
+change). It plays every clip in the shadowing library,
+most-due first, each repeated N times (stepper, default 3) with a ~1s gap,
+and starts over with a fresh pass until stopped. It is read-only — no
+progress, no session rows — so what you hear in radio never changes what the
+drill schedules. Includes Flag, a 0.75x toggle that (unlike the drill's)
+persists across clips, and lock-screen/headphone controls via Media Session
+(play/pause/stop/next-clip).
+
+Built so a long run survives a locked phone: the gap is a second `<audio>`
+playing a silent clip (not a timer), with that silence looping across any
+real wait, and both elements are unlocked inside the Start tap. Signed audio
+URLs are fetched just-in-time because a long pass could outlast their 2h TTL.
+`fetchChunkDetailsWithSignedUrls` now also applies the verified/unflagged
+serving gate itself, since the new clips endpoint takes client-supplied ids.
+Locked-screen/background behaviour on iOS is reasoned, not device-tested.
+
 ## 3.1.0 — Drop shadowing drill's audio chunking; whole-recording drill items
 
 `ingest/` no longer cuts a recording into sentence-level chunks

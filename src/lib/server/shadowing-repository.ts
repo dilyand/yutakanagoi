@@ -377,9 +377,11 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60 * 2;
 
 /**
  * Fetches full chunk data (audio path, transcript, kana, translation) for
- * this session's selected chunk ids and mints a signed URL for each — the
- * app never streams shadowing audio itself, and never exposes a raw
- * Storage path to the client.
+ * the given chunk ids — this user's verified, unflagged chunks only — and
+ * mints a signed URL for each. The app never streams shadowing audio
+ * itself, and never exposes a raw Storage path to the client. Used by
+ * session/start (ids from the drill's selection) and by the radio clips
+ * endpoint (client-supplied ids, hence the gate here).
  */
 export async function fetchChunkDetailsWithSignedUrls(
 	supabase: SupabaseClient,

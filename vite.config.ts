@@ -28,7 +28,7 @@ export default defineConfig({
 					'default-src': ['self'],
 					'style-src': ['self', 'unsafe-inline'],
 					'img-src': ['self', 'data:'],
-					// Shadowing drill's <audio> plays signed Supabase Storage URLs.
+					// Shadowing drill's and radio's <audio> play signed Supabase Storage URLs.
 					// media-src falls back to default-src ('self') when unset, so
 					// without this directive the audio element is blocked outright.
 					// The wildcard covers both the staging and production Supabase
