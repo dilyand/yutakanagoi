@@ -45,11 +45,19 @@
 	// typing past it can't produce a generic 400 that loses the note.
 	const FLAG_NOTE_MAX_LENGTH = 500;
 
+	// The slow-down toggle's rate; normal speed is 1.
+	const SLOW_RATE = 0.75;
+
 	let { username, onExit }: { username: string; onExit: () => void } = $props();
 
 	let phase = $state<Phase>('idle');
 	let errorMessage = $state('');
 	let repeats = $state(DEFAULT_RADIO_REPEATS);
+	// The 0.75x toggle. Lives for the whole radio session — unlike the drill,
+	// where speed resets per clip, radio has no Next, so a listener who slowed
+	// it down wants every following clip slow too. Like the repeats stepper,
+	// it also survives Stop/Start while the activity stays open.
+	let slow = $state(false);
 
 	let playlist = $state<string[]>([]);
 	let pos = $state<RadioPosition>(startPosition());
@@ -296,6 +304,7 @@
 
 		if (!audioEl) return;
 		audioEl.src = currentClip!.audioUrl;
+		applyPlaybackRate();
 		playAudio();
 		void prefetchNextClip(run);
 	};
@@ -355,6 +364,28 @@
 	function handlePlay() {
 		if (phase !== 'playing' || isUnlockClip()) return;
 		paused = false;
+	}
+
+	/**
+	 * Applies the speed toggle to the audio element. `defaultPlaybackRate` is
+	 * set as well as `playbackRate` because loading a new `src` resets
+	 * `playbackRate` to the default — that reset is what would otherwise
+	 * drop every clip after the first back to normal speed.
+	 */
+	function applyPlaybackRate() {
+		if (!audioEl) return;
+		const rate = slow ? SLOW_RATE : 1;
+		audioEl.defaultPlaybackRate = rate;
+		audioEl.playbackRate = rate;
+		// Keeps pitch natural at 0.75x instead of dropping it. preservesPitch
+		// is the standard name; the webkit-prefixed one covers older Safari.
+		audioEl.preservesPitch = true;
+		(audioEl as HTMLAudioElement & { webkitPreservesPitch?: boolean }).webkitPreservesPitch = true;
+	}
+
+	function toggleSpeed() {
+		slow = !slow;
+		applyPlaybackRate();
 	}
 
 	function pausePlayback() {
@@ -569,6 +600,7 @@
 				{paused ? '▶ Resume' : '⏸ Pause'}
 			</button>
 			<div class="shadowing-secondary-controls">
+				<button class:active={slow} aria-pressed={slow} onclick={toggleSpeed}>0.75×</button>
 				<!-- Needs a loaded clip to flag. Still available while a playback
 				     error is showing — a clip that won't play is a fair one to flag. -->
 				<button onclick={openFlag} disabled={!currentClip || flagging}>⚑ Flag</button>
