@@ -402,6 +402,13 @@ export async function fetchChunkDetailsWithSignedUrls(
 			.from('shadowing_chunks')
 			.select('chunk_id, audio_path, transcript, kana, translation, duration_ms')
 			.eq('user_id', userId)
+			// The same serving gate fetchChunkLibrary applies (verified and
+			// unflagged only). Redundant for session/start, whose ids always
+			// come from that library — but /api/shadowing/radio/clips passes
+			// client-supplied ids, and a chunk that was flagged (or never
+			// verified) must not be servable just because its id was asked for.
+			.is('flagged_at', null)
+			.not('verified_at', 'is', null)
 			.in('chunk_id', chunkIds)
 	);
 	if (error) throw error;
