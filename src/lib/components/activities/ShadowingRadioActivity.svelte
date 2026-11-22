@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { apiPost } from '$lib/client/api-client';
 	import {
 		DEFAULT_RADIO_REPEATS,
@@ -39,6 +40,11 @@
 	// then won't serve — see playCurrentClip().
 	const MAX_SKIPPED_CLIPS = 20;
 
+	// Mirrors the server's z.string().max(500) in
+	// /api/shadowing/chunks/flag/+server.ts (and the drill's own cap), so
+	// typing past it can't produce a generic 400 that loses the note.
+	const FLAG_NOTE_MAX_LENGTH = 500;
+
 	let { username, onExit }: { username: string; onExit: () => void } = $props();
 
 	let phase = $state<Phase>('idle');
@@ -56,6 +62,12 @@
 	// button; null/undefined when there's nothing to retry.
 	let retryAction = $state<Action | undefined>();
 
+	// The flag form (see openFlag). While it's open playback is paused.
+	let flagging = $state(false);
+	let flagNote = $state('');
+	let isSubmittingFlag = $state(false);
+	let flagInput: HTMLInputElement | undefined = $state();
+
 	let audioEl: HTMLAudioElement | undefined = $state();
 
 	// Not rendered, so plain variables.
@@ -64,6 +76,10 @@
 	// started under and bails out if it's changed — a Stop (or unmount) while
 	// a fetch is in flight must not let that fetch go on to start playback.
 	let runId = 0;
+	// The clip the open flag form will flag, and whether opening it is what
+	// paused playback (so Cancel knows whether to resume).
+	let flagTarget: RadioClip | undefined;
+	let pausedForFlag = false;
 	let gapTimer: ReturnType<typeof setTimeout> | undefined;
 	// True from a clip ending until the next play begins loading, so a pause
 	// during the gap can resume into the gap rather than replaying the clip.
@@ -116,6 +132,11 @@
 		teardown();
 		phase = 'idle';
 		paused = false;
+		flagging = false;
+		flagNote = '';
+		flagTarget = undefined;
+		pausedForFlag = false;
+		isSubmittingFlag = false;
 		errorMessage = '';
 		playlist = [];
 		currentClip = undefined;
@@ -284,6 +305,10 @@
 		gapPending = false;
 		const step = nextPosition(pos, playlist.length, repeats);
 		if (step.cycleEnded) {
+			// Nothing is "current" while the next pass's playlist is fetched.
+			// This also disables Flag for that window, so a flag can't start a
+			// second loader alongside this one.
+			currentClip = undefined;
 			if (!(await beginCycle(run))) return;
 			await playCurrentClip(run);
 			return;
@@ -332,15 +357,16 @@
 		paused = false;
 	}
 
-	function togglePause() {
-		if (!audioEl || phase !== 'playing') return;
-		if (!paused) {
-			paused = true;
-			// Mid-gap: stop the countdown but remember a clip had finished.
-			clearGap();
-			audioEl.pause();
-			return;
-		}
+	function pausePlayback() {
+		if (!audioEl) return;
+		paused = true;
+		// Mid-gap: stop the countdown but remember a clip had finished.
+		clearGap();
+		audioEl.pause();
+	}
+
+	function resumePlayback() {
+		if (!audioEl) return;
 		paused = false;
 		if (gapPending) {
 			startGap();
@@ -352,6 +378,86 @@
 		}
 		// else: an action is mid-load and will start playback itself now that
 		// `paused` is false again.
+	}
+
+	function togglePause() {
+		if (phase !== 'playing') return;
+		if (paused) resumePlayback();
+		else pausePlayback();
+	}
+
+	/**
+	 * Opens the flag form for the clip that's current right now, and pauses
+	 * playback while it's open — otherwise the clips would keep cycling
+	 * under the note being typed. The clip is captured here, not read at
+	 * confirm time, so the note can only ever land on the clip that was
+	 * flagged. Cancel resumes only if this is what paused it.
+	 */
+	function openFlag() {
+		if (!currentClip || flagging) return;
+		flagTarget = currentClip;
+		flagNote = '';
+		errorMessage = '';
+		pausedForFlag = !paused;
+		if (pausedForFlag) pausePlayback();
+		flagging = true;
+		// Opening the form disables the Flag button that was just pressed, so
+		// keyboard focus would otherwise fall back to the page body.
+		void tick().then(() => flagInput?.focus());
+	}
+
+	function cancelFlag() {
+		if (isSubmittingFlag) return;
+		flagging = false;
+		flagTarget = undefined;
+		errorMessage = '';
+		// Not while a failure is showing: there's nothing to resume, and
+		// Retry is the way forward.
+		if (pausedForFlag && !retryAction) resumePlayback();
+	}
+
+	/**
+	 * Flags the captured clip (excluding it from every future pass, here and
+	 * in the drill) and moves on to whatever now sits at its position.
+	 */
+	async function confirmFlag() {
+		const target = flagTarget;
+		if (!target || isSubmittingFlag) return;
+		const run = runId;
+		isSubmittingFlag = true;
+		errorMessage = '';
+		try {
+			await apiPost('/api/shadowing/chunks/flag', {
+				chunkId: target.chunkId,
+				note: flagNote.trim() || undefined
+			});
+		} catch (e) {
+			// Radio was stopped while the request was in flight: stop() already
+			// reset the form, and a newer form (if any) isn't ours to touch.
+			if (run !== runId) return;
+			// Stays on the form, note intact, so the same press can retry.
+			errorMessage = e instanceof Error ? e.message : String(e);
+			isSubmittingFlag = false;
+			return;
+		}
+		// Same, on success: the flag is saved, but there's nothing to continue.
+		if (run !== runId) return;
+		isSubmittingFlag = false;
+
+		flagging = false;
+		flagTarget = undefined;
+		// Playback has been paused since the form opened, so the flagged clip
+		// is still the one at `pos` — removing it leaves that index pointing
+		// at whatever slid into its slot (or past the end, if it was last,
+		// which makes playCurrentClip start a fresh pass).
+		playlist = playlist.filter((id) => id !== target.chunkId);
+		clipCache.delete(target.chunkId);
+		// The next clip starts from its first play. Stays paused only if the
+		// user had paused before opening the form.
+		gapPending = false;
+		pos = { index: pos.index, play: 1 };
+		if (pausedForFlag) paused = false;
+		void runAction(playCurrentClip);
 	}
 
 	function retry() {
@@ -446,25 +552,58 @@
 		<!-- Not role="status": this changes every few seconds, which a screen
 		     reader would announce each time. -->
 		<div class="cell-header">
-			<span class="badge">Clip {pos.index + 1} / {playlist.length}</span>
+			<!-- Clamped: right after the last clip is flagged, pos is briefly one
+			     past the shortened list, until the next pass loads. -->
+			<span class="badge">Clip {Math.min(pos.index + 1, playlist.length)} / {playlist.length}</span>
 			<span class="badge">Play {Math.min(pos.play, repeats)} / {repeats}</span>
 			{#if clipLengthLabel}<span class="badge">{clipLengthLabel}</span>{/if}
 		</div>
 		<div class="shadowing-controls">
 			<!-- Disabled while a failure is showing: there's nothing playing to
 			     pause or resume, and Retry (below) is the way forward. -->
-			<button class="shadowing-play-button" onclick={togglePause} disabled={!!retryAction}>
+			<button
+				class="shadowing-play-button"
+				onclick={togglePause}
+				disabled={!!retryAction || flagging}
+			>
 				{paused ? '▶ Resume' : '⏸ Pause'}
 			</button>
+			<div class="shadowing-secondary-controls">
+				<!-- Needs a loaded clip to flag. Still available while a playback
+				     error is showing — a clip that won't play is a fair one to flag. -->
+				<button onclick={openFlag} disabled={!currentClip || flagging}>⚑ Flag</button>
+			</div>
 		</div>
 	</div>
 
-	{@render repeatsControl()}
+	{#if flagging}
+		<div class="interaction__actions">
+			<label class="field">
+				<span>Note (optional):</span>
+				<input
+					type="text"
+					bind:this={flagInput}
+					bind:value={flagNote}
+					disabled={isSubmittingFlag}
+					maxlength={FLAG_NOTE_MAX_LENGTH}
+					onkeydown={(e) => e.key === 'Enter' && confirmFlag()}
+				/>
+			</label>
+			<button class="button-primary" onclick={confirmFlag} disabled={isSubmittingFlag}
+				>Flag and continue</button
+			>
+			<p class="cancel">
+				<button onclick={cancelFlag} disabled={isSubmittingFlag}>Cancel</button>
+			</p>
+		</div>
+	{:else}
+		{@render repeatsControl()}
 
-	{#if retryAction}
-		<button class="button-primary" onclick={retry}>Retry</button>
+		{#if retryAction}
+			<button class="button-primary" onclick={retry}>Retry</button>
+		{/if}
+		<p class="cancel"><button onclick={stop}>Stop radio</button></p>
 	{/if}
-	<p class="cancel"><button onclick={stop}>Stop radio</button></p>
 {/if}
 
 {#if errorMessage}
