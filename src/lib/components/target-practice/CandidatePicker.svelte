@@ -5,11 +5,14 @@
 	let {
 		candidates,
 		busy,
+		fromDictionary = false,
 		onPick,
 		onRephrase
 	}: {
 		candidates: Candidate[];
 		busy: boolean;
+		/** The readings and glosses come from JMdict, whose licence asks for an on-screen credit. */
+		fromDictionary?: boolean;
 		onPick: (candidate: Candidate) => void;
 		onRephrase: () => void;
 	} = $props();
@@ -31,6 +34,16 @@
 	{#if busy}<p class="subtitle">
 			<span class="spinner" aria-hidden="true"></span>Building the card…
 		</p>{/if}
+	{#if fromDictionary}
+		<p class="subtitle">
+			Readings and meanings from
+			<a
+				href="https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project"
+				target="_blank"
+				rel="noopener noreferrer">JMdict</a
+			>, © the Electronic Dictionary Research and Development Group (CC BY-SA 4.0).
+		</p>
+	{/if}
 	<p class="cancel">
 		<button onclick={onRephrase} disabled={busy}>None of these — rephrase</button>
 	</p>

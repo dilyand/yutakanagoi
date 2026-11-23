@@ -214,6 +214,24 @@ grammar|contrast` (CHECK). `target_key` is the canonical resolved
     `(user_id, day)`. Written only through the two RPCs below. Token totals
     double as a record of real daily spend for tuning the caps.
 
+- `dictionary_entries` — a slimmed copy of JMdict for target practice's Word
+  lookup (`20261123000001_dictionary_entries.sql`), replacing the Word
+  candidate model call. **Reference data, not user data**: no `user_id`, no
+  FK to `users`, RLS enabled with no policies (service-role only), purely
+  additive. PK `id` is JMdict's `ent_seq`; `kanji`, `kana`, `senses` are
+  jsonb (`{text, common, tags, appliesToKanji?}` / `{pos, misc, glosses,
+appliesToKanji?}`); `lookup_keys` is the NFKC-folded text of every form
+  (JMdict stores `Ｔシャツ` fullwidth, input is folded to `Tシャツ`) with a GIN
+  index, queried as `lookup_keys @> array[$1]`; `dict_version` is the
+  JMdict `dictDate` the row came from. ~219k rows, **~119 MB** with indexes
+  on the local stack — check the target project's size headroom before
+  importing there. Loaded by `npm run dictionary:import -- <path to
+jmdict-eng-*.json>` (the jmdict-simplified English release; re-runnable,
+  upserts by id and deletes rows from older versions; point it at another
+  environment with `npx tsx --env-file=.env.staging scripts/import-dictionary.ts
+<path>`). Not refreshed automatically. Licence and credit: see the root
+  README.
+
 ### Shadowing Storage bucket
 
 `shadowing-audio` — private, no RLS policies (same reasoning as every table:

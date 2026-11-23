@@ -42,3 +42,14 @@ npm run preview
 Deploys to Vercel via `@sveltejs/adapter-vercel`, connected through Vercel's
 GitHub integration (no `vercel.json` in this repo) — see CLAUDE.md's
 Operating conventions section for the full deploy/PR-preview workflow.
+
+## Credits
+
+Word lookup in target practice uses [JMdict](https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project),
+the property of the [Electronic Dictionary Research and Development Group](https://www.edrdg.org/),
+used under their [licence](https://www.edrdg.org/edrdg/licence.html)
+(Creative Commons Attribution-ShareAlike 4.0). It is loaded into the
+`dictionary_entries` table by `npm run dictionary:import` from the
+[jmdict-simplified](https://github.com/scriptin/jmdict-simplified) conversion;
+see [supabase/README.md](./supabase/README.md). The word picker shows the same
+credit on screen.

@@ -365,6 +365,7 @@
 	<CandidatePicker
 		{candidates}
 		{busy}
+		fromDictionary={type === 'word'}
 		onPick={pickCandidate}
 		onRephrase={() => {
 			errorMessage = '';
