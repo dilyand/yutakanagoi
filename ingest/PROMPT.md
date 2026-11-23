@@ -45,7 +45,7 @@ person typing each command.
 - **The slug comes from the audio file's basename** (via `deriveListName`),
   not from anything you pass in. If the source file isn't already named the
   way you want the slug to look, copy it to a scratch location under the
-  target name *before* running `ingest:transcribe`; renaming afterwards
+  target name _before_ running `ingest:transcribe`; renaming afterwards
   leaves the wrong slug in `transcript.json`, the DB, and Storage paths.
 - **Targeting a different environment without editing `.env`:** the
   `ingest:*` npm scripts hardcode `--env-file=.env`, so call the entry
@@ -82,7 +82,7 @@ proofread `transcript`.
 - Fix wrong-kanji and wrong-word errors, not just names. A supplied
   transcript can contain a homophone mis-conversion (e.g. a nonsense
   kanji run where a weekday abbreviation was meant) or a mis-heard
-  uncommon word, and whisper often makes the *same* mistake, so the two
+  uncommon word, and whisper often makes the _same_ mistake, so the two
   agreeing proves nothing — judge by context and by whether the phrase
   is even a real word.
 - Add `。！？、` where they belong, based on the natural sentence and
@@ -132,7 +132,7 @@ the check — fix the actual problem and re-run.
   Two patterns come up repeatedly: whisper appending a "thanks for
   watching" line (e.g. `ご視聴ありがとうございました`) after the real
   speech ends is a hallucination — the supplied transcript is right to
-  omit it, so once that's the *only* thing flagged, `--accept-transcript`
+  omit it, so once that's the _only_ thing flagged, `--accept-transcript`
   is the correct call; and whisper dropping a quiet opening greeting
   entirely is an omission, not evidence the greeting wasn't said. If
   something else is also flagged (a genuinely wrong word in the supplied
