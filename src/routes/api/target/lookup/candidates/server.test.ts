@@ -17,7 +17,7 @@ import { UserNotFoundError } from '$lib/server/conjugation-auth';
 function makeEvent({
 	userId = 1,
 	ip = '203.0.113.1',
-	body = { type: 'word', input: 'deadline' }
+	body = { type: 'grammar', input: 'whether or not' }
 }: { userId?: number | null; ip?: string; body?: unknown } = {}) {
 	return {
 		request: { json: async () => body },
@@ -55,6 +55,8 @@ describe('POST /api/target/lookup/candidates', () => {
 		expect(
 			await status(POST(makeEvent({ body: { type: 'word', input: 'run fast now please' } })))
 		).toBe(400);
+		// English is no longer accepted for Words.
+		expect(await status(POST(makeEvent({ body: { type: 'word', input: 'deadline' } })))).toBe(400);
 		expect(mocks.lookupCandidates).not.toHaveBeenCalled();
 	});
 

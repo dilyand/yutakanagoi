@@ -34,8 +34,8 @@ export const GUIDANCE: Record<TargetType, TypeGuidance> = {
 		label: 'Word',
 		blurb: 'One word, practised across its main senses.',
 		placeholder: '厳しい',
-		note: 'One word, in Japanese (kanji or kana) or English. Phrases and sentences are not words.',
-		chips: ['厳しい', '食べる', 'deadline', 'to run']
+		note: 'One word, in Japanese (kanji or kana). Phrases and sentences are not words.',
+		chips: ['厳しい', '食べる', '締め切り', '人気']
 	},
 	kanji: {
 		label: 'Kanji',

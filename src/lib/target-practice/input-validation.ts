@@ -21,9 +21,9 @@ export type InputCheck =
 			language: InputLanguage;
 			/**
 			 * The learner's input must go through the candidate step before the card call:
-			 * English input (to find the Japanese target), and Japanese Word input
-			 * (homographs like 人気 にんき/ひとけ and kana-only input like たべる can't be
-			 * resolved locally without a dictionary).
+			 * English Grammar input (to find the Japanese pattern, a model call), and
+			 * Japanese Word input (homographs like 人気 にんき/ひとけ and kana-only input
+			 * like たべる are resolved against the JMdict dictionary table, no model call).
 			 */
 			needsCandidates: boolean;
 			/** Contrast only: the two sides, in the order typed. */
@@ -36,20 +36,20 @@ const KANA = '\\u3041-\\u309F\\u30A1-\\u30FF';
 const IDEOGRAPH = '\\p{Unified_Ideograph}';
 const JA_WORD_CHARS = `${KANA}${IDEOGRAPH}々ー`;
 
-const JA_WORD = new RegExp(`^[${JA_WORD_CHARS}]+$`, 'u');
+// A Word may carry ASCII letters and digits next to Japanese script (Tシャツ, SNS); cleanInput's
+// NFKC has already folded fullwidth ones. It still needs Japanese script (checkWord).
+const JA_WORD = new RegExp(`^[${JA_WORD_CHARS}A-Za-z0-9]+$`, 'u');
 const JA_PHRASE = new RegExp(`^[${JA_WORD_CHARS}、！？・]+$`, 'u');
 // Optional parts are written (よ)う — ASCII parens, because cleanInput's NFKC folds
 // the fullwidth （） into them before any of these patterns run.
 const PATTERN_CHARS = `${JA_WORD_CHARS}〜()`;
 const JA_PATTERN = new RegExp(`^[${PATTERN_CHARS}]+$`, 'u');
 const SINGLE_IDEOGRAPH = new RegExp(`^${IDEOGRAPH}$`, 'u');
-const EN_WORD = /^[A-Za-z][A-Za-z'’-]*$/;
 const EN_PATTERN_CHARS = /^[A-Za-z][A-Za-z\s,'’-]*$/;
 
 const JA_ANY = new RegExp(`[${KANA}${IDEOGRAPH}]`, 'u');
 const LATIN_ANY = /[A-Za-z]/;
 
-const MAX_EN_WORD_TOKENS = 3;
 const MAX_EN_PATTERN_TOKENS = 8;
 
 /** NFKC, trim, collapse whitespace, unify ~ / ～ / ∼ into 〜. */
@@ -96,22 +96,13 @@ function checkKanji(value: string): InputCheck {
 }
 
 function checkWord(value: string): InputCheck {
-	if (JA_ANY.test(value) && LATIN_ANY.test(value)) {
-		return reject('Use Japanese or English, not both.');
-	}
-	if (JA_ANY.test(value)) {
-		if (/\s/.test(value)) return reject('Word takes a single word, with no spaces.');
-		if (value.includes('〜')) return reject('A pattern with a slot is Grammar, not a Word.');
-		if (!JA_WORD.test(value)) return reject('A Word is kana and kanji only — no punctuation.');
-		return { ok: true, type: 'word', value, language: 'ja', needsCandidates: true };
-	}
-	const tokens = value.split(' ');
-	if (tokens.length > MAX_EN_WORD_TOKENS || !tokens.every((t) => EN_WORD.test(t))) {
-		return reject(
-			'Word takes a single word (like "deadline" or "to run"). For a phrase use Set phrase; for a pattern use Grammar.'
-		);
-	}
-	return { ok: true, type: 'word', value, language: 'en', needsCandidates: true };
+	// Japanese only: English meanings are not looked up (the dictionary match is on the
+	// word's own spelling or reading).
+	if (!JA_ANY.test(value)) return reject('Enter the word in Japanese — kana or kanji.');
+	if (/\s/.test(value)) return reject('Word takes a single word, with no spaces.');
+	if (value.includes('〜')) return reject('A pattern with a slot is Grammar, not a Word.');
+	if (!JA_WORD.test(value)) return reject('A Word is kana and kanji only — no punctuation.');
+	return { ok: true, type: 'word', value, language: 'ja', needsCandidates: true };
 }
 
 function checkSetPhrase(value: string): InputCheck {

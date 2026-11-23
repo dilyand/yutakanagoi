@@ -52,21 +52,29 @@ describe('kanji', () => {
 });
 
 describe('word', () => {
-	it('accepts Japanese words, and still routes them through the candidate step', () => {
+	it('accepts Japanese words, and routes them through the candidate step', () => {
 		expect(ok('word', '食べる')).toMatchObject({ language: 'ja', needsCandidates: true });
 		expect(ok('word', 'たべる').value).toBe('たべる');
 		expect(ok('word', 'ラーメン').value).toBe('ラーメン');
 	});
-	it('routes English words through the candidate step', () => {
-		expect(ok('word', 'deadline')).toMatchObject({ language: 'en', needsCandidates: true });
-		expect(ok('word', 'to run')).toMatchObject({ language: 'en', needsCandidates: true });
+	it('accepts Latin letters and digits next to Japanese script, folded to ASCII', () => {
+		expect(ok('word', 'Tシャツ').value).toBe('Tシャツ');
+		expect(ok('word', 'Ｔシャツ').value).toBe('Tシャツ');
+		expect(ok('word', '3Dプリンター').value).toBe('3Dプリンター');
 	});
-	it('rejects phrases, sentences, patterns and mixed scripts', () => {
+	it('rejects English, which is no longer looked up for Words', () => {
+		expect(bad('word', 'deadline')).toMatch(/in Japanese/);
+		expect(bad('word', 'to run')).toMatch(/in Japanese/);
+		// A purely Latin word (SNS, CD) can't be told apart from English, so it is rejected too.
+		expect(bad('word', 'SNS')).toMatch(/in Japanese/);
+		expect(bad('word', 'ＳＮＳ')).toMatch(/in Japanese/);
+		expect(bad('word', '123')).toMatch(/in Japanese/);
+	});
+	it('rejects phrases, sentences and patterns', () => {
 		expect(bad('word', '食べる 飲む')).toMatch(/single word/);
+		expect(bad('word', 'run 走る')).toMatch(/single word/);
 		expect(bad('word', '食べます。')).toMatch(/no punctuation/);
 		expect(bad('word', '〜てしまう')).toMatch(/Grammar/);
-		expect(bad('word', 'the more the more')).toMatch(/single word/);
-		expect(bad('word', 'run 走る')).toMatch(/not both/);
 	});
 });
 
