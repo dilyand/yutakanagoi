@@ -43,17 +43,25 @@ describe('lookupCandidates', () => {
 	it('returns validated candidates, as a lookup call on the grading model', async () => {
 		const parse = modelReturns({
 			candidates: [
-				{ target: '人気', reading: 'にんき', gloss: 'popularity' },
-				{ target: '人気', reading: 'ひとけ', gloss: 'signs of people' }
+				{ target: '〜かどうか', reading: '〜かどうか', gloss: 'whether or not' },
+				{
+					target: '〜ても〜なくても',
+					reading: '〜ても〜なくても',
+					gloss: 'whether or not (concessive)'
+				}
 			]
 		});
-		const result = await lookupCandidates(supabase, 7, 'word', '人気');
+		const result = await lookupCandidates(supabase, 7, 'grammar', 'whether or not');
 
 		expect(result).toEqual({
 			status: 'ok',
 			candidates: [
-				{ target: '人気', reading: 'にんき', gloss: 'popularity' },
-				{ target: '人気', reading: 'ひとけ', gloss: 'signs of people' }
+				{ target: '〜かどうか', reading: '〜かどうか', gloss: 'whether or not' },
+				{
+					target: '〜ても〜なくても',
+					reading: '〜ても〜なくても',
+					gloss: 'whether or not (concessive)'
+				}
 			]
 		});
 		expect(callClaudeMock).toHaveBeenCalledWith(
@@ -67,7 +75,9 @@ describe('lookupCandidates', () => {
 
 	it('logs dropped candidates and returns none when nothing survives', async () => {
 		modelReturns({ candidates: [{ target: 'run', reading: 'ran', gloss: 'to run' }] });
-		expect(await lookupCandidates(supabase, 7, 'word', 'to run')).toEqual({ status: 'none' });
+		expect(await lookupCandidates(supabase, 7, 'grammar', 'to run fast')).toEqual({
+			status: 'none'
+		});
 		expect(logError).toHaveBeenCalledWith(
 			'target-practice/lookup/candidates',
 			expect.any(Error),
@@ -79,7 +89,7 @@ describe('lookupCandidates', () => {
 		callClaudeMock.mockRejectedValue(
 			new UsageCapError('cap_reached', 'lookup', new Date('2026-10-18T00:00:00Z'))
 		);
-		expect(await lookupCandidates(supabase, 7, 'word', '食べる')).toEqual({
+		expect(await lookupCandidates(supabase, 7, 'grammar', 'whether or not')).toEqual({
 			status: 'limit',
 			reason: 'cap_reached',
 			resetsAt: '2026-10-18T00:00:00.000Z',
@@ -91,7 +101,7 @@ describe('lookupCandidates', () => {
 		callClaudeMock.mockRejectedValue(
 			new UsageCapError('disabled', 'lookup', new Date('2026-10-18T00:00:00Z'))
 		);
-		expect(await lookupCandidates(supabase, 7, 'word', '食べる')).toMatchObject({
+		expect(await lookupCandidates(supabase, 7, 'grammar', 'whether or not')).toMatchObject({
 			status: 'limit',
 			reason: 'disabled',
 			message: 'Target practice is switched off right now.'
@@ -100,8 +110,8 @@ describe('lookupCandidates', () => {
 
 	it('logs a model/SDK failure and raises a 502', async () => {
 		callClaudeMock.mockRejectedValue(new Anthropic.AnthropicError('boom'));
-		await expect(lookupCandidates(supabase, 7, 'word', '食べる')).rejects.toSatisfy((e) =>
-			isHttpError(e, 502)
+		await expect(lookupCandidates(supabase, 7, 'grammar', 'whether or not')).rejects.toSatisfy(
+			(e) => isHttpError(e, 502)
 		);
 		expect(logError).toHaveBeenCalled();
 	});
@@ -109,7 +119,7 @@ describe('lookupCandidates', () => {
 	it('lets unexpected errors (a database failure) propagate unchanged', async () => {
 		const dbError = new Error('db down');
 		callClaudeMock.mockRejectedValue(dbError);
-		await expect(lookupCandidates(supabase, 7, 'word', '食べる')).rejects.toBe(dbError);
+		await expect(lookupCandidates(supabase, 7, 'grammar', 'whether or not')).rejects.toBe(dbError);
 	});
 });
 

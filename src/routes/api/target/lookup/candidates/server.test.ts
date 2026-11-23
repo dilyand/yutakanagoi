@@ -3,13 +3,20 @@ import { isHttpError } from '@sveltejs/kit';
 
 vi.mock('$lib/server/supabase', () => ({ createServiceClient: vi.fn(() => ({})) }));
 
-const mocks = vi.hoisted(() => ({ verifyUserExists: vi.fn(), lookupCandidates: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+	verifyUserExists: vi.fn(),
+	lookupCandidates: vi.fn(),
+	lookupWord: vi.fn()
+}));
 
 vi.mock('$lib/server/conjugation-auth', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/server/conjugation-auth')>();
 	return { ...actual, verifyUserExists: mocks.verifyUserExists };
 });
 vi.mock('$lib/server/target-practice/lookup', () => ({ lookupCandidates: mocks.lookupCandidates }));
+vi.mock('$lib/server/target-practice/dictionary-lookup', () => ({
+	lookupWordInDictionary: mocks.lookupWord
+}));
 
 import { POST } from './+server';
 import { UserNotFoundError } from '$lib/server/conjugation-auth';
@@ -90,11 +97,17 @@ describe('POST /api/target/lookup/candidates', () => {
 		);
 	});
 
-	it('looks up Japanese Word input too (homographs, kana-only)', async () => {
+	it('looks Japanese Word input up in the dictionary, without a model call', async () => {
 		mocks.verifyUserExists.mockResolvedValueOnce(undefined);
-		mocks.lookupCandidates.mockResolvedValueOnce({ status: 'none' });
-		await POST(makeEvent({ body: { type: 'word', input: '人気' } }));
-		expect(mocks.lookupCandidates).toHaveBeenCalledWith(expect.anything(), 1, 'word', '人気');
+		const found = {
+			status: 'ok',
+			candidates: [{ target: '人気', reading: 'にんき', gloss: 'popularity' }]
+		};
+		mocks.lookupWord.mockResolvedValueOnce(found);
+		const response = await POST(makeEvent({ body: { type: 'word', input: ' 人気 ' } }));
+		expect(await response.json()).toEqual(found);
+		expect(mocks.lookupWord).toHaveBeenCalledWith(expect.anything(), '人気');
+		expect(mocks.lookupCandidates).not.toHaveBeenCalled();
 	});
 
 	it('passes a limit outcome through as a normal 200 response', async () => {

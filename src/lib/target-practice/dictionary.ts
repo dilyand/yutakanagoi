@@ -14,8 +14,8 @@ import type { Candidate } from './lookup';
  */
 
 const MAX_GLOSS_LENGTH = 100;
-/** Senses that feed the picker's one-line gloss. */
-const GLOSS_SENSES = 3;
+/** Glosses of the first sense that feed the picker's one-line gloss. */
+const GLOSS_PARTS = 3;
 
 // --- Stored shape --------------------------------------------------------
 
@@ -137,10 +137,15 @@ function kanaFitsKanji(kana: DictForm, kanjiText: string): boolean {
 	return everyKanji(kana.appliesToKanji) || kana.appliesToKanji!.includes(kanjiText);
 }
 
-/** The reading shown for a kanji form: its first ordinary applicable kana form. */
+/**
+ * The reading shown for a kanji form: its first ordinary applicable kana form,
+ * preferring one written in hiragana (JMdict lists ウブ before うぶ, for 生).
+ */
 function readingForKanji(entry: DictionaryEntry, kanjiText: string): string | null {
 	const fitting = entry.kana.filter((k) => kanaFitsKanji(k, kanjiText));
-	const preferred = fitting.find((k) => !hasAny(k.tags, RARE_KANA_TAGS)) ?? fitting[0];
+	const ordinary = fitting.filter((k) => !hasAny(k.tags, RARE_KANA_TAGS));
+	const pool = ordinary.length > 0 ? ordinary : fitting;
+	const preferred = pool.find((k) => /[ぁ-ゟ]/.test(k.text)) ?? pool[0];
 	return preferred?.text ?? null;
 }
 
@@ -170,15 +175,18 @@ function sensesFor(match: Match): DictSense[] {
 }
 
 /**
- * One line to tell homographs apart: the first gloss of each of the first few
- * senses (厳しい → "severe; hard (to do); intense (e.g. cold)"), kept under the
- * length the candidate check allows by dropping whole trailing parts.
+ * One line to tell homographs apart: the first few glosses of the FIRST sense
+ * only (厳しい → "severe; strict; rigid"). The gloss also grounds the card call,
+ * which treats a supplied meaning as "which word is meant", so later and
+ * weaker senses (締め切り's "cofferdam") are kept out of it; the card chooses
+ * the senses. Whole trailing parts are dropped to stay under the length limit.
  */
 export function glossFor(senses: DictSense[]): string {
+	const first = senses.find((s) => s.glosses.length > 0);
 	const parts: string[] = [];
-	for (const sense of senses.slice(0, GLOSS_SENSES)) {
-		const first = sense.glosses[0]?.trim();
-		if (first && !parts.includes(first)) parts.push(first);
+	for (const gloss of first?.glosses.slice(0, GLOSS_PARTS) ?? []) {
+		const trimmed = gloss.trim();
+		if (trimmed && !parts.includes(trimmed)) parts.push(trimmed);
 	}
 	while (parts.length > 1 && parts.join('; ').length > MAX_GLOSS_LENGTH) parts.pop();
 	return parts.join('; ').slice(0, MAX_GLOSS_LENGTH);

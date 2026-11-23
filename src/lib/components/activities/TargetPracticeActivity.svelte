@@ -118,7 +118,10 @@
 			if (res.status === 'limit') {
 				errorMessage = formatLimitMessage(res);
 			} else if (res.status === 'none') {
-				errorMessage = "Couldn't find a match for that — try rephrasing.";
+				errorMessage =
+					type === 'word'
+						? 'Not in the dictionary — check the spelling, and use the dictionary form (食べる, not 食べた).'
+						: "Couldn't find a match for that — try rephrasing.";
 			} else if (res.candidates.length === 1 && res.candidates[0].target === check.value) {
 				// Nothing to choose between: the candidate IS what was typed (§2).
 				const only = res.candidates[0];

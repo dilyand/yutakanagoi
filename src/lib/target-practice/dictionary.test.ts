@@ -159,22 +159,33 @@ describe('toDictionaryRow', () => {
 });
 
 describe('glossFor', () => {
-	it('takes the first gloss of each of the first three senses', () => {
-		expect(glossFor(KIBISHII.senses)).toBe('severe; hard (to do); intense (e.g. cold)');
+	it('uses the first sense only, so weaker later senses stay out of the card grounding', () => {
+		expect(glossFor(KIBISHII.senses)).toBe('severe; strict; rigid');
+		expect(
+			glossFor([
+				sense(['deadline', 'closing', 'cut-off']),
+				sense(['closing (a door)']),
+				sense(['cofferdam'])
+			])
+		).toBe('deadline; closing; cut-off');
+	});
+
+	it('takes at most three glosses', () => {
+		expect(glossFor([sense(['a', 'b', 'c', 'd'])])).toBe('a; b; c');
 	});
 
 	it('drops whole trailing parts to stay under the length limit', () => {
 		const long = 'x'.repeat(60);
-		const gloss = glossFor([sense([long]), sense([`${long}2`]), sense(['short'])]);
-		expect(gloss).toBe(long);
+		expect(glossFor([sense([long, `${long}2`, 'short'])])).toBe(long);
 	});
 
 	it('skips repeated glosses', () => {
-		expect(glossFor([sense(['bridge']), sense(['bridge'])])).toBe('bridge');
+		expect(glossFor([sense(['bridge', 'bridge'])])).toBe('bridge');
 	});
 
 	it('is empty when there are no glosses', () => {
 		expect(glossFor([])).toBe('');
+		expect(glossFor([sense([])])).toBe('');
 	});
 });
 
@@ -185,13 +196,13 @@ describe('buildCandidates', () => {
 		expect(result[0]).toEqual({
 			target: '人気',
 			reading: 'にんき',
-			gloss: 'popularity; condition (e.g. market)'
+			gloss: 'popularity; public favor'
 		});
 	});
 
 	it('shows kana input as the usual kanji spelling', () => {
 		expect(buildCandidates('たべる', [TABERU])).toEqual([
-			{ target: '食べる', reading: 'たべる', gloss: 'to eat; to live on (e.g. a salary)' }
+			{ target: '食べる', reading: 'たべる', gloss: 'to eat' }
 		]);
 	});
 
@@ -220,7 +231,7 @@ describe('buildCandidates', () => {
 			{
 				target: '端',
 				reading: 'はし',
-				gloss: 'end (e.g. of street); beginning; odds and ends'
+				gloss: 'end (e.g. of street); tip'
 			}
 		]);
 	});
@@ -237,8 +248,14 @@ describe('buildCandidates', () => {
 			[form('いかめしい')],
 			[sense(['stern', 'grave']), sense(['strict (e.g. security)'], [], ['厳しい'])]
 		);
-		expect(buildCandidates('厳めしい', [mixed])[0].gloss).toBe('stern');
-		expect(buildCandidates('厳しい', [mixed])[0].gloss).toBe('stern; strict (e.g. security)');
+		const only = entry(
+			4,
+			[form('厳めしい'), form('厳しい')],
+			[form('いかめしい')],
+			[sense(['stern'], [], ['厳めしい']), sense(['strict (e.g. security)'], [], ['厳しい'])]
+		);
+		expect(buildCandidates('厳めしい', [mixed])[0].gloss).toBe('stern; grave');
+		expect(buildCandidates('厳しい', [only])[0].gloss).toBe('strict (e.g. security)');
 	});
 
 	it('reads a restricted kana form only for the kanji it belongs to', () => {
@@ -251,6 +268,16 @@ describe('buildCandidates', () => {
 			)
 		]);
 		expect(beak[0].reading).toBe('はし');
+	});
+
+	it('prefers a hiragana reading when JMdict lists a katakana one first', () => {
+		const ubu = entry(
+			5,
+			[form('初'), form('生')],
+			[form('ウブ'), form('うぶ')],
+			[sense(['inexperienced'])]
+		);
+		expect(buildCandidates('生', [ubu])[0].reading).toBe('うぶ');
 	});
 
 	it('returns nothing when no form matches', () => {

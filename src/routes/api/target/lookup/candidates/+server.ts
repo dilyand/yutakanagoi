@@ -5,6 +5,7 @@ import { createServiceClient } from '$lib/server/supabase';
 import { verifyUserExists, UserNotFoundError } from '$lib/server/conjugation-auth';
 import { checkRateLimit } from '$lib/server/rate-limit';
 import { requireUserId } from '$lib/server/require-session';
+import { lookupWordInDictionary } from '$lib/server/target-practice/dictionary-lookup';
 import { lookupCandidates } from '$lib/server/target-practice/lookup';
 import { TARGET_TYPES } from '$lib/target-practice/types';
 import { validateTargetInput } from '$lib/target-practice/input-validation';
@@ -21,9 +22,10 @@ const RequestSchema = z.object({
 	input: z.string().max(200)
 });
 
-// Candidates only apply to input that can't be resolved locally (English, or a
-// Japanese Word — see input-validation.ts); anything else would spend a lookup
-// for nothing, so it is refused rather than forwarded.
+// Candidates only apply to input that can't be resolved locally (English Grammar, or a
+// Japanese Word — see input-validation.ts); anything else would spend a lookup for
+// nothing, so it is refused rather than forwarded. A Word is looked up in the JMdict
+// table (no model call); Grammar's English description still goes to Claude.
 export const POST: RequestHandler = async ({ request, getClientAddress, locals }) => {
 	const userId = requireUserId(locals);
 	if (!checkRateLimit(`target-lookup-candidates:${getClientAddress()}`, LIMIT, WINDOW_MS)) {
@@ -46,5 +48,6 @@ export const POST: RequestHandler = async ({ request, getClientAddress, locals }
 		throw e;
 	}
 
+	if (type === 'word') return json(await lookupWordInDictionary(supabase, check.value));
 	return json(await lookupCandidates(supabase, userId, type, check.value));
 };

@@ -31,16 +31,6 @@ const TYPE_LABEL: Record<TargetType, string> = {
 // --- Candidate step ------------------------------------------------------
 
 const CANDIDATE_SCOPE: Partial<Record<TargetType, string>> = {
-	word:
-		'The learner wants to study one Japanese word. The input is either English or Japanese. ' +
-		'If it is English, list the Japanese words a learner most plausibly means, most common ' +
-		'first (to run → 走る). If it is Japanese, list the distinct words that share this spelling ' +
-		'but differ in reading or meaning (人気 → にんき "popularity" and ひとけ "signs of people"); ' +
-		'for kana-only input also list the common kanji words it could be (たべる → 食べる; はし → ' +
-		'橋, 箸, 端). If only one word fits, return exactly one candidate. Each target must be a ' +
-		'single word in dictionary form — never a phrase, a pattern, or an inflected form — written ' +
-		'the way a learner normally sees it (kanji where the usual spelling uses kanji, kana where it ' +
-		'is usually written in kana).',
 	grammar:
 		'The learner wants to study one Japanese grammar pattern, described in English. List the ' +
 		'patterns they most plausibly mean, most common first, including the closest confusable ' +
