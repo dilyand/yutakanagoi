@@ -2,19 +2,21 @@ import { readFileSync } from 'node:fs';
 import { createAdminClient } from './lib/supabase-admin.ts';
 import { toDictionaryRow } from '../src/lib/target-practice/dictionary.ts';
 import type { JmdictWord } from '../src/lib/target-practice/dictionary.ts';
+import { syncDictionary } from '../src/lib/target-practice/dictionary-sync.ts';
+import type { DictionaryStore, StoredRow } from '../src/lib/target-practice/dictionary-sync.ts';
 
 // Loads the JMdict dictionary (the jmdict-simplified English release) into
 // dictionary_entries, which target practice's Word lookup reads. Re-runnable:
-// upserts by id, then deletes rows left over from an older dictionary version.
-// JMdict is not updated automatically — download a newer release and re-run.
+// compares the file with the table, writes only new and changed entries, then
+// deletes entries the file no longer has. A row's dict_version is therefore the
+// release that last changed it. JMdict is not updated automatically — download
+// a newer release and re-run.
 //
 // Usage:
 //   npm run dictionary:import -- <path to jmdict-eng-*.json>
 //   npx tsx --env-file=.env.staging scripts/import-dictionary.ts <path>   (another environment)
 // Get the file from https://github.com/scriptin/jmdict-simplified/releases
 // (jmdict-eng-<version>.json.tgz, extracted). Licence: see README.md.
-const BATCH_SIZE = 1000;
-
 const path = process.argv[2];
 if (!path) {
 	console.error('Usage: npm run dictionary:import -- <path to jmdict-eng-*.json>');
@@ -36,32 +38,44 @@ if (
 	process.exit(1);
 }
 const version = parsed.dictDate;
-const words = parsed.words as JmdictWord[];
+const rows = (parsed.words as JmdictWord[]).map((word) => toDictionaryRow(word, version));
 
 const supabase = createAdminClient();
 // The target host only (never the key), so a wrong env file is visible before the long run.
 console.log(
-	`Importing ${words.length} entries (JMdict ${version}) into ${new URL(process.env.SUPABASE_URL!).host}`
+	`Importing ${rows.length} entries (JMdict ${version}) into ${new URL(process.env.SUPABASE_URL!).host}`
 );
 
-let done = 0;
-for (let i = 0; i < words.length; i += BATCH_SIZE) {
-	const rows = words.slice(i, i + BATCH_SIZE).map((w) => toDictionaryRow(w, version));
-	const { error } = await supabase.from('dictionary_entries').upsert(rows, { onConflict: 'id' });
-	if (error) {
-		console.error(`Batch starting at ${i} failed:`, error.message);
-		process.exit(1);
+const store: DictionaryStore = {
+	async readAfter(afterId, limit) {
+		const { data, error } = await supabase
+			.from('dictionary_entries')
+			.select('id, common, kanji, kana, senses, lookup_keys')
+			.gt('id', afterId)
+			.order('id', { ascending: true })
+			.limit(limit);
+		if (error) throw new Error(error.message);
+		return data as StoredRow[];
+	},
+	async upsert(batch) {
+		const { error } = await supabase.from('dictionary_entries').upsert(batch, { onConflict: 'id' });
+		if (error) throw new Error(error.message);
+	},
+	async remove(ids) {
+		const { error } = await supabase.from('dictionary_entries').delete().in('id', ids);
+		if (error) throw new Error(error.message);
 	}
-	done += rows.length;
-	if (done % 20000 < BATCH_SIZE || done === words.length) console.log(`  ${done}/${words.length}`);
-}
+};
 
-const { error: pruneError, count } = await supabase
-	.from('dictionary_entries')
-	.delete({ count: 'exact' })
-	.neq('dict_version', version);
-if (pruneError) {
-	console.error('Imported, but removing rows from older versions failed:', pruneError.message);
+try {
+	const { added, changed, unchanged, removed } = await syncDictionary(store, rows, {
+		log: console.log
+	});
+	console.log(
+		`Done. Added ${added}, changed ${changed}, removed ${removed}, left ${unchanged} unchanged.`
+	);
+} catch (err) {
+	console.error('Import failed:', err instanceof Error ? err.message : err);
+	console.error('Run it again to finish: entries already written are skipped.');
 	process.exit(1);
 }
-console.log(`Done. Removed ${count ?? 0} rows from older dictionary versions.`);

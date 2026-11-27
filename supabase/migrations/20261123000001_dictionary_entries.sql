@@ -8,8 +8,8 @@
 --
 -- Reference data, not user data: no user_id, no FK to users, read only by the
 -- server (service role) and loaded by `npm run dictionary:import`. Re-running
--- the import upserts by id and deletes rows from older dictionary versions, so
--- an entry JMdict removes disappears here too.
+-- the import writes only new and changed entries and deletes those the file no
+-- longer has, so an entry JMdict removes disappears here too.
 create table dictionary_entries (
   id           bigint primary key,   -- JMdict ent_seq
   common       boolean not null,     -- any form carries JMdict's common-priority flag
@@ -17,7 +17,7 @@ create table dictionary_entries (
   kana         jsonb not null,       -- [{text, common, tags, appliesToKanji?}]
   senses       jsonb not null,       -- [{pos, misc, glosses, appliesToKanji?}]
   lookup_keys  text[] not null,      -- NFKC-folded text of every kanji and kana form
-  dict_version text not null         -- JMdict dictDate the row was imported from
+  dict_version text not null         -- dictDate of the release that last changed the row
 );
 
 -- Lookup is "which entries have this exact form": `lookup_keys @> array[$1]`.

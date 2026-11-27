@@ -223,14 +223,16 @@ grammar|contrast` (CHECK). `target_key` is the canonical resolved
 appliesToKanji?}`); `lookup_keys` is the NFKC-folded text of every form
   (JMdict stores `Ｔシャツ` fullwidth, input is folded to `Tシャツ`) with a GIN
   index, queried as `lookup_keys @> array[$1]`; `dict_version` is the
-  JMdict `dictDate` the row came from. ~219k rows, **~119 MB** with indexes
-  on the local stack — check the target project's size headroom before
-  importing there. Loaded by `npm run dictionary:import -- <path to
-jmdict-eng-*.json>` (the jmdict-simplified English release; re-runnable,
-  upserts by id and deletes rows from older versions; point it at another
-  environment with `npx tsx --env-file=.env.staging scripts/import-dictionary.ts
-<path>`). Not refreshed automatically. Licence and credit: see the root
-  README.
+  JMdict `dictDate` of the release that **last changed** the row, so one
+  table normally holds several. ~219k rows, **~120-130 MB** with indexes —
+  check the target project's size headroom before importing there. Loaded by
+  `npm run dictionary:import -- <path to jmdict-eng-*.json>` (the
+  jmdict-simplified English release; re-runnable: it writes only new and
+  changed entries, then deletes entries the file no longer has; point it at
+  another environment with `npx tsx --env-file=.env.staging
+scripts/import-dictionary.ts <path>`). Don't rewrite unchanged rows: one full
+  rewrite grew the table about 1.8x, and it stayed that size. Not refreshed
+  automatically. Licence and credit: see the root README.
 
 ### Shadowing Storage bucket
 
