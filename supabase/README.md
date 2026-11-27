@@ -228,8 +228,9 @@ appliesToKanji?}`); `lookup_keys` is the NFKC-folded text of every form
   check the target project's size headroom before importing there. Loaded by
   `npm run dictionary:import -- <path to jmdict-eng-*.json>` (the
   jmdict-simplified English release; re-runnable: it writes only new and
-  changed entries, then deletes entries the file no longer has; point it at
-  another environment with `npx tsx --env-file=.env.staging
+  changed entries, then deletes entries the file no longer has; it retries
+  failed requests, and a run that still stops can simply be repeated; point it
+  at another environment with `npx tsx --env-file=.env.staging
 scripts/import-dictionary.ts <path>`). Don't rewrite unchanged rows: one full
   rewrite grew the table about 1.8x, and it stayed that size. Not refreshed
   automatically. Licence and credit: see the root README.

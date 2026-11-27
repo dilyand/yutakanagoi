@@ -4,19 +4,25 @@ import { toDictionaryRow } from '../src/lib/target-practice/dictionary.ts';
 import type { JmdictWord } from '../src/lib/target-practice/dictionary.ts';
 import { syncDictionary } from '../src/lib/target-practice/dictionary-sync.ts';
 import type { DictionaryStore, StoredRow } from '../src/lib/target-practice/dictionary-sync.ts';
+import { withRetry } from '../src/lib/server/retry.ts';
 
 // Loads the JMdict dictionary (the jmdict-simplified English release) into
 // dictionary_entries, which target practice's Word lookup reads. Re-runnable:
 // compares the file with the table, writes only new and changed entries, then
 // deletes entries the file no longer has. A row's dict_version is therefore the
-// release that last changed it. JMdict is not updated automatically — download
-// a newer release and re-run.
+// release that last changed it. Failed requests are retried. JMdict is not
+// updated automatically — download a newer release and re-run.
 //
 // Usage:
 //   npm run dictionary:import -- <path to jmdict-eng-*.json>
 //   npx tsx --env-file=.env.staging scripts/import-dictionary.ts <path>   (another environment)
 // Get the file from https://github.com/scriptin/jmdict-simplified/releases
 // (jmdict-eng-<version>.json.tgz, extracted). Licence: see README.md.
+
+// A long import over a free-tier connection does hit dropped requests: wait out
+// up to about a minute of failures per request before giving up.
+const RETRY = { retries: 6, delayMs: 10_000 };
+
 const path = process.argv[2];
 if (!path) {
 	console.error('Usage: npm run dictionary:import -- <path to jmdict-eng-*.json>');
@@ -46,24 +52,47 @@ console.log(
 	`Importing ${rows.length} entries (JMdict ${version}) into ${new URL(process.env.SUPABASE_URL!).host}`
 );
 
+/**
+ * One database request. Every one here is safe to repeat (a read, an upsert by
+ * id, a delete by id), so any failure is retried. supabase-js returns errors
+ * rather than throwing them, and `withRetry` retries only thrown errors without
+ * a `code`, hence the plain Error.
+ */
+function request<T>(
+	what: string,
+	run: () => PromiseLike<{ data: T; error: { message: string } | null }>
+): Promise<T> {
+	return withRetry(async () => {
+		const { data, error } = await run();
+		if (error) {
+			console.warn(`  ${what} failed: ${error.message}`);
+			throw new Error(error.message);
+		}
+		return data;
+	}, RETRY);
+}
+
 const store: DictionaryStore = {
 	async readAfter(afterId, limit) {
-		const { data, error } = await supabase
-			.from('dictionary_entries')
-			.select('id, common, kanji, kana, senses, lookup_keys')
-			.gt('id', afterId)
-			.order('id', { ascending: true })
-			.limit(limit);
-		if (error) throw new Error(error.message);
+		const data = await request(`reading entries after ${afterId}`, () =>
+			supabase
+				.from('dictionary_entries')
+				.select('id, common, kanji, kana, senses, lookup_keys')
+				.gt('id', afterId)
+				.order('id', { ascending: true })
+				.limit(limit)
+		);
 		return data as StoredRow[];
 	},
 	async upsert(batch) {
-		const { error } = await supabase.from('dictionary_entries').upsert(batch, { onConflict: 'id' });
-		if (error) throw new Error(error.message);
+		await request(`writing ${batch.length} entries from ${batch[0].id}`, () =>
+			supabase.from('dictionary_entries').upsert(batch, { onConflict: 'id' })
+		);
 	},
 	async remove(ids) {
-		const { error } = await supabase.from('dictionary_entries').delete().in('id', ids);
-		if (error) throw new Error(error.message);
+		await request(`removing ${ids.length} entries from ${ids[0]}`, () =>
+			supabase.from('dictionary_entries').delete().in('id', ids)
+		);
 	}
 };
 
